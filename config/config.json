@@ -1,0 +1,17 @@
+{
+  "input_path": "dbfs:/mnt/raw_data/input.csv",
+  "output_path": "dbfs:/mnt/processed_data/output.parquet",
+  "transformations": [
+    {
+      "type": "filter",
+      "column": "status",
+      "value": "active"
+    },
+    {
+      "type": "rename",
+      "mappings": {
+        "old_name": "new_name"
+      }
+    }
+  ]
+}
