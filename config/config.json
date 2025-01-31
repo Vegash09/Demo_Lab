@@ -12,6 +12,14 @@
       "mappings": {
         "old_name": "new_name"
       }
+    },
+    {
+      "type": "custom",
+      "module": "custom_transformations",
+      "function": "uppercase_column",
+      "params": {
+        "column": "name"
+      }
     }
   ]
 }
