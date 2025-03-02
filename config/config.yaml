@@ -1,0 +1,34 @@
+input:
+  table: "input_table"
+output:
+  table: "output_table"
+custom_transformations:
+  - name: "join"
+    params:
+      other_table: "other_table"
+      join_key: "employee_id"
+      join_type: "inner"
+  - name: "group_by_agg"
+    params:
+      group_by_columns: ["department"]
+      agg:
+        salary: "avg"
+        age: "max"
+  - name: "window_function"
+    params:
+      partition_by: ["department"]
+      order_by: ["salary"]
+      window_function:
+        name: "row_number"
+        alias: "salary_rank"
+data_quality_checks:
+  - type: "completeness"
+    column: "employee_id"
+    threshold: 0.95
+  - type: "uniqueness"
+    column: "employee_id"
+    threshold: 1.0
+  - type: "validity"
+    column: "age"
+    rule: "age > 0"
+    threshold: 0.98
