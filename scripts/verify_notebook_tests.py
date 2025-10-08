@@ -32,7 +32,18 @@ def notebooks_missing_pipeline_refs() -> list[Path]:
         if TESTS_DIR in nb_path.parents:
             continue
         rel_path = nb_path.as_posix().split(str(ROOT.as_posix()) + "/")[-1]
-        found = any(rel_path in content for content in pipeline_texts)
+        # Accept workspace-style references (files/notebooks/...), with or without extension
+        # and also allow other notebook types (.sql, .scala, etc.) by ignoring extension.
+        from pathlib import Path as _P
+        nb_rel = _P(rel_path)
+        no_ext = nb_rel.with_suffix("").as_posix()
+        candidates = {
+            rel_path,  # notebooks/.../name.py
+            ("files/" + rel_path),  # files/notebooks/.../name.py
+            no_ext,  # notebooks/.../name
+            ("files/" + no_ext),  # files/notebooks/.../name
+        }
+        found = any(any(cand in content for cand in candidates) for content in pipeline_texts)
         if not found:
             missing.append(nb_path)
     return missing
@@ -95,5 +106,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 
