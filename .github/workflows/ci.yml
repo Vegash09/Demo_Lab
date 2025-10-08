@@ -29,8 +29,8 @@ jobs:
 
       - name: Verify notebook coverage
         run: |
-          SKIP_NOTEBOOK_EXECUTION=1 uv run python scripts/verify_notebook_tests.py
+          SKIP_NOTEBOOK_EXECUTION=1 .venv/bin/python scripts/verify_notebook_tests.py
 
       - name: Run tests
         run: |
-          SKIP_NOTEBOOK_EXECUTION=1 uv run pytest --maxfail=1 --disable-warnings -q
+          SKIP_NOTEBOOK_EXECUTION=1 .venv/bin/pytest --maxfail=1 --disable-warnings -q
