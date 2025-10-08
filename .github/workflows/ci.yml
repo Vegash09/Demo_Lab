@@ -21,13 +21,15 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v1
 
-      - name: Sync dependencies
-        run: uv sync --all-extras --python 3.11
+      - name: Install project and test deps
+        run: |
+          uv pip install -e .
+          uv pip install pytest pytest-cov python-dotenv
 
       - name: Verify notebook coverage
         run: |
-          SKIP_NOTEBOOK_EXECUTION=1 uv run --python 3.11 python scripts/verify_notebook_tests.py
+          SKIP_NOTEBOOK_EXECUTION=1 uv run python scripts/verify_notebook_tests.py
 
       - name: Run tests
         run: |
-          SKIP_NOTEBOOK_EXECUTION=1 uv run --python 3.11 pytest --maxfail=1 --disable-warnings -q
+          SKIP_NOTEBOOK_EXECUTION=1 uv run pytest --maxfail=1 --disable-warnings -q
