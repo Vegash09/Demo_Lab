@@ -1,0 +1,11 @@
+{
+  "catalog": "0__silver",
+  "schema": "sap",
+  "volume": "dlt_sink",
+  "source_path": "/Volumes/0__silver/sap/dlt_sink/source/cleaned_events_json",
+  "quality": {
+    "checks": []
+  }
+}
+
+
