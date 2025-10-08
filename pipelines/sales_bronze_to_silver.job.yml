@@ -2,6 +2,8 @@ resources:
   jobs:
     sales_bronze_to_silver:
       name: ${bundle.name}-sales-bronze-to-silver-${bundle.target}
+      # notebook reference: notebooks/bronze_silver/bu_sales/bronze_to_silver.py
+      # notebook reference: notebooks/bronze_silver/bu_sales/dlt_silver_sales_events.py
 
       parameters:
         - name: config_path
