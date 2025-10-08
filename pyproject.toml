@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "datalab-etl"
+version = "0.1.0"
+description = "Minimal Databricks data processing toolkit with common IO and DQ"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Datalab Team" }]
+license = { text = "MIT" }
+dependencies = [
+  "databricks-labs-dqx>=0.9.3",
+  "databricks-sdk>=0.67.0",
+  "delta-spark==3.2.0",
+  "pyspark==3.5.1",
+  # Optional; DQX may internally use YAML, but our wrapper doesn't require it directly
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "python-dotenv",
+]
+
+[project.scripts]
+# No CLI entrypoints in the minimal toolkit
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"datalab_etl" = []

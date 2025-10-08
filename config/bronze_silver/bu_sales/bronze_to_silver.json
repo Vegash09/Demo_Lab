@@ -1,0 +1,17 @@
+{
+  "source": { "table": "customer_sales._bronze.customer" },
+  "target": {
+    "table": "customer_sales._silver.customer",
+    "clusterBy": "city",
+    "mode": "upsert",
+    "merge": { "keys": ["customer_id"] }
+  },
+  "quality": {
+    "checks": [
+      { "name": "customer_id_not_null", "type": "not_null", "column": "customer_id", "severity": "warning" }
+    ],
+    "quarantine_table": "customer_sales._silver.customer_quarantine",
+    "audit_table": "customer_sales._silver.customer_dq_audit",
+    "results_table": "customer_sales._silver.customer_dq_results"
+  }
+}

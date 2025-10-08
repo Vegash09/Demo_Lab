@@ -1,0 +1,22 @@
+bundle:
+  name: datalab
+
+include:
+  - permissions/**/*.yml
+  - pipelines/*.yml
+
+targets:
+  dev:
+    workspace:
+      root_path: /Bundles/${bundle.name}/${bundle.target}
+      host: https://adb-7488500312027058.18.azuredatabricks.net/
+  staging:
+    workspace:
+      root_path: /Bundles/${bundle.name}/${bundle.target}
+      host: https://adb-7488500312027058.18.azuredatabricks.net/
+  prod:
+    workspace:
+      root_path: /Bundles/${bundle.name}/${bundle.target}
+      host: https://adb-7488500312027058.18.azuredatabricks.net/
+
+

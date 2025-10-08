@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - development/**
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+
+      - name: Sync dependencies
+        run: uv sync --all-extras --python 3.11
+
+      - name: Verify notebook coverage
+        run: |
+          SKIP_NOTEBOOK_EXECUTION=1 uv run --python 3.11 python scripts/verify_notebook_tests.py
+
+      - name: Run tests
+        run: |
+          SKIP_NOTEBOOK_EXECUTION=1 uv run --python 3.11 pytest --maxfail=1 --disable-warnings -q
