@@ -8,7 +8,7 @@ readme = "README.md"
 packages = [{ include = "datalab_etl", from = "src" }]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.12"
 databricks-labs-dqx = ">=0.9.3"
 databricks-sdk = ">=0.67.0"
 delta-spark = "3.2.0"

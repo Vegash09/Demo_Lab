@@ -17,12 +17,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - name: Set up uv
         uses: astral-sh/setup-uv@v1
 
-      - name: Install project and test deps
+      - name: Create venv and install deps
         run: |
+          uv venv -p 3.12
           uv pip install -e .
           uv pip install pytest pytest-cov python-dotenv
 

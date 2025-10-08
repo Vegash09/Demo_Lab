@@ -4,11 +4,9 @@ __pycache__/
 *.pyd
 *.egg-info/
 .dist-info/
-# .dist/
 .eggs/
 build/
-# dist/
-# .venv/
+.venv/
 .env/
 .DS_Store
 tests/tmp/
