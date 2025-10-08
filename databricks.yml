@@ -5,6 +5,12 @@ include:
   - permissions/**/*.yml
   - pipelines/*.yml
 
+artifacts:
+  default:
+    type: whl
+    build: pip install --upgrade pip 'poetry>=1.8.0' && poetry build --format wheel
+    path: .
+
 targets:
   dev:
     workspace:
@@ -18,5 +24,3 @@ targets:
     workspace:
       root_path: /Bundles/${bundle.name}/${bundle.target}
       host: https://adb-7488500312027058.18.azuredatabricks.net/
-
-

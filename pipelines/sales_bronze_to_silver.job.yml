@@ -2,25 +2,26 @@ resources:
   jobs:
     sales_bronze_to_silver:
       name: ${bundle.name}-sales-bronze-to-silver-${bundle.target}
-      trigger:
-        pause_status: PAUSED
 
       parameters:
         - name: config_path
           default: "${workspace.root_path}/files/config/bronze_silver/bu_sales/bronze_to_silver.json"
+        - name: dq_config_path
+          default: "${workspace.root_path}/files/config/bronze_silver/bu_sales/bronze_to_silver_quality.json"
 
       tasks:
         - task_key: bronze_to_silver
           libraries:
             - whl: ../dist/*.whl
+            - pypi:
+                package: databricks-labs-dqx==0.9.3
           job_cluster_key: default_cluster
           notebook_task:
-            notebook_path: "${workspace.root_path}/files/notebooks/bronze_silver/bu_sales/bronze_to_silver.py"
+            notebook_path: "${workspace.root_path}/files/notebooks/bronze_silver/bu_sales/bronze_to_silver"
             source: WORKSPACE
             base_parameters:
-              [
-                "--config_path",
-                "{{ job.parameters.config_path }}"]
+              notebook.parameters.config_path: "{{ job.parameters.config_path }}"
+              notebook.parameters.dq_config_path: "{{ job.parameters.dq_config_path }}"
             
 
       job_clusters:
@@ -34,5 +35,3 @@ resources:
         enabled: true
       
       permissions: ${var.workflow_permissions}
-
-

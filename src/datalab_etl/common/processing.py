@@ -12,6 +12,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.streaming import StreamingQuery
 
 from datalab_etl.common.io import read_dataset, target_identifier, write_dataset
+from datalab_etl.quality.simple_dq import SimpleDQ
 
 
 TransformFn = Callable[[DataFrame], DataFrame]
@@ -23,10 +24,11 @@ def process_batch(
     source: Dict[str, Any],
     transform: TransformFn,
     target: Dict[str, Any],
-    dq_runner: Any | None = None,
-    dq_in_transit_checks: List[Dict[str, Any]] | str | None = None,
-    dq_post_write_checks: str | None = None,
-    dq_run_name: str | None = None,
+    dq_config: Dict[str, Any] | None = None,
+    dq_runner: Any | None = None,  # deprecated
+    dq_in_transit_checks: List[Dict[str, Any]] | str | None = None,  # deprecated
+    dq_post_write_checks: str | None = None,  # deprecated
+    dq_run_name: str | None = None,  # deprecated
 ) -> DataFrame:
     """Run a single batch step from source to target using a transform function.
 
@@ -40,14 +42,13 @@ def process_batch(
         User transformation from input to output schema
     target: dict
         Write configuration (see ``write_dataset``)
-    dq_runner: DqxRunner | None
-        Optional DQX runner
-    dq_in_transit_checks: list | str | None
-        In-transit rule list or path passed to ``dq_runner.check_in_transit``
-    dq_post_write_checks: str | None
-        Path to checks for at-rest validation via ``dq_runner.run_checks``
-    dq_run_name: str | None
-        Optional custom run name for DQ executions
+    dq_config: dict | None
+        New preferred DQ config. When provided, the framework will:
+          - load checks from ``checks_table`` or ``checks`` (path/list/dict)
+          - apply checks in-transit and split valid/invalid
+          - write quarantined rows to ``quarantine_table``/``quarantine_path`` if set
+        Deprecated parameters (``dq_runner`` etc.) are still supported but
+        ignored when ``dq_config`` is supplied.
     """
 
     # Read
@@ -56,30 +57,40 @@ def process_batch(
     # Transform
     transformed_df = transform(input_df)
 
-    # In-transit DQ
-    if dq_runner and dq_in_transit_checks is not None:
-        transformed_df = dq_runner.check_in_transit(
+    # In-transit DQ (new simple flow preferred)
+    if dq_config:
+        dq = SimpleDQ(spark, dq_config)
+        checks = dq.resolve_checks()
+        valid_df, invalid_df = dq.apply_and_split(transformed_df, checks)
+        # Write quarantine if configured
+        dq.write_quarantine(invalid_df)
+        candidate_df = valid_df
+    elif dq_runner and dq_in_transit_checks is not None:
+        # Backward compatibility path
+        candidate_df = dq_runner.check_in_transit(
             data=transformed_df,
             checks=dq_in_transit_checks,
             run_name=dq_run_name or "batch",
             target_identifier=target_identifier(target),
         )
+    else:
+        candidate_df = transformed_df
 
     # Write
-    write_dataset(transformed_df, target)
+    write_dataset(candidate_df, target)
 
     # Post-write DQ
-    if dq_runner and dq_post_write_checks:
+    if not dq_config and dq_runner and dq_post_write_checks:
         run_name = dq_run_name or "batch"
         dq_runner.run_checks(
             run_name=run_name,
-            checks_location=dq_post_write_checks,
+            checks=dq_post_write_checks,
             input_location=target_identifier(target),
             input_format=target.get("format", "delta"),
             is_streaming=False,
         )
 
-    return transformed_df
+    return candidate_df
 
 
 def process_streaming(
@@ -91,10 +102,11 @@ def process_streaming(
     checkpoint_location: str,
     output_mode: str = "append",
     trigger: Dict[str, Any] | None = None,
-    dq_runner: Any | None = None,
-    dq_in_transit_checks: List[Dict[str, Any]] | str | None = None,
-    dq_post_write_checks: str | None = None,
-    dq_run_name: str | None = None,
+    dq_config: Dict[str, Any] | None = None,
+    dq_runner: Any | None = None,  # deprecated
+    dq_in_transit_checks: List[Dict[str, Any]] | str | None = None,  # deprecated
+    dq_post_write_checks: str | None = None,  # deprecated
+    dq_run_name: str | None = None,  # deprecated
 ) -> StreamingQuery:
     """Run a streaming step using foreachBatch to apply standard write and DQ.
 
@@ -107,7 +119,13 @@ def process_streaming(
 
     def _process_batch(batch_df: DataFrame, batch_id: int) -> None:
         candidate_df = batch_df
-        if dq_runner and dq_in_transit_checks is not None:
+        if dq_config:
+            dq = SimpleDQ(spark, dq_config)
+            checks = dq.resolve_checks()
+            valid_df, invalid_df = dq.apply_and_split(candidate_df, checks)
+            dq.write_quarantine(invalid_df)
+            candidate_df = valid_df
+        elif dq_runner and dq_in_transit_checks is not None:
             candidate_df = dq_runner.check_in_transit(
                 data=candidate_df,
                 checks=dq_in_transit_checks,
@@ -117,11 +135,11 @@ def process_streaming(
 
         write_dataset(candidate_df, target)
 
-        if dq_runner and dq_post_write_checks:
+        if not dq_config and dq_runner and dq_post_write_checks:
             run_name = dq_run_name or f"stream_{batch_id}"
             dq_runner.run_checks(
                 run_name=run_name,
-                checks_location=dq_post_write_checks,
+                checks=dq_post_write_checks,
                 input_location=target_identifier(target),
                 input_format=target.get("format", "delta"),
                 is_streaming=True,
@@ -141,5 +159,3 @@ def process_streaming(
             writer = writer.trigger(processingTime=trigger["processingTime"])
 
     return writer.start()
-
-

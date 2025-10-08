@@ -203,6 +203,21 @@ process_batch(
 )
 ```
 
+### Batch with simple data-quality (apply + split + quarantine)
+
+```python
+process_batch(
+    spark,
+    source={"table": "bronze.customers"},
+    transform=lambda df: df,
+    target={"table": "silver.customers"},
+    dq_config={
+        "checks_table": "silver.quality_checks_customers",  # or "checks": "/Workspace/.../checks.json"
+        "quarantine_table": "silver.customers_quarantine",
+    },
+)
+```
+
 ### Streaming with post-write checks
 
 ```python

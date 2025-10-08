@@ -8,7 +8,7 @@ __pycache__/
 .eggs/
 build/
 # dist/
-.venv/
+# .venv/
 .env/
 .DS_Store
 tests/tmp/
