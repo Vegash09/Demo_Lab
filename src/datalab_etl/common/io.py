@@ -242,6 +242,7 @@ def _delta_merge_upsert(df: DataFrame, target_cfg: Dict[str, Any]) -> None:
     table = target_cfg.get("table")
     path = target_cfg.get("path")
     spark = df.sparkSession
+    options = target_cfg.get("options", {})
 
     try:
         from delta.tables import DeltaTable  # type: ignore
@@ -255,7 +256,18 @@ def _delta_merge_upsert(df: DataFrame, target_cfg: Dict[str, Any]) -> None:
     fmt = str(target_cfg.get("format", "delta"))
     if table and not (not is_databricks_runtime() and not is_databricks_connect_configured()):
         # Real catalog table on Databricks or when Connect is configured
-        target = DeltaTable.forName(spark, table)
+        try:
+            target = DeltaTable.forName(spark, table)
+        except Exception:
+            empty_df = df.limit(0)
+            writer = empty_df.write.format(fmt)
+            partition_cols = _as_list(target_cfg.get("partitionBy"))
+            if partition_cols:
+                writer = writer.partitionBy(*partition_cols)
+            if options:
+                writer = writer.options(**options)
+            writer.mode("overwrite").saveAsTable(table)
+            target = DeltaTable.forName(spark, table)
     else:
         # Local path-based target
         resolved_path = _ensure_path(path) if path else _fallback_table_path(table or "table", _local_warehouse_base())

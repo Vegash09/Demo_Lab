@@ -17,17 +17,20 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - name: Set up uv
         uses: astral-sh/setup-uv@v1
 
-      - name: Sync dependencies
-        run: uv sync --all-extras --python 3.11
+      - name: Create venv and install deps
+        run: |
+          uv venv -p 3.12
+          uv pip install -e .
+          uv pip install pytest pytest-cov python-dotenv
 
       - name: Verify notebook coverage
         run: |
-          SKIP_NOTEBOOK_EXECUTION=1 uv run --python 3.11 python scripts/verify_notebook_tests.py
+          SKIP_NOTEBOOK_EXECUTION=1 .venv/bin/python scripts/verify_notebook_tests.py
 
       - name: Run tests
         run: |
-          SKIP_NOTEBOOK_EXECUTION=1 uv run --python 3.11 pytest --maxfail=1 --disable-warnings -q
+          SKIP_NOTEBOOK_EXECUTION=1 .venv/bin/pytest --maxfail=1 --disable-warnings -q

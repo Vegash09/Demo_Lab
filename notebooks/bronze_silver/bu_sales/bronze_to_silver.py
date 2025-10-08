@@ -1,18 +1,26 @@
 # Databricks notebook source
+from pathlib import Path
 from pyspark.sql import functions as F
 
 from datalab_etl import process_batch
-from datalab_etl.common.session import get_spark
-from datalab_etl.quality.dqx_runner import DqxRunner
 import json
 
-# spark = get_spark(app_name="datalab-bu-sales-bronze-to-silver")
-spark = get_spark(databricks_profile="dev_diggi")
+# COMMAND ----------
 
-# dbutils.widgets.text("config_path", "", "Config Path")
-# config_path = dbutils.widgets.get("config_path")
-config_path = "/Users/Nivethan1/datalab/config/bronze_silver/bu_sales/bronze_to_silver.json"
+try:  # Databricks provides ``spark`` automatically
+    spark  # type: ignore[name-defined]
+except NameError:  # pragma: no cover - local unit testing fallback
+    from datalab_etl.common.session import get_spark
+    spark = get_spark(force_local=True)
 
+# COMMAND ----------
+
+dbutils.widgets.text("config_path", "", "Config Path")
+dbutils.widgets.text("dq_config_path", "", "DQ Config Path")
+config_path = dbutils.widgets.get("config_path")
+dq_config_path = dbutils.widgets.get("dq_config_path")
+
+# COMMAND ----------
 
 def transform_to_silver(df):
     # Pass through customer fields and ensure signup_date is a date for partitioning
@@ -28,21 +36,34 @@ def transform_to_silver(df):
         .withColumn("signup_date", F.to_date("signup_date"))
     )
 
+# COMMAND ----------
+
 with open(config_path) as f:
     cfg = json.load(f)
 
-quality_cfg = cfg.get("quality", {}) or {}
+quality_cfg = {}
+if dq_config_path:
+    with open(dq_config_path) as dq_config_file:
+        loaded_quality_cfg = json.load(dq_config_file)
+        if isinstance(loaded_quality_cfg, dict):
+            quality_cfg = loaded_quality_cfg
+        elif isinstance(loaded_quality_cfg, list):
+            quality_cfg = {"checks": loaded_quality_cfg}
+else:
+    base_quality = cfg.get("quality")
+    if isinstance(base_quality, dict):
+        quality_cfg = base_quality.copy()
 
-dq = DqxRunner(spark, quality_cfg, enabled=bool(quality_cfg)) if quality_cfg else None
+# COMMAND ----------
 
 process_batch(
     spark,
     source=cfg["source"],
     transform=transform_to_silver,
     target=cfg["target"],
-    dq_runner=dq,
-    dq_in_transit_checks=quality_cfg.get("checks"),
-    dq_post_write_checks=quality_cfg.get("checks"),
-    dq_run_name="sales_bronze_to_silver",
+    dq_config=quality_cfg or {
+        "checks_table": "customer_sales.silver.quality_checks",
+        "quarantine_table": "customer_sales._silver.customer_quarantine",
+    },
 )
 # COMMAND ----------
