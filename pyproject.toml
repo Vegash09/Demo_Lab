@@ -8,16 +8,33 @@ readme = "README.md"
 packages = [{ include = "datalab_etl", from = "src" }]
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "^3.11"
 databricks-labs-dqx = ">=0.9.3"
 databricks-sdk = ">=0.67.0"
-delta-spark = "3.2.0"
-pyspark = "3.5.1"
+
+# Optional install groups exposed via extras
+pyspark = { version = "3.5.1", optional = true }
+delta-spark = { version = "3.2.0", optional = true }
+databricks-connect = { version = ">=15.4", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
 pytest-cov = "*"
 python-dotenv = "*"
+
+[tool.poetry.extras]
+pyspark = ["pyspark", "delta-spark"]
+dbconnect = ["databricks-connect"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+filterwarnings = [
+  "ignore:distutils Version classes are deprecated:DeprecationWarning",
+  "ignore:.*LooseVersion.*:DeprecationWarning",
+]
+markers = [
+  "dbconnect_only: marks tests that require Databricks Connect and a configured profile or host/token",
+]
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

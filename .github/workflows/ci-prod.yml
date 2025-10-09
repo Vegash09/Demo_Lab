@@ -1,0 +1,29 @@
+name: CI Prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: "Test type (pyspark|dbconnect)"
+        type: choice
+        options: [pyspark, dbconnect]
+        default: pyspark
+        required: true
+      python_version:
+        description: "Python version"
+        default: '3.12'
+        required: true
+      coverage_threshold:
+        description: "Coverage threshold percent"
+        default: '70'
+        required: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/common-ci.yml
+    secrets: inherit
+    with:
+      test_type: "${{ inputs.test_type }}"
+      python_version: "${{ inputs.python_version }}"
+      target_env: "prod"
+      coverage_threshold: "${{ inputs.coverage_threshold }}"
