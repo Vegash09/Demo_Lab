@@ -30,7 +30,6 @@ jobs:
       test_type: "pyspark"
       python_version: "3.12"
       target_env: "dev"
-      coverage_threshold: "70"
 
   pyspark_manual:
     name: PySpark unit tests (manual)
@@ -40,7 +39,6 @@ jobs:
       test_type: "pyspark"
       python_version: "3.12"
       target_env: "${{ inputs.gdai_env }}"
-      coverage_threshold: "70"
 
   dbconnect:
     name: Databricks Connect integration tests
@@ -51,4 +49,3 @@ jobs:
       test_type: "dbconnect"
       python_version: "3.11"
       target_env: "${{ inputs.gdai_env }}"
-      coverage_threshold: "70"

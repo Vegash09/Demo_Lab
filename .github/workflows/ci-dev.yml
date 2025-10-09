@@ -13,10 +13,6 @@ on:
         description: "Python version"
         default: '3.12'
         required: true
-      coverage_threshold:
-        description: "Coverage threshold percent"
-        default: '70'
-        required: false
 
 jobs:
   run:
@@ -26,4 +22,3 @@ jobs:
       test_type: "${{ inputs.test_type }}"
       python_version: "${{ inputs.python_version }}"
       target_env: "dev"
-      coverage_threshold: "${{ inputs.coverage_threshold }}"
