@@ -1,0 +1,54 @@
+name: "Setup Databricks (dbconnect)"
+description: "Install databricks-connect and export env for pytest dbconnect-only tests"
+inputs:
+  azure_client_id:
+    description: "Azure Client ID (optional, for az login if needed)"
+    required: false
+  azure_tenant_id:
+    description: "Azure Tenant ID (optional, for az login if needed)"
+    required: false
+  databricks_host:
+    description: "Databricks workspace URL (e.g., https://adb-***.databricks.com)"
+    required: false
+  cluster_id:
+    description: "Existing cluster ID to use for Databricks Connect"
+    required: false
+  profile:
+    description: "Databricks CLI config profile name (optional)"
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Install databricks-connect
+      shell: bash
+      run: |
+        set -euxo pipefail
+        if command -v uv >/dev/null 2>&1; then
+          uv pip install "databricks-connect>=15.4"
+        else
+          python -m pip install --upgrade pip
+          pip install "databricks-connect>=15.4"
+        fi
+
+    - name: Export Databricks environment for pytest
+      shell: bash
+      run: |
+        set -euxo pipefail
+        if [ -n "${{ inputs.databricks_host }}" ]; then
+          echo "DATABRICKS_HOST=${{ inputs.databricks_host }}" >> "$GITHUB_ENV"
+        fi
+        if [ -n "${{ inputs.cluster_id }}" ]; then
+          echo "DATABRICKS_CLUSTER_ID=${{ inputs.cluster_id }}" >> "$GITHUB_ENV"
+        fi
+        if [ -n "${{ inputs.profile }}" ]; then
+          echo "DATABRICKS_CONFIG_PROFILE=${{ inputs.profile }}" >> "$GITHUB_ENV"
+          echo "DATABRICKS_PROFILE=${{ inputs.profile }}" >> "$GITHUB_ENV"
+        fi
+        # Enable Spark Connect explicitly for safety
+        echo "PYSPARK_ENABLE_CONNECT=1" >> "$GITHUB_ENV"
+        echo "SPARK_CONNECT_MODE_ENABLED=1" >> "$GITHUB_ENV"
+
+    - name: Summary
+      shell: bash
+      run: |
+        echo "Databricks Connect setup complete. Host: ${DATABRICKS_HOST:-unset}, Profile: ${DATABRICKS_CONFIG_PROFILE:-unset}, Cluster: ${DATABRICKS_CLUSTER_ID:-unset}"

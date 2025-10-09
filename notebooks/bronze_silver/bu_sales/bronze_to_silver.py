@@ -1,5 +1,4 @@
 # Databricks notebook source
-from pathlib import Path
 from pyspark.sql import functions as F
 
 from datalab_etl import process_batch
@@ -11,14 +10,28 @@ try:  # Databricks provides ``spark`` automatically
     spark  # type: ignore[name-defined]
 except NameError:  # pragma: no cover - local unit testing fallback
     from datalab_etl.common.session import get_spark
-    spark = get_spark(force_local=True)
+    if globals().get("spark") is None:
+        spark = get_spark(force_local=True)
 
 # COMMAND ----------
 
-dbutils.widgets.text("config_path", "", "Config Path")
-dbutils.widgets.text("dq_config_path", "", "DQ Config Path")
-config_path = dbutils.widgets.get("config_path")
-dq_config_path = dbutils.widgets.get("dq_config_path")
+def _has_dbutils() -> bool:
+    try:
+        # DBUtils class may be importable locally, but the global 'dbutils' handle
+        # exists only on Databricks. Require the global to be present and not None.
+        from pyspark.dbutils import DBUtils  # type: ignore  # noqa: F401
+        return bool(globals().get("dbutils") is not None)
+    except Exception:
+        return False
+
+if _has_dbutils():
+    dbutils.widgets.text("config_path", "", "Config Path")
+    dbutils.widgets.text("dq_config_path", "", "DQ Config Path")
+    config_path = dbutils.widgets.get("config_path")
+    dq_config_path = dbutils.widgets.get("dq_config_path")
+else:
+    config_path = ""
+    dq_config_path = ""
 
 # COMMAND ----------
 
@@ -38,8 +51,10 @@ def transform_to_silver(df):
 
 # COMMAND ----------
 
-with open(config_path) as f:
-    cfg = json.load(f)
+cfg = {}
+if config_path:
+    with open(config_path) as f:
+        cfg = json.load(f)
 
 quality_cfg = {}
 if dq_config_path:
@@ -56,14 +71,18 @@ else:
 
 # COMMAND ----------
 
-process_batch(
-    spark,
-    source=cfg["source"],
-    transform=transform_to_silver,
-    target=cfg["target"],
-    dq_config=quality_cfg or {
-        "checks_table": "customer_sales.silver.quality_checks",
-        "quarantine_table": "customer_sales._silver.customer_quarantine",
-    },
-)
+def _run_main():
+    process_batch(
+        spark,
+        source=cfg["source"],
+        transform=transform_to_silver,
+        target=cfg["target"],
+        dq_config=quality_cfg or {
+            "checks_table": "customer_sales.silver.quality_checks",
+            "quarantine_table": "customer_sales._silver.customer_quarantine",
+        },
+    )
+
+if _has_dbutils():
+    _run_main()
 # COMMAND ----------

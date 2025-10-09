@@ -14,3 +14,6 @@ tests/tmp/
 .vscode/
 tmp/
 .pytest_cache/
+.__builtins__.pyi
+.env
+typings/

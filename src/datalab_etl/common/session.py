@@ -166,7 +166,13 @@ def get_spark(
         for key, value in extra_conf.items():
             builder = builder.config(key, value)
 
-    spark = builder.getOrCreate()
+    # Always use plain local Spark. Do not enable Spark Connect fallback.
+    builder = builder.master("local[*]")
+    try:
+        spark = builder.getOrCreate()
+    except Exception:
+        # Re-raise without attempting Spark Connect. The caller can handle skips.
+        raise
 
     # Reduce noise in local unit/integration tests (skip for Spark Connect)
     try:  # sparkContext is not available on Spark Connect sessions
