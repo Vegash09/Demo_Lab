@@ -16,6 +16,9 @@ on:
 jobs:
   run-common-steps:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     environment: ${{ inputs.target_env }}
     env:
       ENV: ${{ inputs.target_env }}

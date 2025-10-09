@@ -21,6 +21,10 @@ on:
         required: false
         default: "dev"
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   pyspark_pr:
     name: PySpark unit tests (PR/push)
