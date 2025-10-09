@@ -38,7 +38,7 @@ jobs:
     with:
       test_type: "pyspark"
       python_version: "3.12"
-      target_env: "${{ inputs.gdai_env }}"
+      target_env: "dev"
 
   dbconnect:
     name: Databricks Connect integration tests
@@ -48,4 +48,4 @@ jobs:
     with:
       test_type: "dbconnect"
       python_version: "3.11"
-      target_env: "${{ inputs.gdai_env }}"
+      target_env: "dev"
