@@ -63,7 +63,7 @@ jobs:
         run: |
           set -euxo pipefail
           # Exclude dbconnect-only tests, run unit + local integration
-          uv run pytest -m "not dbconnect_only" -q
+          .venv/bin/python -m pytest -m "not dbconnect_only" -q
 
       - name: Run tests (dbconnect)
         if: ${{ inputs.test_type == 'dbconnect' }}
@@ -72,4 +72,4 @@ jobs:
           DATABRICKS_TOKEN: "${{ secrets.DATABRICKS_TOKEN }}"
         run: |
           set -euxo pipefail
-          uv run pytest -m dbconnect_only notebooks/tests/integration_testing -q
+          .venv/bin/python -m pytest -m dbconnect_only notebooks/tests/integration_testing -q
