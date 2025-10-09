@@ -2,16 +2,16 @@ name: Databricks setup
 description: Set up Databricks configuration
 
 inputs:
-  azure-client-id:
+  azure_client_id:
     description: Azure Client ID
     required: true
-  azure-tenant-id:
+  azure_tenant_id:
     description: Azure Tenant ID
     required: true
-  databricks-host:
+  databricks_host:
     description: Databricks Host
     required: true
-  cluster-id:
+  cluster_id:
     description: Databricks Cluster ID
     required: true
   profile:
@@ -24,8 +24,8 @@ runs:
     - name: Login with federated credentials
       uses: Azure/login@v2
       with:
-        client-id: ${{ inputs.azure-client-id }}
-        tenant-id: ${{ inputs.azure-tenant-id }}
+        client-id: ${{ inputs.azure_client_id }}
+        tenant-id: ${{ inputs.azure_tenant_id }}
         allow-no-subscriptions: true
 
     - name: Define Databricks configuration
@@ -34,8 +34,8 @@ runs:
         DATABRICKS_AAD_TOKEN=$(az account get-access-token --resource 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d | jq -r '.accessToken')
         
         echo "[${{ inputs.profile }}]
-        host = ${{ inputs.databricks-host }}
-        cluster_id = ${{ inputs.cluster-id }}
+        host = ${{ inputs.databricks_host }}
+        cluster_id = ${{ inputs.cluster_id }}
         token = $DATABRICKS_AAD_TOKEN" > ~/.databrickscfg
 
     - name: Setup Databricks CLI
