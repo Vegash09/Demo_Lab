@@ -70,16 +70,9 @@ jobs:
 
       - name: Run tests (dbconnect)
         if: ${{ inputs.test_type == 'dbconnect' }}
-        uses: ./.github/actions/setup-databricks
-        
-        with:
-          azure_client_id: ${{ vars.AZURE_CLIENT_ID }}
-          azure_tenant_id: ${{ vars.AZURE_TENANT_ID }}
-          databricks_host: ${{ vars.DATABRICKS_HOST }}
-          cluster_id: ${{ vars.CLUSTER_ID }}
-          profile: ${{ inputs.target_env }}
-
-          shell: bash
-          run: |
-            set -euxo pipefail
-            .venv/bin/python -m pytest -m dbconnect_only notebooks/tests/integration_testing -q
+        shell: bash
+        env:
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          set -euxo pipefail
+          .venv/bin/python -m pytest -m dbconnect_only notebooks/tests/integration_testing -q
