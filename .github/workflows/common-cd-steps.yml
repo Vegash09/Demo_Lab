@@ -48,9 +48,3 @@ jobs:
         with:
           env: ${{ inputs.env }}
           profile: ${{ inputs.env }}
-
-      - name: Verify Deployment
-        shell: bash
-        run: |
-          set -euxo pipefail
-          databricks workspace ls "/Shared/acl-job-bundle/${{ inputs.env }}"

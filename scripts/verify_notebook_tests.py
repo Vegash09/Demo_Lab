@@ -5,7 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NB_DIR = ROOT / "notebooks"
-TESTS_DIR = NB_DIR / "tests" / "unit_testing"
+NB_TESTS_ROOT = NB_DIR / "tests"
+TESTS_DIR = NB_TESTS_ROOT / "unit_testing"
 PIPELINES_DIR = ROOT / "pipelines"
 CONFIG_DIR = ROOT / "config"
 
@@ -13,8 +14,8 @@ CONFIG_DIR = ROOT / "config"
 def notebooks_missing_tests() -> list[tuple[Path, Path]]:
     missing: list[tuple[Path, Path]] = []
     for nb_path in NB_DIR.rglob("*.py"):
-        # skip tests themselves and non-notebook support files
-        if TESTS_DIR in nb_path.parents:
+        # Skip anything under notebooks/tests (both unit and integration tests)
+        if NB_TESTS_ROOT in nb_path.parents:
             continue
         rel = nb_path.relative_to(NB_DIR)
         expected_test = TESTS_DIR / rel.parent / f"test_{rel.name}"
@@ -29,7 +30,8 @@ def notebooks_missing_pipeline_refs() -> list[Path]:
     pipeline_texts = [p.read_text() for p in pipeline_files]
 
     for nb_path in NB_DIR.rglob("*.py"):
-        if TESTS_DIR in nb_path.parents:
+        # Skip anything under notebooks/tests (both unit and integration tests)
+        if NB_TESTS_ROOT in nb_path.parents:
             continue
         rel_path = nb_path.as_posix().split(str(ROOT.as_posix()) + "/")[-1]
         # Accept workspace-style references (files/notebooks/...), with or without extension
@@ -78,7 +80,8 @@ def notebooks_missing_configs() -> list[tuple[Path, Path]]:
     """Ensure each notebook has a mirrored JSON config under config/<stage>/<bu>/<name>.json"""
     missing: list[tuple[Path, Path]] = []
     for nb_path in NB_DIR.rglob("*.py"):
-        if TESTS_DIR in nb_path.parents:
+        # Skip anything under notebooks/tests (both unit and integration tests)
+        if NB_TESTS_ROOT in nb_path.parents:
             continue
         # notebooks/<stage>/<bu>/<name>.py -> config/<stage>/<bu>/<name>.json
         rel = nb_path.relative_to(NB_DIR)
