@@ -1,0 +1,81 @@
+# name: Common CI steps
+# on:
+#   workflow_call:
+#     inputs:
+#       test_type:
+#         required: true
+#         type: string
+#       python_version:
+#         required: true
+#         type: string
+#       target_env:
+#         required: true
+#         type: string
+
+# jobs:
+#   run-common-steps:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       id-token: write
+#       contents: read
+#     environment: ${{ inputs.target_env }}
+#     env:
+#       ENV: ${{ inputs.target_env }}
+#       DATABRICKS_PROFILE: ${{ inputs.target_env }}
+#       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+#       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+#       DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+#       CLUSTER_ID: ${{ vars.CLUSTER_ID }}
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Python and uv setup
+#         uses: ./.github/actions/setup-python
+#         with:
+#           python_version: ${{ inputs.python_version }}
+
+#       - name: Databricks setup (dbconnect only)
+#         if: ${{ inputs.test_type == 'dbconnect' }}
+#         uses: ./.github/actions/setup-databricks
+#         with:
+#           azure_client_id: ${{ env.AZURE_CLIENT_ID }}
+#           azure_tenant_id: ${{ env.AZURE_TENANT_ID }}
+#           databricks_host: ${{ env.DATABRICKS_HOST }}
+#           cluster_id: ${{ env.CLUSTER_ID }}
+#           profile: ${{ inputs.target_env }}
+
+#       - name: Install dependencies (pyspark)
+#         if: ${{ inputs.test_type == 'pyspark' }}
+#         shell: bash
+#         run: |
+#           set -euxo pipefail
+#           # Install project with pyspark extras and test deps
+#           uv pip install -e ".[pyspark]"
+#           uv pip install pytest python-dotenv
+
+#       - name: Install dependencies (dbconnect)
+#         if: ${{ inputs.test_type == 'dbconnect' }}
+#         shell: bash
+#         run: |
+#           set -euxo pipefail
+#           # Install project with dbconnect extras and test deps (no local pyspark)
+#           uv pip install -e ".[dbconnect]"
+#           uv pip install pytest python-dotenv
+
+#       - name: Run tests (pyspark)
+#         if: ${{ inputs.test_type == 'pyspark' }}
+#         shell: bash
+#         run: |
+#           set -euxo pipefail
+#           # Exclude dbconnect-only tests, run unit + local integration
+#           .venv/bin/python -m pytest -m "not dbconnect_only" notebooks/tests/unit_testing -q
+
+#       - name: Run tests (dbconnect)
+#         if: ${{ inputs.test_type == 'dbconnect' }}
+#         shell: bash
+#         env:
+#           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+#         run: |
+#           set -euxo pipefail
+#           .venv/bin/python -m pytest -m dbconnect_only notebooks/tests/integration_testing -q

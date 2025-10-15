@@ -1,0 +1,60 @@
+name: "Databricks Setup"
+description: "Login to Azure with OIDC and configure Databricks CLI profile for tests/deploys"
+inputs:
+  azure-client-id:
+    description: "Azure App Registration (Service Principal) Client ID"
+    required: true
+  azure-tenant-id:
+    description: "Azure Directory (Tenant) ID"
+    required: true
+  databricks-host:
+    description: "Databricks workspace URL, e.g. https://adb-xxx.azuredatabricks.net"
+    required: true
+  cluster-id:
+    description: "Databricks cluster ID (for Connect/tests)"
+    required: true
+  profile:
+    description: "Databricks CLI profile name to write in ~/.databrickscfg"
+    required: true
+  auth-type:
+    description: "Authentication type (SERVICE_PRINCIPAL for OIDC)"
+    default: "SERVICE_PRINCIPAL"
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Ensure required permissions
+      shell: bash
+      run: |
+        : # Requires workflow permissions: id-token: write, contents: read
+
+    - name: Azure login (OIDC)
+      uses: Azure/login@v2
+      with:
+        client-id: ${{ inputs.azure-client-id }}
+        tenant-id: ${{ inputs.azure-tenant-id }}
+        allow-no-subscriptions: true
+
+    - name: Write Databricks profile via AAD access token
+      shell: bash
+      run: |
+        set -euo pipefail
+        token=$(az account get-access-token --resource 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d | jq -r '.accessToken')
+        cfg="$HOME/.databrickscfg"
+        mkdir -p "$(dirname "$cfg")"
+        {
+          echo "[${{ inputs.profile }}]"
+          echo "host = ${{ inputs.databricks-host }}"
+          echo "cluster_id = ${{ inputs.cluster-id }}"
+          echo "token = $token"
+        } > "$cfg"
+        chmod 600 "$cfg"
+        # Export commonly used envs for downstream steps
+        echo "DATABRICKS_PROFILE=${{ inputs.profile }}" >> "$GITHUB_ENV"
+        echo "DATABRICKS_CONFIG_PROFILE=${{ inputs.profile }}" >> "$GITHUB_ENV"
+        echo "DATABRICKS_HOST=${{ inputs.databricks-host }}" >> "$GITHUB_ENV"
+        echo "DATABRICKS_CLUSTER_ID=${{ inputs.cluster-id }}" >> "$GITHUB_ENV"
+
+    - name: Install Databricks CLI
+      uses: databricks/setup-cli@main
+
