@@ -42,10 +42,13 @@ runs:
         token=$(az account get-access-token --resource 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d | jq -r '.accessToken')
         cfg="$HOME/.databrickscfg"
         mkdir -p "$(dirname "$cfg")"
+        cluster_id_input='${{ inputs.cluster-id }}'
         {
           echo "[${{ inputs.profile }}]"
           echo "host = ${{ inputs.databricks-host }}"
-          echo "cluster_id = ${{ inputs.cluster-id }}"
+          if [ -n "${cluster_id_input}" ]; then
+            echo "cluster_id = ${cluster_id_input}"
+          fi
           echo "token = $token"
         } > "$cfg"
         chmod 600 "$cfg"
@@ -53,8 +56,12 @@ runs:
         echo "DATABRICKS_PROFILE=${{ inputs.profile }}" >> "$GITHUB_ENV"
         echo "DATABRICKS_CONFIG_PROFILE=${{ inputs.profile }}" >> "$GITHUB_ENV"
         echo "DATABRICKS_HOST=${{ inputs.databricks-host }}" >> "$GITHUB_ENV"
-        echo "DATABRICKS_CLUSTER_ID=${{ inputs.cluster-id }}" >> "$GITHUB_ENV"
+        if [ -n "${cluster_id_input}" ]; then
+          echo "DATABRICKS_CLUSTER_ID=${cluster_id_input}" >> "$GITHUB_ENV"
+        else
+          # Fall back to serverless if no cluster id provided
+          echo "DATABRICKS_USE_SERVERLESS=true" >> "$GITHUB_ENV"
+        fi
 
     - name: Install Databricks CLI
       uses: databricks/setup-cli@main
-
