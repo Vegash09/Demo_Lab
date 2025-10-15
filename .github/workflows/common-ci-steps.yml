@@ -1,0 +1,80 @@
+name: Common CI Steps
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  pyspark-tests:
+    name: Validate and unit test (PySpark)
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }}
+    env:
+      ENV: ${{ inputs.env }}
+      DATABRICKS_PROFILE: ${{ inputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies (pyspark)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          pip install -e ".[pyspark]" pytest python-dotenv
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pytest -m "not dbconnect_only" --ignore=notebooks/tests/integration_testing -q
+
+  dbconnect-tests:
+    name: Integration tests (dbconnect)
+    runs-on: ubuntu-latest
+    needs: pyspark-tests
+    environment: ${{ inputs.env }}
+    env:
+      ENV: ${{ inputs.env }}
+      DATABRICKS_PROFILE: ${{ inputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies (dbconnect)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          pip install -e ".[dbconnect]" pytest python-dotenv
+
+      - name: Setup Databricks
+        uses: ./.github/actions/databricks-setup
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          databricks-host: ${{ secrets.DATABRICKS_HOST }}
+          cluster-id: ${{ secrets.DATABRICKS_CLUSTER_ID }}
+          profile: ${{ inputs.env }}
+          auth-type: SERVICE_PRINCIPAL
+
+      - name: Run integration tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pytest -m dbconnect_only notebooks/tests/integration_testing -q

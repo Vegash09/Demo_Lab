@@ -1,0 +1,56 @@
+name: Common CD Steps
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }}
+    env:
+      ENV: ${{ inputs.env }}
+      DATABRICKS_PROFILE: ${{ inputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install packaging deps
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          pip install build pyyaml
+
+      - name: Setup Databricks
+        uses: ./.github/actions/databricks-setup
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          databricks-host: ${{ secrets.DATABRICKS_HOST }}
+          cluster-id: ${{ secrets.DATABRICKS_CLUSTER_ID }}
+          profile: ${{ inputs.env }}
+          auth-type: SERVICE_PRINCIPAL
+
+      - name: DAB deployment
+        uses: ./.github/actions/deploy-dab
+        with:
+          env: ${{ inputs.env }}
+          profile: ${{ inputs.env }}
+
+      - name: Verify Deployment
+        shell: bash
+        run: |
+          set -euxo pipefail
+          databricks workspace ls "/Shared/acl-job-bundle/${{ inputs.env }}"
