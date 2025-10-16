@@ -12,6 +12,8 @@ except NameError:
     # Local development: use Databricks Connect
     spark = get_spark(databricks_profile="dev_diggi")
 
+    
+
 # COMMAND ----------
 
 config_path = get_widget_value(
