@@ -1,37 +1,29 @@
 # Databricks notebook source
 from pyspark.sql import functions as F
 
-from datalab_etl import process_batch
-import json
+from datalab_etl import process_batch, get_spark, get_widget_value, load_config, has_dbutils
 
 # COMMAND ----------
 
-try:  # Databricks provides ``spark`` automatically
-    spark  # type: ignore[name-defined]
-except NameError:  # pragma: no cover - local unit testing fallback
-    from datalab_etl.common.session import get_spark
-    if globals().get("spark") is None:
-        spark = get_spark(force_local=True)
+# Get SparkSession (Databricks Connect for local, runtime session in Databricks)
+try:
+    spark  # type: ignore[name-defined]  # Check if Databricks provides spark
+except NameError:
+    # Local development: use Databricks Connect
+    spark = get_spark(databricks_profile="dev_diggi")
 
 # COMMAND ----------
 
-def _has_dbutils() -> bool:
-    try:
-        # DBUtils class may be importable locally, but the global 'dbutils' handle
-        # exists only on Databricks. Require the global to be present and not None.
-        from pyspark.dbutils import DBUtils  # type: ignore  # noqa: F401
-        return bool(globals().get("dbutils") is not None)
-    except Exception:
-        return False
+config_path = get_widget_value(
+    name="config_path",
+    default="/Users/Nivethan1/datalab/config/bronze_silver/bu_sales/bronze_to_silver.json",
+    label="Config Path"
+)
 
-if _has_dbutils():
-    dbutils.widgets.text("config_path", "", "Config Path")
-    dbutils.widgets.text("dq_config_path", "", "DQ Config Path")
-    config_path = dbutils.widgets.get("config_path")
-    dq_config_path = dbutils.widgets.get("dq_config_path")
-else:
-    config_path = ""
-    dq_config_path = ""
+# COMMAND ----------
+
+cfg = load_config(config_path)
+dq_cfg = cfg.get("quality", {})
 
 # COMMAND ----------
 
@@ -51,38 +43,13 @@ def transform_to_silver(df):
 
 # COMMAND ----------
 
-cfg = {}
-if config_path:
-    with open(config_path) as f:
-        cfg = json.load(f)
-
-quality_cfg = {}
-if dq_config_path:
-    with open(dq_config_path) as dq_config_file:
-        loaded_quality_cfg = json.load(dq_config_file)
-        if isinstance(loaded_quality_cfg, dict):
-            quality_cfg = loaded_quality_cfg
-        elif isinstance(loaded_quality_cfg, list):
-            quality_cfg = {"checks": loaded_quality_cfg}
-else:
-    base_quality = cfg.get("quality")
-    if isinstance(base_quality, dict):
-        quality_cfg = base_quality.copy()
-
-# COMMAND ----------
-
-def _run_main():
+if has_dbutils() or cfg:
     process_batch(
         spark,
-        source=cfg["source"],
+        source=cfg.get("source", {}),
         transform=transform_to_silver,
-        target=cfg["target"],
-        dq_config=quality_cfg or {
-            "checks_table": "customer_sales.silver.quality_checks",
-            "quarantine_table": "customer_sales._silver.customer_quarantine",
-        },
+        target=cfg.get("target", {}),
+        dq_config=dq_cfg
     )
 
-if _has_dbutils():
-    _run_main()
 # COMMAND ----------

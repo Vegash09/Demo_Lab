@@ -18,9 +18,15 @@ def notebooks_missing_tests() -> list[tuple[Path, Path]]:
         if NB_TESTS_ROOT in nb_path.parents:
             continue
         rel = nb_path.relative_to(NB_DIR)
+        
+        # Accept both naming conventions:
+        # - test_<name>.py (old)
+        # - test_<name>_unit.py (new - to avoid pytest import conflicts)
         expected_test = TESTS_DIR / rel.parent / f"test_{rel.name}"
-        if not expected_test.exists():
-            missing.append((nb_path, expected_test))
+        expected_test_unit = TESTS_DIR / rel.parent / f"test_{rel.stem}_unit.py"
+        
+        if not expected_test.exists() and not expected_test_unit.exists():
+            missing.append((nb_path, expected_test_unit))
     return missing
 
 
@@ -58,21 +64,25 @@ def tests_missing_unit_tests() -> list[Path]:
     'def test_' (pytest discovery convention).
     """
     offenders: list[Path] = []
-    for test_path in TESTS_DIR.rglob("test_*.py"):
-        try:
-            text = test_path.read_text(encoding="utf-8")
-        except Exception:
-            offenders.append(test_path)
+    # Check both unit_testing and integration_testing directories
+    for test_dir in [NB_TESTS_ROOT / "unit_testing", NB_TESTS_ROOT / "integration_testing"]:
+        if not test_dir.exists():
             continue
-        # crude but effective: look for at least one function def named test_*
-        has_test = False
-        for line in text.splitlines():
-            s = line.strip()
-            if s.startswith("def test_"):
-                has_test = True
-                break
-        if not has_test:
-            offenders.append(test_path)
+        for test_path in test_dir.rglob("test_*.py"):
+            try:
+                text = test_path.read_text(encoding="utf-8")
+            except Exception:
+                offenders.append(test_path)
+                continue
+            # crude but effective: look for at least one function def named test_*
+            has_test = False
+            for line in text.splitlines():
+                s = line.strip()
+                if s.startswith("def test_"):
+                    has_test = True
+                    break
+            if not has_test:
+                offenders.append(test_path)
     return offenders
 
 

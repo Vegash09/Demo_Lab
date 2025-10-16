@@ -6,8 +6,6 @@ resources:
       parameters:
         - name: config_path
           default: "${workspace.root_path}/files/config/bronze_silver/bu_sales/bronze_to_silver.json"
-        - name: dq_config_path
-          default: "${workspace.root_path}/files/config/bronze_silver/bu_sales/bronze_to_silver_quality.json"
 
       tasks:
         - task_key: bronze_to_silver
@@ -20,8 +18,7 @@ resources:
             notebook_path: "${workspace.root_path}/files/notebooks/bronze_silver/bu_sales/bronze_to_silver"
             source: WORKSPACE
             base_parameters:
-              notebook.parameters.config_path: "{{ job.parameters.config_path }}"
-              notebook.parameters.dq_config_path: "{{ job.parameters.dq_config_path }}"
+              config_path: "{{ job.parameters.config_path }}"
             
 
       job_clusters:

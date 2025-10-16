@@ -19,6 +19,55 @@ def _ensure_path(path_value: str) -> str:
     return path.expanduser().as_posix() if path_value.startswith("~") else path_value
 
 
+def _normalize_table_identifier(table_name: str) -> str:
+    """Normalize a table identifier for Unity Catalog compatibility.
+    
+    Ensures proper formatting of table names for Spark operations.
+    Supports both two-level (schema.table) and three-level (catalog.schema.table) names.
+    
+    Parameters
+    ----------
+    table_name : str
+        Table identifier (may be two or three-level, with or without backticks)
+        
+    Returns
+    -------
+    str
+        Normalized table identifier that Spark can handle.
+        For three-level names, ensures proper quoting.
+        For two-level names, returns unchanged.
+        
+    Examples
+    --------
+    >>> _normalize_table_identifier("catalog.schema.table")
+    "catalog.schema.table"
+    
+    >>> _normalize_table_identifier("`catalog`.`_schema`.`table`")
+    "`catalog`.`_schema`.`table`"
+    
+    >>> _normalize_table_identifier("customer_sales._bronze.customer")
+    "`customer_sales`.`_bronze`.`customer`"
+    """
+    if not table_name:
+        return table_name
+    
+    # If already using backticks consistently, return as-is
+    if table_name.startswith("`") and "`.`" in table_name:
+        return table_name
+    
+    # Remove any existing backticks for parsing
+    clean_name = table_name.replace("`", "")
+    parts = clean_name.split(".")
+    
+    # Three-level namespace: catalog.schema.table
+    # Add backticks to handle special characters (like underscore prefix in schema names)
+    if len(parts) == 3:
+        return f"`{parts[0]}`.`{parts[1]}`.`{parts[2]}`"
+    
+    # Two-level or single-level: return as-is
+    return table_name
+
+
 def read_dataset(spark: SparkSession, source_cfg: Dict[str, Any], *, streaming: bool = False) -> DataFrame:
     """Load a dataset from a path or table based on ``source_cfg``.
 
@@ -27,6 +76,8 @@ def read_dataset(spark: SparkSession, source_cfg: Dict[str, Any], *, streaming: 
     - options: dict of read options
     - path: filesystem path (for external data)
     - table: catalog table name (managed or external table)
+             Supports both two-level (schema.table) and three-level (catalog.schema.table) names.
+             For three-level names, automatically sets the catalog context.
     """
 
     fmt = source_cfg.get("format", "delta")
@@ -40,12 +91,14 @@ def read_dataset(spark: SparkSession, source_cfg: Dict[str, Any], *, streaming: 
     if streaming:
         reader = spark.readStream.format(fmt).options(**options)
         if table:
-            return spark.readStream.table(table)
+            normalized_table = _normalize_table_identifier(table)
+            return spark.readStream.table(normalized_table)
         return reader.load(_ensure_path(path))
 
     reader = spark.read.format(fmt).options(**options)
     if table:
-        return spark.table(table)
+        normalized_table = _normalize_table_identifier(table)
+        return spark.table(normalized_table)
     return reader.load(_ensure_path(path))
 
 
@@ -109,10 +162,12 @@ def write_dataset(df: DataFrame, target_cfg: Dict[str, Any]) -> None:
         writer = writer.partitionBy(*partition_cols)
 
     if table and not use_path_fallback:
+        # Normalize table name for Unity Catalog three-level namespace support
+        normalized_table = _normalize_table_identifier(table)
         # External table support by providing path option
         if external and path:
             writer = writer.option("path", _ensure_path(path))
-        writer.saveAsTable(table)
+        writer.saveAsTable(normalized_table)
         return
 
     # Path-based writes (explicit path or local fallback)
@@ -171,9 +226,11 @@ def _batch_writer(target_cfg: Dict[str, Any]):
             writer = writer.partitionBy(*partition_cols)
 
         if table:
+            # Normalize table name for Unity Catalog three-level namespace support
+            normalized_table = _normalize_table_identifier(table)
             if effective_cfg.get("external") and path:
                 writer = writer.option("path", _ensure_path(path))
-            writer.saveAsTable(table)
+            writer.saveAsTable(normalized_table)
         else:
             writer.save(_ensure_path(path))
 
@@ -255,9 +312,11 @@ def _delta_merge_upsert(df: DataFrame, target_cfg: Dict[str, Any]) -> None:
     # Build merge target
     fmt = str(target_cfg.get("format", "delta"))
     if table and not (not is_databricks_runtime() and not is_databricks_connect_configured()):
+        # Normalize table name for Unity Catalog three-level namespace support
+        normalized_table = _normalize_table_identifier(table)
         # Real catalog table on Databricks or when Connect is configured
         try:
-            target = DeltaTable.forName(spark, table)
+            target = DeltaTable.forName(spark, normalized_table)
         except Exception:
             empty_df = df.limit(0)
             writer = empty_df.write.format(fmt)
@@ -266,8 +325,8 @@ def _delta_merge_upsert(df: DataFrame, target_cfg: Dict[str, Any]) -> None:
                 writer = writer.partitionBy(*partition_cols)
             if options:
                 writer = writer.options(**options)
-            writer.mode("overwrite").saveAsTable(table)
-            target = DeltaTable.forName(spark, table)
+            writer.mode("overwrite").saveAsTable(normalized_table)
+            target = DeltaTable.forName(spark, normalized_table)
     else:
         # Local path-based target
         resolved_path = _ensure_path(path) if path else _fallback_table_path(table or "table", _local_warehouse_base())

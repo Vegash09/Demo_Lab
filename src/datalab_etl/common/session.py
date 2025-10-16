@@ -61,6 +61,11 @@ def _get_databricks_connect_session(
     - Delta support is provided by the remote cluster; local Delta configs are not applied here.
     - ``extra_conf`` is forwarded to the builder via ``config``.
     """
+    # Suppress databricks-connect warnings during session creation
+    import warnings
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings("ignore", message=".*Unverified HTTPS request.*")
+    
     from databricks.connect import DatabricksSession  # type: ignore
 
     builder = DatabricksSession.builder
@@ -79,12 +84,24 @@ def _get_databricks_connect_session(
         builder = builder.token(token)
 
     builder = builder.config("spark.app.name", app_name)
+    
+    # Reduce logging noise for Databricks Connect
+    builder = builder.config("spark.driver.extraJavaOptions", "-Dlog4j.logLevel=error")
+    builder = builder.config("spark.executor.extraJavaOptions", "-Dlog4j.logLevel=error")
 
     if extra_conf:
         for key, value in extra_conf.items():
             builder = builder.config(key, value)
 
-    return builder.getOrCreate()
+    spark = builder.getOrCreate()
+    
+    # Set log level to ERROR to minimize output
+    try:
+        spark.sparkContext.setLogLevel("ERROR")
+    except Exception:
+        LOGGER.debug("Could not set log level for Databricks Connect session")
+    
+    return spark
 
 
 def get_spark(
@@ -150,16 +167,23 @@ def get_spark(
     builder = SparkSession.builder.appName(app_name)
 
     if enable_delta:
+        # Delta Lake configuration for local development
+        # Note: For PySpark 4.x, Delta jars must be added via spark.jars.packages or manually
         builder = (
             builder.config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
             .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+            # Add Delta package for local development (downloads Delta jars automatically)
+            .config("spark.jars.packages", "io.delta:delta-spark_2.13:4.0.0")
         )
 
-    # Local-friendly defaults
+    # Local-friendly defaults (quiet and fast for development/testing)
     builder = (
         builder.config("spark.sql.shuffle.partitions", "4")
         .config("spark.ui.showConsoleProgress", "false")
         .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.ui.enabled", "false")  # Disable Spark UI for cleaner output
+        .config("spark.driver.extraJavaOptions", "-Dlog4j.logLevel=warn")
+        .config("spark.executor.extraJavaOptions", "-Dlog4j.logLevel=warn")
     )
 
     if extra_conf:
@@ -178,7 +202,7 @@ def get_spark(
     try:  # sparkContext is not available on Spark Connect sessions
         sc = getattr(spark, "sparkContext", None)
         if sc is not None:
-            sc.setLogLevel("WARN")
+            sc.setLogLevel("ERROR")  # Only show errors, not warnings
     except Exception:  # pragma: no cover - environment dependent
         LOGGER.debug("Skipped setting log level; Spark Connect session has no sparkContext")
 
