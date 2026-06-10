@@ -28,7 +28,7 @@ make install            # uv sync → .venv from uv.lock
 make enable-githooks    # protected-files pre-commit guard
 make lint test          # ruff + pytest (local Spark)
 
-databricks auth login --host https://adb-XXXX.azuredatabricks.net
+databricks auth login --host https://dbc-425be768-f138.cloud.databricks.com
 make validate           # bundle validate -t dev
 make deploy             # deploy to dev (resources prefixed [dev <you>])
 make run                # trigger a refresh of the sales_etl pipeline

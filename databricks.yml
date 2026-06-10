@@ -73,14 +73,14 @@ targets:
     mode: development
     default: true
     workspace:
-      host: https://adb-7488500312027058.18.azuredatabricks.net/
+      host: https://dbc-425be768-f138.cloud.databricks.com
     variables:
       catalog: customer_sales
 
   stage:
     mode: production
     workspace:
-      host: https://adb-7488500312027058.18.azuredatabricks.net/
+      host: https://dbc-425be768-f138.cloud.databricks.com
       root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
     variables:
       catalog: customer_sales_stage
@@ -92,7 +92,7 @@ targets:
   prod:
     mode: production
     workspace:
-      host: https://adb-7488500312027058.18.azuredatabricks.net/
+      host: https://dbc-425be768-f138.cloud.databricks.com
       root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
     variables:
       catalog: customer_sales_prod

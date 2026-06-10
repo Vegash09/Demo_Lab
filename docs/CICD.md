@@ -24,19 +24,35 @@ Reusable pieces:
 
 ## One-time setup per target
 
+This repo deliberately reuses the **same workspace + OIDC service principal**
+as the `klarna-access-agent` and `databricks_dqx_agent` repos:
+
+- workspace: `https://dbc-425be768-f138.cloud.databricks.com`
+- SP application ID: `437346a1-0b53-418a-80d4-abaf2586ed97`
+  (`access-management-sp-rulebook`)
+
 For each target (`dev`, `stage`, `prod`):
 
 1. **Service principal** (Databricks Account Console → Service principals):
-   create or reuse one with permissions to deploy bundles to the workspace
-   (and CREATE/USE on the target catalog). Note its **Application ID**.
-2. **Federation policy** on that service principal:
-   - issuer: `https://token.actions.githubusercontent.com`
-   - audience: `<DATABRICKS_HOST>/oidc/v1/token`
-   - subject: `repo:<owner>/<repo>:environment:<target>`
+   the shared SP above; it needs permission to deploy bundles to the
+   workspace (and CREATE/USE on the target catalog).
+2. **Federation policy** on that service principal — one per target, because
+   the subject embeds the repo and GitHub Environment:
+
+   ```bash
+   databricks account service-principal-federation-policy create <SP_NUMERIC_ID> --json '{
+     "oidc_policy": {
+       "issuer": "https://token.actions.githubusercontent.com",
+       "audiences": ["<DATABRICKS_ACCOUNT_ID>"],
+       "subject": "repo:dediggibyte/datalab:environment:<target>"
+     }
+   }'
+   ```
 
    The subject is environment-style because the CI/CD jobs declare
-   `environment: <target>`. If a deploy fails with `TOKEN_SUBJECT_INVALID`,
-   copy the exact subject/audience strings from the error into the policy.
+   `environment: <target>`. If a deploy fails with `TOKEN_SUBJECT_INVALID` /
+   `TOKEN_INVALID`, copy the exact subject/audience strings from the error
+   into the policy.
 3. **GitHub Environment** named exactly `<target>`
    (repo Settings → Environments):
    - secrets: `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` (the SP application ID)
