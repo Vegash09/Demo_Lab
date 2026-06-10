@@ -1,7 +1,9 @@
-"""Custom dqx check functions, auto-discovered by the framework registry.
+"""Custom dqx check functions for the sales domain.
 
-A check function returns a dqx condition Column via ``make_condition``; YAML
-references it by function name exactly like a built-in dqx check:
+Declared to the framework through the layer YAML's ``imports:`` list
+(``imports: [sales_etl.checks]``). A check function returns a dqx condition
+Column via ``make_condition``; YAML references it by function name exactly
+like a built-in dqx check:
 
     - name: email_has_corporate_domain
       criticality: warn

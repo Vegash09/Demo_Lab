@@ -47,24 +47,31 @@ def test_sales_graph_matches_handwritten_pipeline(configured_spark):
 
 
 def test_late_binding_regression(configured_spark, tmp_path):
-    # Two datasets in one layer: each generated closure must capture ITS spec,
+    # Two tables in one layer: each generated closure must capture ITS spec,
     # not the last loop iteration's (the classic generator bug).
-    (tmp_path / "gold.yml").write_text(
+    (tmp_path / "domain.yml").write_text(
         """
 schema_version: 1
 domain: sales
-layer: gold
-defaults:
-  schema_conf: datalab.gold_schema
-datasets:
-  - name: agg_one
-    source: {kind: table, name: customers, schema_conf: datalab.silver_schema}
-    transform: [{function: framework.select, args: {columns: [city]}}]
-    target: {kind: materialized_view}
-  - name: agg_two
-    source: {kind: table, name: customers, schema_conf: datalab.silver_schema}
-    transform: [{function: framework.select, args: {columns: [age]}}]
-    target: {kind: materialized_view}
+layers:
+  gold: {schema_conf: datalab.gold_schema}
+"""
+    )
+    (tmp_path / "gold").mkdir()
+    (tmp_path / "gold" / "agg_one.yml").write_text(
+        """
+name: agg_one
+source: {kind: table, name: customers, schema_conf: datalab.silver_schema}
+transform: [{function: framework.select, args: {columns: [city]}}]
+target: {kind: materialized_view}
+"""
+    )
+    (tmp_path / "gold" / "agg_two.yml").write_text(
+        """
+name: agg_two
+source: {kind: table, name: customers, schema_conf: datalab.silver_schema}
+transform: [{function: framework.select, args: {columns: [age]}}]
+target: {kind: materialized_view}
 """
     )
     captured = capture_graph(configured_spark, tmp_path)

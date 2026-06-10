@@ -9,42 +9,52 @@ from pyspark.sql import functions as F
 
 from datalab.framework.context import ResolveContext
 from datalab.framework.dq import STATIC_RUN_TIME, DQAdapter, summarize_dq_results
-from datalab.framework.loader import load_layer_config
+from datalab.framework.loader import load_domain_configs
 
-SILVER = """
+DOMAIN = """
 schema_version: 1
 domain: sales
-layer: silver
-defaults:
-  schema_conf: datalab.silver_schema
+layers:
+  silver: {schema_conf: datalab.silver_schema}
 dq:
   result_columns: {errors: _errs, warnings: _warns}
-datasets:
-  - name: customers
-    source: {kind: table, name: customers_raw, as_stream: true}
+"""
+
+CUSTOMERS = """
+schema_version: 1
+name: customers
+source: {kind: table, name: customers_raw, schema_conf: datalab.bronze_schema, as_stream: true}
+columns:
+  - name: customer_id
+    type: string
     quality:
-      checks:
-        - name: valid_id
-          criticality: error
-          check: {function: is_not_null, arguments: {column: customer_id}}
-        - name: valid_email
-          criticality: warn
-          filter: email IS NOT NULL
-          check:
-            function: regex_match
-            arguments: {column: email, regex: '^[^@]+@[^@]+$'}
-      quarantine: {include_warnings: false}
-    target:
-      kind: streaming_table
-      cdc: {keys: [customer_id], sequence_by: _ingest_ts}
+      - name: valid_id
+        criticality: error
+        check: {function: is_not_null}
+  - name: email
+    type: string
+    quality:
+      - name: valid_email
+        criticality: warn
+        filter: email IS NOT NULL
+        check:
+          function: regex_match
+          arguments: {regex: '^[^@]+@[^@]+$'}
+quality:
+  quarantine: {include_warnings: false}
+target:
+  kind: streaming_table
+  cdc: {keys: [customer_id], sequence_by: customer_id}
 """
 
 
 @pytest.fixture(scope="module")
 def layer(tmp_path_factory):
-    path = tmp_path_factory.mktemp("cfg") / "silver.yml"
-    path.write_text(SILVER)
-    return load_layer_config(path)
+    root = tmp_path_factory.mktemp("cfg")
+    (root / "domain.yml").write_text(DOMAIN)
+    (root / "silver").mkdir()
+    (root / "silver" / "customers.yml").write_text(CUSTOMERS)
+    return load_domain_configs(root, ["silver"])[0]
 
 
 @pytest.fixture(scope="module")

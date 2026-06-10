@@ -37,14 +37,19 @@ GROUPS = {
 SCHEMAS = ["bronze", "silver", "gold", "landing", "exports"]
 
 
-def bootstrap_sql(target: str) -> list[str]:
+def bootstrap_sql(target: str, managed_location: str = "") -> list[str]:
     """Idempotent DDL + grants for one target. Readers see gold (and silver
     for engineers); bronze/landing stay engineer-only; volumes back the
-    Auto Loader source and the export job."""
+    Auto Loader source and the export job.
+
+    ``managed_location`` is required on metastores without a storage root
+    (e.g. Default Storage accounts) — use the same path as the workspace's
+    existing catalogs."""
     catalog = CATALOGS[target]
     reader = GROUPS[target]["reader"]
     engineer = GROUPS[target]["engineer"]
-    stmts = [f"CREATE CATALOG IF NOT EXISTS `{catalog}`"]
+    location = f" MANAGED LOCATION '{managed_location}'" if managed_location else ""
+    stmts = [f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location}"]
     stmts += [f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{s}`" for s in SCHEMAS]
     stmts += [
         f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`sales`",
@@ -86,9 +91,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--apply", action="store_true", help="execute (default: print SQL only)")
     parser.add_argument("--warehouse-id", default="", help="SQL warehouse id (required with --apply)")
     parser.add_argument("--profile", default="", help="Databricks CLI profile (default: ambient auth)")
+    parser.add_argument(
+        "--managed-location",
+        default="",
+        help="catalog MANAGED LOCATION (required on metastores without a storage root)",
+    )
     args = parser.parse_args(argv)
 
-    statements = bootstrap_sql(args.target)
+    statements = bootstrap_sql(args.target, args.managed_location)
     if not args.apply:
         print(f"-- dry run for target '{args.target}' — re-run with --apply to execute\n")
         print(";\n".join(statements) + ";")

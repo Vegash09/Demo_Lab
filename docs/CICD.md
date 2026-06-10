@@ -68,7 +68,13 @@ For each target (`dev`, `stage`, `prod`):
    `make bootstrap-uc TARGET=<target> WAREHOUSE_ID=<sql-warehouse-id>` to
    create the catalog, medallion + landing/exports schemas, volumes, and
    GRANTs. Dry-run first by omitting `WAREHOUSE_ID`. The SP also needs
-   CREATE/USE on the target catalog (step 1).
+   CREATE/USE on the target catalog (step 1). Gotchas learned on the AWS
+   workspace: UC grants need **account-level** groups (workspace-local SCIM
+   groups are rejected) assigned to the workspace via
+   `databricks account workspace-assignment update`; metastores without a
+   storage root (Default Storage) need
+   `--managed-location s3://.../unity-catalog/<workspace-id>` (match the
+   workspace's existing catalogs).
 
 ## Release flow
 

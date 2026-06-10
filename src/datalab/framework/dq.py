@@ -54,7 +54,7 @@ class DQAdapter:
         from databricks.labs.dqx.config import ExtraParams
 
         cols = layer.dq.result_columns
-        variables = {
+        variables: dict[str, Any] = {
             key.rsplit(".", 1)[-1]: ctx.resolve(key) for key in layer.dq.variables_conf
         }
         extra = ExtraParams(
@@ -73,9 +73,9 @@ class DQAdapter:
 
     def apply(self, spark: SparkSession, df: DataFrame, ds: DatasetSpec) -> DataFrame:
         """Annotate ``df`` with _errors/_warnings result columns."""
-        assert ds.quality is not None
-        checks = [rule.to_dqx() for rule in ds.quality.checks]
-        ref_dfs = read_references(spark, ds.quality.references, self.layer, self.ctx)
+        checks = ds.effective_checks()
+        references = ds.quality.references if ds.quality else {}
+        ref_dfs = read_references(spark, references, self.layer, self.ctx)
         return self.engine.apply_checks_by_metadata(
             df, checks, custom_check_functions=check_registry(), ref_dfs=ref_dfs
         )

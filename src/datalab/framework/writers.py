@@ -33,7 +33,7 @@ from datalab.framework.models import (
     StreamingTableTarget,
     TemporaryViewTarget,
 )
-from datalab.framework.readers import apply_transforms, read_source
+from datalab.framework.readers import prepare, read_source
 
 
 def _read_view(spark: SparkSession, view: str, *, streaming: bool) -> DataFrame:
@@ -52,12 +52,12 @@ def register_dataset(
     input_view = f"{ds.name}__input"
 
     def _input(spark=spark, ds=ds, layer=layer, ctx=ctx) -> DataFrame:
-        return apply_transforms(read_source(spark, ds.source, layer, ctx), ds.transform)
+        return prepare(read_source(spark, ds.source, layer, ctx), ds)
 
     dp.temporary_view(_input, name=input_view)
 
     upstream = input_view
-    if ds.quality:
+    if ds.has_checks:
         assert dq is not None
         checked_view = f"{ds.name}__checked"
 
@@ -77,7 +77,7 @@ def register_dataset(
             upstream = valid_view
 
     _register_target(spark, ds, layer, ctx, upstream, streaming)
-    if ds.quality and not annotate_only:
+    if ds.has_checks and not annotate_only:
         _register_quarantine(spark, ds, layer, ctx, dq, f"{ds.name}__checked", streaming)
 
 
@@ -178,9 +178,9 @@ def _register_quarantine(
     checked_view: str,
     streaming: bool,
 ) -> None:
-    assert dq is not None and ds.quality is not None
-    if ds.quality.quarantine:
-        q = ds.quality.quarantine
+    assert dq is not None
+    q = ds.quarantine_spec()
+    if q is not None:
         q_name = ds.quarantine_name() or ""
         q_fqn = ctx.target_fqn(q_name, layer)
         properties = {
@@ -208,7 +208,7 @@ def _register_quarantine(
                 _quarantine, name=q_fqn, comment=comment, table_properties=properties
             )
 
-        if ds.quality.metrics.enabled:
+        if ds.quality and ds.quality.metrics.enabled:
             m_name = ds.metrics_name() or ""
 
             def _metrics(spark=spark, dq=dq, src=q_fqn) -> DataFrame:

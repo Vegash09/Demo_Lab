@@ -11,15 +11,15 @@ Spark Declarative Pipelines** (`pyspark.pipelines`) and shipped as a
 
 | Surface | Where | What |
 |---|---|---|
-| Dataset configs | `config/<domain>/` | Per-layer YAML: sources, transforms, dqx quality rules, targets ([guide](docs/FRAMEWORK.md)) |
-| Framework | `src/datalab/framework/` | Pydantic models + LDP adapters + dqx engine — generates the pipelines from YAML |
+| Dataset configs | `config/<domain>/<layer>/` | ONE artifact per target table: column mappings + data types, dqx rules, target kind ([guide](docs/FRAMEWORK.md)) |
+| Framework | `src/datalab/` | REUSABLE, zero domain code: Pydantic models + LDP adapters + dqx engine + param helpers |
+| Domain code | `src/<domain>_etl/` | Pure `@transform` functions, custom dqx checks, 3-line pipeline entrypoint |
 | Edge jobs | `src/jobs/` + `notebooks/` | python-file lane (headless exports) + notebook lane (human-gated triage) |
-| Shared library | `src/datalab/` | Pure, unit-tested `@transform` functions + custom dqx checks + helpers |
 | Deploy | `databricks.yml` + `resources/` | Bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
 | Tests | `tests/` | Unit tests on a local SparkSession — no workspace needed |
 | CI/CD | `.github/` | ruff + pytest + `bundle validate` on PRs; OIDC deploys on merge/tags |
 | Agent harness | `.cursor/`, `.claude/`, `.githooks/` | Rules, skills, PR-template + protected-file guards |
-| Docs | `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md) · [CICD](docs/CICD.md) · [MIGRATION](docs/MIGRATION.md) |
+| Docs | `docs/` | [FRAMEWORK](docs/FRAMEWORK.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [CICD](docs/CICD.md) · [MIGRATION](docs/MIGRATION.md) |
 
 ## Quick start
 
@@ -42,23 +42,26 @@ databricks bundle run sales_quarantine_report -t dev  # on-demand quarantine tri
 
 ## The sales_etl pipeline
 
+Generated entirely from the `config/sales/<layer>/<table>.yml` artifacts:
+
 ```
 landing volume (JSON)
-   │  Auto Loader
+   │  Auto Loader (source: cloud_files + lineage)
    ▼
-bronze.customers_raw            @dp.table — raw + lineage (_ingest_ts, _source_file)
+bronze.customers_raw            streaming table — raw + _ingest_ts/_source_file
    ▼
-customers_cleaned               @dp.temporary_view — pure transform (datalab.transforms.sales)
+customers__input                framework view — 8 mapped columns (rename/cast)
+   │                              + pure fn sales.normalize_email
    ▼
-customers_validated             @dp.temporary_view — expectations:
-   │                              drop  → QUARANTINE_RULES (e.g. customer_id IS NOT NULL)
-   │                              warn  → WARN_RULES (e.g. email format)
-   ├──────────────▶ silver.customers_quarantine   rows violating QUARANTINE_RULES
-   ▼
-silver.customers                dp.create_streaming_table + dp.create_auto_cdc_flow
+customers__checked              framework view — dqx checks (_errors/_warnings)
+   │                              error → dropped   (customer_id_is_not_null)
+   │                              warn  → flagged   (email_regex_match)
+   ├──────────────▶ silver.customers_quarantine   dropped rows + dqx evidence
+   ▼  customers__valid
+silver.customers                streaming table + AUTO CDC flow
    │                              (upsert by customer_id, ordered by _ingest_ts, SCD1)
    ▼
-gold.customers_by_city          @dp.materialized_view — aggregates
+gold.customers_by_city          materialized view — aggregates
 ```
 
 Catalog, layer schemas, and the landing path are bundle **variables**
@@ -71,18 +74,19 @@ mapping — nothing is hardcoded.
   medallion Delta table → **SDP via YAML config** (mandatory); headless
   side-effectful edge work → **python-file** task; human-must-decide →
   **notebook** task.
-- Add a table = add a dataset entry in `config/<domain>/<layer>.yml` —
-  source, transform registry names, dqx checks, target kind. No `dp` wiring
-  by hand; never `import dlt`.
+- Add a table = author ONE artifact `config/<domain>/<layer>/<table>.yml` —
+  columns (source→target names + data types + per-column dqx rules), source,
+  target kind. Agents: use the `author-ldp-artifact` skill. No `dp` wiring by
+  hand; never `import dlt`.
 - Upserts via AUTO CDC (`target.cdc`), data quality via databrickslabs/dqx
   (`quality.checks`, error → quarantine, warn → flagged).
-- Business logic lives in `src/datalab/transforms/` as pure
+- Business logic lives in `src/<domain>_etl/transforms/` as pure
   `@transform`-registered functions with unit tests.
 - Verify without deploying: `make validate-configs`, then
   `notebooks/framework/verify_dataset.py` (`run_dataset` — same code path as
   pytest).
 
-Full conventions: [AGENTS.md](AGENTS.md) and the `author-sdp-pipeline` skill
+Full conventions: [AGENTS.md](AGENTS.md) and the `author-ldp-artifact` skill
 (`.cursor/skills/` / `.claude/skills/`).
 
 ## Dependencies (uv)

@@ -123,6 +123,66 @@
       "title": "CloudFilesSource",
       "type": "object"
     },
+    "ColumnSpec": {
+      "additionalProperties": false,
+      "description": "One target-table column: source\u2192target mapping, data type, and the\ncolumn's own dqx rules. ``check.arguments.column`` is auto-filled with\nthe target column name.",
+      "properties": {
+        "comment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comment"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "quality": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DQRule"
+          },
+          "title": "Quality",
+          "type": "array"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ColumnSpec",
+      "type": "object"
+    },
     "DQCheck": {
       "additionalProperties": false,
       "properties": {
@@ -156,29 +216,6 @@
         "function"
       ],
       "title": "DQCheck",
-      "type": "object"
-    },
-    "DQDefaults": {
-      "additionalProperties": false,
-      "properties": {
-        "result_columns": {
-          "$ref": "#/$defs/ResultColumns",
-          "default": {
-            "errors": "_errors",
-            "warnings": "_warnings"
-          }
-        },
-        "variables_conf": {
-          "default": [],
-          "items": {
-            "pattern": "^[A-Za-z][\\w.]*$",
-            "type": "string"
-          },
-          "title": "Variables Conf",
-          "type": "array"
-        }
-      },
-      "title": "DQDefaults",
       "type": "object"
     },
     "DQRule": {
@@ -242,102 +279,6 @@
       "title": "DQRule",
       "type": "object"
     },
-    "DatasetSpec": {
-      "additionalProperties": false,
-      "properties": {
-        "comment": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Comment"
-        },
-        "name": {
-          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-          "title": "Name",
-          "type": "string"
-        },
-        "quality": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/QualitySpec"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "source": {
-          "discriminator": {
-            "mapping": {
-              "cloud_files": "#/$defs/CloudFilesSource",
-              "table": "#/$defs/TableSource",
-              "view": "#/$defs/ViewSource"
-            },
-            "propertyName": "kind"
-          },
-          "oneOf": [
-            {
-              "$ref": "#/$defs/CloudFilesSource"
-            },
-            {
-              "$ref": "#/$defs/TableSource"
-            },
-            {
-              "$ref": "#/$defs/ViewSource"
-            }
-          ],
-          "title": "Source"
-        },
-        "target": {
-          "discriminator": {
-            "mapping": {
-              "delta_sink": "#/$defs/DeltaSinkTarget",
-              "materialized_view": "#/$defs/MaterializedViewTarget",
-              "streaming_table": "#/$defs/StreamingTableTarget",
-              "temporary_view": "#/$defs/TemporaryViewTarget"
-            },
-            "propertyName": "kind"
-          },
-          "oneOf": [
-            {
-              "$ref": "#/$defs/StreamingTableTarget"
-            },
-            {
-              "$ref": "#/$defs/MaterializedViewTarget"
-            },
-            {
-              "$ref": "#/$defs/TemporaryViewTarget"
-            },
-            {
-              "$ref": "#/$defs/DeltaSinkTarget"
-            }
-          ],
-          "title": "Target"
-        },
-        "transform": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/TransformStep"
-          },
-          "title": "Transform",
-          "type": "array"
-        }
-      },
-      "required": [
-        "name",
-        "source",
-        "target"
-      ],
-      "title": "DatasetSpec",
-      "type": "object"
-    },
     "DeltaSinkTarget": {
       "additionalProperties": false,
       "description": "Streaming append to a delta table/path OUTSIDE pipeline management\n(dp.create_sink + dp.append_flow). Prefer materialized_view for ordinary\nbatch tables \u2014 this is for external destinations only.",
@@ -386,35 +327,6 @@
         "kind"
       ],
       "title": "DeltaSinkTarget",
-      "type": "object"
-    },
-    "LayerDefaults": {
-      "additionalProperties": false,
-      "properties": {
-        "catalog_conf": {
-          "default": "datalab.catalog",
-          "pattern": "^[A-Za-z][\\w.]*$",
-          "title": "Catalog Conf",
-          "type": "string"
-        },
-        "schema_conf": {
-          "pattern": "^[A-Za-z][\\w.]*$",
-          "title": "Schema Conf",
-          "type": "string"
-        },
-        "table_properties": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {},
-          "title": "Table Properties",
-          "type": "object"
-        }
-      },
-      "required": [
-        "schema_conf"
-      ],
-      "title": "LayerDefaults",
       "type": "object"
     },
     "MaterializedViewTarget": {
@@ -483,6 +395,7 @@
     },
     "QualitySpec": {
       "additionalProperties": false,
+      "description": "TABLE-level quality config. Most rules belong on the columns\nthemselves (``columns[].quality``); this block carries multi-column /\ndataset-level checks and the quarantine/metrics/reference settings.",
       "properties": {
         "allow_streaming_dataset_checks": {
           "default": false,
@@ -490,10 +403,10 @@
           "type": "boolean"
         },
         "checks": {
+          "default": [],
           "items": {
             "$ref": "#/$defs/DQRule"
           },
-          "minItems": 1,
           "title": "Checks",
           "type": "array"
         },
@@ -526,15 +439,17 @@
           "type": "object"
         }
       },
-      "required": [
-        "checks"
-      ],
       "title": "QualitySpec",
       "type": "object"
     },
     "QuarantineSpec": {
       "additionalProperties": false,
       "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
         "include_warnings": {
           "default": false,
           "title": "Include Warnings",
@@ -605,23 +520,6 @@
         "name"
       ],
       "title": "ReferenceSource",
-      "type": "object"
-    },
-    "ResultColumns": {
-      "additionalProperties": false,
-      "properties": {
-        "errors": {
-          "default": "_errors",
-          "title": "Errors",
-          "type": "string"
-        },
-        "warnings": {
-          "default": "_warnings",
-          "title": "Warnings",
-          "type": "string"
-        }
-      },
-      "title": "ResultColumns",
       "type": "object"
     },
     "StreamingTableTarget": {
@@ -711,6 +609,23 @@
           "const": "table",
           "title": "Kind",
           "type": "string"
+        },
+        "layer": {
+          "anyOf": [
+            {
+              "enum": [
+                "bronze",
+                "silver",
+                "gold"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer"
         },
         "name": {
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
@@ -803,55 +718,112 @@
     }
   },
   "additionalProperties": false,
+  "description": "config/<domain>/<layer>/<table>.yml \u2014 one target table per file.\n\nThe file name must equal the target table name; the layer comes from the\nfolder. Everything else is DatasetSpec.",
   "properties": {
-    "datasets": {
+    "columns": {
+      "default": [],
       "items": {
-        "$ref": "#/$defs/DatasetSpec"
+        "$ref": "#/$defs/ColumnSpec"
       },
-      "minItems": 1,
-      "title": "Datasets",
+      "title": "Columns",
       "type": "array"
     },
-    "defaults": {
-      "$ref": "#/$defs/LayerDefaults"
-    },
-    "domain": {
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-      "title": "Domain",
-      "type": "string"
-    },
-    "dq": {
-      "$ref": "#/$defs/DQDefaults",
-      "default": {
-        "result_columns": {
-          "errors": "_errors",
-          "warnings": "_warnings"
+    "comment": {
+      "anyOf": [
+        {
+          "type": "string"
         },
-        "variables_conf": []
-      }
-    },
-    "layer": {
-      "enum": [
-        "bronze",
-        "silver",
-        "gold"
+        {
+          "type": "null"
+        }
       ],
-      "title": "Layer",
+      "default": null,
+      "title": "Comment"
+    },
+    "name": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "title": "Name",
       "type": "string"
+    },
+    "quality": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/QualitySpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "schema_version": {
       "const": 1,
       "default": 1,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "source": {
+      "discriminator": {
+        "mapping": {
+          "cloud_files": "#/$defs/CloudFilesSource",
+          "table": "#/$defs/TableSource",
+          "view": "#/$defs/ViewSource"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/CloudFilesSource"
+        },
+        {
+          "$ref": "#/$defs/TableSource"
+        },
+        {
+          "$ref": "#/$defs/ViewSource"
+        }
+      ],
+      "title": "Source"
+    },
+    "target": {
+      "discriminator": {
+        "mapping": {
+          "delta_sink": "#/$defs/DeltaSinkTarget",
+          "materialized_view": "#/$defs/MaterializedViewTarget",
+          "streaming_table": "#/$defs/StreamingTableTarget",
+          "temporary_view": "#/$defs/TemporaryViewTarget"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/StreamingTableTarget"
+        },
+        {
+          "$ref": "#/$defs/MaterializedViewTarget"
+        },
+        {
+          "$ref": "#/$defs/TemporaryViewTarget"
+        },
+        {
+          "$ref": "#/$defs/DeltaSinkTarget"
+        }
+      ],
+      "title": "Target"
+    },
+    "transform": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/TransformStep"
+      },
+      "title": "Transform",
+      "type": "array"
     }
   },
   "required": [
-    "domain",
-    "layer",
-    "defaults",
-    "datasets"
+    "name",
+    "source",
+    "target"
   ],
-  "title": "LayerConfig",
+  "title": "TableFile",
   "type": "object"
 }
