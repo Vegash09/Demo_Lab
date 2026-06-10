@@ -11,8 +11,8 @@ UV     ?= uv
 TARGET ?= dev
 
 .DEFAULT_GOAL := help
-.PHONY: help install lock lint fmt test validate deploy run destroy \
-        bootstrap-uc enable-githooks commit-protected clean
+.PHONY: help install lock lint fmt test validate-configs schema validate \
+        deploy run destroy bootstrap-uc enable-githooks commit-protected clean
 
 help:  ## Show available targets
 	@printf "\ndatalab · make targets (TARGET=$(TARGET))\n\n"
@@ -36,6 +36,12 @@ fmt: install  ## Ruff auto-format + fix imports
 
 test: install  ## Run the unit test suite (local Spark, no workspace needed)
 	$(UV) run pytest
+
+validate-configs: install  ## Validate every config/<domain>/*.yml (pydantic + dqx checks)
+	$(UV) run python -m datalab.framework.loader config/
+
+schema: install  ## Regenerate schemas/layer_config.schema.json from the Pydantic models
+	$(UV) run python scripts/export_config_schema.py
 
 # ---- bundle (Declarative Automation Bundle) ---------------------------------
 validate:  ## databricks bundle validate -t $(TARGET)

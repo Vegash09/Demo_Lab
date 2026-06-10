@@ -31,5 +31,8 @@ resources:
         datalab.silver_schema: ${var.silver_schema}
         datalab.gold_schema: ${var.gold_schema}
         datalab.sales_landing_path: ${var.sales_landing_path}
+        # Where the framework finds this domain's layer YAMLs (config-driven
+        # pipeline — see docs/FRAMEWORK.md). Deployed workspace files.
+        datalab.config_dir: ${workspace.file_path}/config/sales
 
       permissions: ${var.pipeline_permissions}

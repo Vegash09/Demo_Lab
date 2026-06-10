@@ -38,17 +38,25 @@ medallion Delta table → SDP (mandatory, backfills via
 python-file (`spark_python_task`); human-gated runs → notebook
 (`notebook_task`, no trigger).
 
-## Data view (medallion)
+## Data view (medallion, generated from config/sales/*.yml)
 
 ```mermaid
 flowchart LR
-    LAND[("UC volume\nlanding/sales/customers")] -->|Auto Loader cloudFiles| BR["bronze.customers_raw\n@dp.table + lineage cols"]
-    BR --> CL["customers_cleaned\n@dp.temporary_view\n(pure fn: clean_customers)"]
-    CL --> VAL["customers_validated\n@dp.temporary_view\nexpect_all_or_drop(QUARANTINE_RULES)\nexpect_all(WARN_RULES)"]
-    CL -->|violation_predicate| QUAR["silver.customers_quarantine\n@dp.table"]
-    VAL -->|"create_auto_cdc_flow\nkeys=[customer_id], sequence_by=_ingest_ts, SCD1"| SIL["silver.customers\ncreate_streaming_table"]
-    SIL --> GOLD["gold.customers_by_city\n@dp.materialized_view\n(pure fn: summarize_customers_by_city)"]
+    YML[["config/sales/*.yml\nPydantic-validated\n(datasets + dqx rules)"]] -.->|datalab.framework.generate| BR
+    LAND[("UC volume\nlanding/sales/customers")] -->|Auto Loader cloudFiles| BR["bronze.customers_raw\nstreaming_table + lineage cols"]
+    BR --> IN["customers__input\ntemporary view\n(pure fn: sales.clean_customers)"]
+    IN --> CHK["customers__checked\ndqx apply_checks_by_metadata\n(_errors/_warnings)"]
+    CHK -->|get_valid| VAL["customers__valid"]
+    CHK -->|get_invalid, errors-only| QUAR["silver.customers_quarantine\n(dqx evidence structs)"]
+    VAL -->|"AUTO CDC flow\nkeys=[customer_id], sequence_by=_ingest_ts, SCD1"| SIL["silver.customers\ncreate_streaming_table"]
+    SIL --> GOLD["gold.customers_by_city\nmaterialized_view\n(pure fn: sales.summarize_customers_by_city)"]
 ```
+
+Authoring model: developers edit YAML (datasets, transforms by registry name,
+dqx checks) — `docs/FRAMEWORK.md` is the reference. The framework
+(`src/datalab/framework/`) validates configs with Pydantic at pipeline import
+and registers every LDP object through reader/writer adapters; data quality is
+databrickslabs/dqx end to end.
 
 ## Code organization
 
@@ -73,10 +81,9 @@ bundle variables → pipeline `configuration:` → `pipeline_conf(spark, key)`
 `datalab.params.notebook_params` (notebook) or task argv flags →
 `datalab.params.cli_params` (python-file).
 
-Quality: rules are `{name: sql_expr}` dicts in `src/datalab/transforms/`.
-The same dict feeds `@dp.expect_all_or_drop` (silver) and
-`datalab.quality.violation_predicate` (quarantine table), so the two can
-never diverge.
+Quality: dqx checks defined per dataset in the layer YAML. The same list
+drives the target's valid-row filter and the quarantine table, so the two can
+never diverge; evidence lands as `_errors`/`_warnings` structs.
 
 ## Environments
 

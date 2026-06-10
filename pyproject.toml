@@ -37,7 +37,16 @@ keywords        = ["databricks", "lakeflow", "spark-declarative-pipelines", "med
 
 # Runtime dependencies installed into the pipeline environment (keep minimal —
 # the SDP runtime already provides pyspark, delta, etc.).
-dependencies = []
+# - pydantic capped <2.11: serverless env v4 preinstalls 2.10.6; the framework
+#   must not use 2.11+ features even though the local venv resolves newer.
+# - databricks-labs-dqx pinned EXACT (Beta, breaking minor releases) and with
+#   NO extras: the [cli] extra pulls databricks-connect, which conflicts with
+#   the local pyspark dev dependency.
+dependencies = [
+    "pydantic>=2.10,<3",
+    "PyYAML>=6.0,<7",
+    "databricks-labs-dqx==0.14.0",
+]
 
 # ---------------------------------------------------------------------------
 # Dependency groups (PEP 735) — dev-only tooling, never shipped to pipelines.
@@ -52,6 +61,9 @@ dev = [
     # locally. Do NOT add databricks-connect to this venv — it conflicts with
     # pyspark (both own the `pyspark` namespace).
     "pyspark>=4.1.0",
+    # dqx's check_funcs imports pandas but doesn't declare it; serverless
+    # preinstalls pandas, locally we need it for the dqx unit tests.
+    "pandas>=2.0",
 ]
 
 # ---------------------------------------------------------------------------

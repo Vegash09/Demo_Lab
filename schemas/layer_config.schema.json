@@ -1,0 +1,857 @@
+{
+  "$defs": {
+    "CdcSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "apply_as_deletes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Apply As Deletes"
+        },
+        "except_columns": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Except Columns",
+          "type": "array"
+        },
+        "ignore_null_updates": {
+          "default": false,
+          "title": "Ignore Null Updates",
+          "type": "boolean"
+        },
+        "keys": {
+          "items": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Keys",
+          "type": "array"
+        },
+        "scd_type": {
+          "default": 1,
+          "enum": [
+            1,
+            2
+          ],
+          "title": "Scd Type",
+          "type": "integer"
+        },
+        "sequence_by": {
+          "title": "Sequence By",
+          "type": "string"
+        },
+        "track_history_except_columns": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Track History Except Columns",
+          "type": "array"
+        }
+      },
+      "required": [
+        "keys",
+        "sequence_by"
+      ],
+      "title": "CdcSpec",
+      "type": "object"
+    },
+    "CloudFilesSource": {
+      "additionalProperties": false,
+      "properties": {
+        "add_lineage": {
+          "default": true,
+          "title": "Add Lineage",
+          "type": "boolean"
+        },
+        "format": {
+          "default": "json",
+          "enum": [
+            "json",
+            "csv",
+            "parquet",
+            "avro"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "kind": {
+          "const": "cloud_files",
+          "title": "Kind",
+          "type": "string"
+        },
+        "options": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Options",
+          "type": "object"
+        },
+        "path_conf": {
+          "pattern": "^[A-Za-z][\\w.]*$",
+          "title": "Path Conf",
+          "type": "string"
+        },
+        "schema_hints": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema Hints"
+        }
+      },
+      "required": [
+        "kind",
+        "path_conf"
+      ],
+      "title": "CloudFilesSource",
+      "type": "object"
+    },
+    "DQCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Arguments",
+          "type": "object"
+        },
+        "for_each_column": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "For Each Column"
+        },
+        "function": {
+          "title": "Function",
+          "type": "string"
+        }
+      },
+      "required": [
+        "function"
+      ],
+      "title": "DQCheck",
+      "type": "object"
+    },
+    "DQDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "result_columns": {
+          "$ref": "#/$defs/ResultColumns",
+          "default": {
+            "errors": "_errors",
+            "warnings": "_warnings"
+          }
+        },
+        "variables_conf": {
+          "default": [],
+          "items": {
+            "pattern": "^[A-Za-z][\\w.]*$",
+            "type": "string"
+          },
+          "title": "Variables Conf",
+          "type": "array"
+        }
+      },
+      "title": "DQDefaults",
+      "type": "object"
+    },
+    "DQRule": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "$ref": "#/$defs/DQCheck"
+        },
+        "criticality": {
+          "default": "error",
+          "enum": [
+            "error",
+            "warn"
+          ],
+          "title": "Criticality",
+          "type": "string"
+        },
+        "filter": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Filter"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "user_metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Metadata"
+        }
+      },
+      "required": [
+        "check"
+      ],
+      "title": "DQRule",
+      "type": "object"
+    },
+    "DatasetSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "comment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comment"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "quality": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QualitySpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "discriminator": {
+            "mapping": {
+              "cloud_files": "#/$defs/CloudFilesSource",
+              "table": "#/$defs/TableSource",
+              "view": "#/$defs/ViewSource"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CloudFilesSource"
+            },
+            {
+              "$ref": "#/$defs/TableSource"
+            },
+            {
+              "$ref": "#/$defs/ViewSource"
+            }
+          ],
+          "title": "Source"
+        },
+        "target": {
+          "discriminator": {
+            "mapping": {
+              "delta_sink": "#/$defs/DeltaSinkTarget",
+              "materialized_view": "#/$defs/MaterializedViewTarget",
+              "streaming_table": "#/$defs/StreamingTableTarget",
+              "temporary_view": "#/$defs/TemporaryViewTarget"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/StreamingTableTarget"
+            },
+            {
+              "$ref": "#/$defs/MaterializedViewTarget"
+            },
+            {
+              "$ref": "#/$defs/TemporaryViewTarget"
+            },
+            {
+              "$ref": "#/$defs/DeltaSinkTarget"
+            }
+          ],
+          "title": "Target"
+        },
+        "transform": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TransformStep"
+          },
+          "title": "Transform",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "target"
+      ],
+      "title": "DatasetSpec",
+      "type": "object"
+    },
+    "DeltaSinkTarget": {
+      "additionalProperties": false,
+      "description": "Streaming append to a delta table/path OUTSIDE pipeline management\n(dp.create_sink + dp.append_flow). Prefer materialized_view for ordinary\nbatch tables \u2014 this is for external destinations only.",
+      "properties": {
+        "kind": {
+          "const": "delta_sink",
+          "title": "Kind",
+          "type": "string"
+        },
+        "options": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Options",
+          "type": "object"
+        },
+        "path_conf": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][\\w.]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path Conf"
+        },
+        "table_conf": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][\\w.]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Table Conf"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "DeltaSinkTarget",
+      "type": "object"
+    },
+    "LayerDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "catalog_conf": {
+          "default": "datalab.catalog",
+          "pattern": "^[A-Za-z][\\w.]*$",
+          "title": "Catalog Conf",
+          "type": "string"
+        },
+        "schema_conf": {
+          "pattern": "^[A-Za-z][\\w.]*$",
+          "title": "Schema Conf",
+          "type": "string"
+        },
+        "table_properties": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Table Properties",
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_conf"
+      ],
+      "title": "LayerDefaults",
+      "type": "object"
+    },
+    "MaterializedViewTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "cluster_by": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Cluster By",
+          "type": "array"
+        },
+        "kind": {
+          "const": "materialized_view",
+          "title": "Kind",
+          "type": "string"
+        },
+        "partition_cols": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Partition Cols",
+          "type": "array"
+        },
+        "table_properties": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Table Properties",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "MaterializedViewTarget",
+      "type": "object"
+    },
+    "MetricsSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        }
+      },
+      "title": "MetricsSpec",
+      "type": "object"
+    },
+    "QualitySpec": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_streaming_dataset_checks": {
+          "default": false,
+          "title": "Allow Streaming Dataset Checks",
+          "type": "boolean"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/DQRule"
+          },
+          "minItems": 1,
+          "title": "Checks",
+          "type": "array"
+        },
+        "metrics": {
+          "$ref": "#/$defs/MetricsSpec",
+          "default": {
+            "enabled": false,
+            "name": null
+          }
+        },
+        "quarantine": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuarantineSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "references": {
+          "default": {},
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/ReferenceSource"
+            }
+          },
+          "title": "References",
+          "type": "object"
+        }
+      },
+      "required": [
+        "checks"
+      ],
+      "title": "QualitySpec",
+      "type": "object"
+    },
+    "QuarantineSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "include_warnings": {
+          "default": false,
+          "title": "Include Warnings",
+          "type": "boolean"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "table_properties": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Table Properties",
+          "type": "object"
+        }
+      },
+      "title": "QuarantineSpec",
+      "type": "object"
+    },
+    "ReferenceSource": {
+      "additionalProperties": false,
+      "description": "Batch-read reference table exposed to dqx checks via ref_dfs.",
+      "properties": {
+        "catalog_conf": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][\\w.]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Catalog Conf"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "schema_conf": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][\\w.]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema Conf"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ReferenceSource",
+      "type": "object"
+    },
+    "ResultColumns": {
+      "additionalProperties": false,
+      "properties": {
+        "errors": {
+          "default": "_errors",
+          "title": "Errors",
+          "type": "string"
+        },
+        "warnings": {
+          "default": "_warnings",
+          "title": "Warnings",
+          "type": "string"
+        }
+      },
+      "title": "ResultColumns",
+      "type": "object"
+    },
+    "StreamingTableTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "cdc": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CdcSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cluster_by": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Cluster By",
+          "type": "array"
+        },
+        "kind": {
+          "const": "streaming_table",
+          "title": "Kind",
+          "type": "string"
+        },
+        "partition_cols": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Partition Cols",
+          "type": "array"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema"
+        },
+        "table_properties": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Table Properties",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "StreamingTableTarget",
+      "type": "object"
+    },
+    "TableSource": {
+      "additionalProperties": false,
+      "properties": {
+        "as_stream": {
+          "default": false,
+          "title": "As Stream",
+          "type": "boolean"
+        },
+        "catalog_conf": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][\\w.]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Catalog Conf"
+        },
+        "kind": {
+          "const": "table",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "schema_conf": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][\\w.]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema Conf"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "TableSource",
+      "type": "object"
+    },
+    "TemporaryViewTarget": {
+      "additionalProperties": false,
+      "description": "Pipeline-scoped ('dynamic') view \u2014 no table is materialized.",
+      "properties": {
+        "kind": {
+          "const": "temporary_view",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "TemporaryViewTarget",
+      "type": "object"
+    },
+    "TransformStep": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Args",
+          "type": "object"
+        },
+        "function": {
+          "title": "Function",
+          "type": "string"
+        }
+      },
+      "required": [
+        "function"
+      ],
+      "title": "TransformStep",
+      "type": "object"
+    },
+    "ViewSource": {
+      "additionalProperties": false,
+      "description": "A temporary view generated earlier in the same pipeline.",
+      "properties": {
+        "as_stream": {
+          "default": true,
+          "title": "As Stream",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "view",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "ViewSource",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "datasets": {
+      "items": {
+        "$ref": "#/$defs/DatasetSpec"
+      },
+      "minItems": 1,
+      "title": "Datasets",
+      "type": "array"
+    },
+    "defaults": {
+      "$ref": "#/$defs/LayerDefaults"
+    },
+    "domain": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "title": "Domain",
+      "type": "string"
+    },
+    "dq": {
+      "$ref": "#/$defs/DQDefaults",
+      "default": {
+        "result_columns": {
+          "errors": "_errors",
+          "warnings": "_warnings"
+        },
+        "variables_conf": []
+      }
+    },
+    "layer": {
+      "enum": [
+        "bronze",
+        "silver",
+        "gold"
+      ],
+      "title": "Layer",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "domain",
+    "layer",
+    "defaults",
+    "datasets"
+  ],
+  "title": "LayerConfig",
+  "type": "object"
+}
