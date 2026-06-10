@@ -47,8 +47,8 @@ databricks.yml            Bundle: variables (catalog/schemas/paths/permissions),
 resources/
   sales_etl.pipeline.yml  SDP pipeline (serverless, environment_version, configuration params)
   sales_etl.job.yml       Daily refresh job (pipeline_task; paused in dev mode)
-  sales_ops.job.yml       Edge jobs: sales_export (spark_python_task, weekly) +
-                          sales_quarantine_report (notebook_task, on-demand, no trigger)
+  sales_export.job.yml    Edge job: weekly gold CSV export (spark_python_task)
+  sales_quarantine_report.job.yml  Edge job: on-demand triage notebook (notebook_task, no trigger)
 notebooks/                Notebook lane ONLY (human-gated job tasks; source-format .py)
   sales/quarantine_report.py
 src/
@@ -211,7 +211,7 @@ data re-enters via the landing volume or a once-flow. A job calling
   constrained by the single-writer invariant (never write SDP-owned tables).
   Don't block legitimate `.write` calls there in review.
 - **Job environments share the pipeline's dependency mechanism and gotcha.**
-  `resources/sales_ops.job.yml` installs the repo with
+  the edge-job resources (`resources/sales_*.job.yml`) install the repo with
   `--editable ${workspace.file_path}` into serverless job environments;
   like pipeline environments they cache dependencies, so a changed `datalab`
   package may not appear until the environment rebuilds.
@@ -288,7 +288,7 @@ The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
 - **Add a python-file task**: run the 3-question router first. Entry point in
   `src/jobs/<domain>/` (argparse via `datalab.params.cli_params`, pure logic
   in `src/datalab` with a unit test), copy the `sales_export` job shape from
-  `resources/sales_ops.job.yml` (parameters from bundle variables,
+  `resources/sales_export.job.yml` (parameters from bundle variables,
   `environments` block, `permissions: ${var.job_permissions}`).
   `make lint test validate`.
 - **Add a notebook task**: router first — only if a human must read the run.

@@ -1,0 +1,40 @@
+# Notebook lane: on-demand, human-gated quarantine triage (notebook_task,
+# deliberately NO trigger) — see AGENTS.md "Authoring rules". Run with:
+#   databricks bundle run sales_quarantine_report -t dev
+#
+# Reads pipeline-owned tables READ-ONLY; writes only the report table it owns
+# (single-writer invariant).
+
+resources:
+  jobs:
+    sales_quarantine_report:
+      name: sales_quarantine_report
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: silver_schema
+          default: ${var.silver_schema}
+
+      environments:
+        - environment_key: datalab
+          spec:
+            environment_version: "4"
+            dependencies:
+              - --editable ${workspace.file_path}
+
+      tasks:
+        - task_key: quarantine_report
+          environment_key: datalab
+          notebook_task:
+            notebook_path: ../notebooks/sales/quarantine_report.py
+            base_parameters:
+              # widget name == job parameter name — the lane's contract,
+              # resolved in the notebook via datalab.params.notebook_params.
+              catalog: "{{job.parameters.catalog}}"
+              silver_schema: "{{job.parameters.silver_schema}}"
+
+      queue:
+        enabled: true
+
+      permissions: ${var.job_permissions}

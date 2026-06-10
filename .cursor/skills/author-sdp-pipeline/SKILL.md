@@ -86,5 +86,5 @@ points `root_path` at `src/<pipeline>` and globs the transformations folder.
 Run the 3-question router in AGENTS.md ("Authoring rules") before reaching for
 SDP: managed medallion Delta table → SDP (this skill); headless side-effectful
 edge work (exports, API pulls) → python-file task (`src/jobs/<domain>/` +
-`resources/sales_ops.job.yml` shape); human-gated runs → notebook task
+`resources/sales_export.job.yml` shape); human-gated runs → notebook task
 (`notebooks/<domain>/`, on-demand, no trigger).
