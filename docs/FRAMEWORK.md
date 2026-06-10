@@ -11,8 +11,8 @@ config/<domain>/{bronze,silver,gold}.yml      what to build (+ dqx rules)
         ▼
 datalab.framework.generate(spark, config_dir) the 3-line pipeline entrypoint
         │  readers: cloud_files / table / view          (batch or stream)
-        │  transforms: registry of pure functions       (src/datalab/transforms)
-        │  dq: DQX apply → valid / quarantine split     (src/datalab/checks too)
+        │  transforms: registry of pure functions       (src/<domain>_etl/transforms)
+        │  dq: DQX apply → valid / quarantine split     (src/<domain>_etl/checks too)
         ▼  writers: streaming table / AUTO CDC / MV / temporary view / sink
 generated graph:  <name>__input → <name>__checked → <name>__valid → target
                                             └─────────→ <name>_quarantine (+ metrics MV)
@@ -27,7 +27,7 @@ generated graph:  <name>__input → <name>__checked → <name>__valid → target
   comment: Validated orders, SCD1 per order_id.
   source: {kind: table, name: orders_raw, schema_conf: datalab.bronze_schema, as_stream: true}
   transform:
-    - function: sales.clean_orders          # pure fn in src/datalab/transforms/
+    - function: sales.clean_orders          # pure fn in src/sales_etl/transforms/
   quality:
     checks:                                  # databrickslabs/dqx metadata, verbatim
       - name: valid_order_id
@@ -42,19 +42,37 @@ generated graph:  <name>__input → <name>__checked → <name>__valid → target
     cdc: {keys: [order_id], sequence_by: _ingest_ts, scd_type: 1}
 ```
 
-2. If you need a new transform, register a pure function:
+2. If you need a new transform, register a pure function in the DOMAIN
+   package (`src/sales_etl/transforms/`) and make sure its module is in the
+   layer's `imports:` list:
 
 ```python
 @transform("sales.clean_orders")
 def clean_orders(df: DataFrame) -> DataFrame: ...
 ```
 
+```yaml
+imports:
+  - sales_etl.transforms.sales
+```
+
 3. `make validate-configs` → `make test` → verify interactively (below) →
    `make deploy run`.
 
-A new **domain** = a new `config/<domain>/` dir + a copied
-`resources/*.pipeline.yml` whose `datalab.config_dir` points at it + a 3-line
-`pipeline.py` (copy `src/sales_etl/transformations/pipeline.py`).
+## Add a domain — the framework is never edited
+
+The framework (`src/datalab/`) contains zero domain code and hardcodes no
+domain module paths; adopting it in a new domain (or lifting it into another
+project) means creating only domain-owned artifacts:
+
+1. `config/<domain>/{bronze,silver,gold}.yml` — datasets + dqx rules, with
+   `imports:` naming the domain modules.
+2. `src/<domain>_etl/` — `transforms/` (pure `@transform` functions),
+   `checks/` (custom dqx checks), `transformations/pipeline.py` (copy the
+   3-line sales one).
+3. Add `src/<domain>_etl` to `[tool.hatch.build.targets.wheel]` packages.
+4. Copy `resources/sales_etl.pipeline.yml` (+ job yml), rename, and point
+   `datalab.config_dir` at `config/<domain>`.
 
 ## Choosing a target kind
 
@@ -71,7 +89,7 @@ A new **domain** = a new `config/<domain>/` dir + a copied
 - `checks:` entries are dqx metadata — anything from the
   [dqx checks reference](https://databrickslabs.github.io/dqx/docs/reference/quality_checks/)
   can be pasted in, including `filter:`, `for_each_column:`, and custom
-  functions from `src/datalab/checks/` (referenced by function name).
+  functions from `src/<domain>_etl/checks/`, declared via the layer `imports:` list.
 - `criticality: error` rows never reach the target; they land in the
   quarantine table with `_errors` evidence structs.
   `criticality: warn` rows flow into the target (flagged in `_warnings`

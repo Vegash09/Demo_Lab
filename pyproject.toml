@@ -67,12 +67,16 @@ dev = [
 ]
 
 # ---------------------------------------------------------------------------
-# Hatchling build target: the shared `datalab` package (src layout).
-# The pipeline environment installs this editable so transformations can
-# `from datalab.transforms import ...`.
+# Hatchling build targets (src layout), installed editable into pipeline/job
+# environments:
+#   src/datalab    — the reusable framework (no domain code; lift-and-shift
+#                    into any project)
+#   src/sales_etl  — the sales domain adopting it (transforms/, checks/;
+#                    declared to the framework via `imports:` in config YAML)
+# A new domain = add its src/<domain>_etl package here.
 # ---------------------------------------------------------------------------
 [tool.hatch.build.targets.wheel]
-packages = ["src/datalab"]
+packages = ["src/datalab", "src/sales_etl"]
 
 # ---------------------------------------------------------------------------
 # Tool configs
@@ -99,7 +103,9 @@ known-first-party = ["datalab"]
 # ignore — entry points build their own SparkSession, so an undefined name
 # there is a real bug.
 [tool.ruff.lint.per-file-ignores]
-"src/sales_etl/**" = ["F821"]
+# Only the SDP-interpreted entrypoint gets the ambient-`spark` allowance;
+# domain transforms/checks are ordinary python and keep full linting.
+"src/sales_etl/transformations/**" = ["F821"]
 "notebooks/**" = ["F821", "E402"]
 
 [tool.uv]

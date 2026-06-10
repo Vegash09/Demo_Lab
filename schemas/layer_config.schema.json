@@ -830,6 +830,14 @@
         "variables_conf": []
       }
     },
+    "imports": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Imports",
+      "type": "array"
+    },
     "layer": {
       "enum": [
         "bronze",

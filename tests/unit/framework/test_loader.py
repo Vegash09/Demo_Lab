@@ -9,6 +9,8 @@ VALID_SILVER = """
 schema_version: 1
 domain: sales
 layer: silver
+imports:
+  - sales_etl.transforms.sales
 defaults:
   schema_conf: datalab.silver_schema
 datasets:
@@ -103,3 +105,10 @@ def test_layer_file_mismatch(tmp_path):
 def test_missing_dir_names_config_key():
     with pytest.raises(ConfigError, match="datalab.config_dir"):
         load_domain_configs("/nonexistent/config/dir")
+
+
+def test_unimportable_imports_module_is_config_error(tmp_path):
+    bad = VALID_SILVER.replace("sales_etl.transforms.sales", "no_such_pkg.transforms")
+    _write(tmp_path, "silver.yml", bad)
+    with pytest.raises(ConfigError, match="no_such_pkg"):
+        load_domain_configs(tmp_path, ["silver"])

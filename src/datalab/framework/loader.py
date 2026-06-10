@@ -18,7 +18,7 @@ from pydantic import ValidationError
 
 from datalab.framework.errors import ConfigError
 from datalab.framework.models import LayerConfig, TableSource, ViewSource
-from datalab.framework.registry import check_registry, resolve_transform
+from datalab.framework.registry import check_registry, import_modules, resolve_transform
 
 LAYER_ORDER = ("bronze", "silver", "gold")
 
@@ -44,6 +44,7 @@ def _deep_validate(config: LayerConfig, path: Path, known_datasets: set[str]) ->
     from databricks.labs.dqx.engine import DQEngine
     from databricks.labs.dqx.rule import CHECK_FUNC_REGISTRY
 
+    import_modules(config.imports)
     custom = check_registry()
     for ds in config.datasets:
         for step in ds.transform:

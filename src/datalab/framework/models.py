@@ -298,6 +298,10 @@ class LayerConfig(ConfigBase):
     schema_version: Literal[1] = 1
     domain: Identifier
     layer: Literal["bronze", "silver", "gold"]
+    # Domain python modules whose import registers this layer's @transform
+    # functions and custom dqx checks (e.g. sales_etl.transforms.sales).
+    # Keeps the framework free of hardcoded domain module paths.
+    imports: list[str] = []
     defaults: LayerDefaults
     dq: DQDefaults = DQDefaults()
     datasets: list[DatasetSpec] = Field(min_length=1)

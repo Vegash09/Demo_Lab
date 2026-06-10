@@ -2,8 +2,8 @@ from datetime import date, datetime
 
 from pyspark.sql import Row
 
-from datalab.framework.registry import TRANSFORMS, discover
-from datalab.transforms.sales import clean_customers, summarize_customers_by_city
+from datalab.framework.registry import TRANSFORMS, import_modules
+from sales_etl.transforms.sales import clean_customers, summarize_customers_by_city
 
 # Explicit schema: _rescued_data is None in every row, so Spark cannot infer
 # its type from the data alone.
@@ -76,7 +76,8 @@ def test_clean_customers_drops_unknown_columns(spark):
 
 
 def test_transforms_are_registered_for_yaml():
-    discover()
+    # the same mechanism the loader uses for the YAML `imports:` list
+    import_modules(["sales_etl.transforms.sales"])
     assert TRANSFORMS["sales.clean_customers"] is clean_customers
     assert TRANSFORMS["sales.summarize_customers_by_city"] is summarize_customers_by_city
 

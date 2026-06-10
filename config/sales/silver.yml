@@ -5,6 +5,8 @@
 schema_version: 1
 domain: sales
 layer: silver
+imports: # domain modules registering this layer's transforms/checks
+  - sales_etl.transforms.sales
 defaults:
   catalog_conf: datalab.catalog
   schema_conf: datalab.silver_schema

@@ -16,9 +16,13 @@ Bundle).
   `datalab.framework.generate` — see `docs/FRAMEWORK.md`. The per-domain
   `src/<pipeline>/transformations/pipeline.py` is 3 lines. Never
   `import dlt` (deprecated).
-- **Shared library**: `src/datalab/` — pure, unit-testable DataFrame functions
-  (registered with `@transform(...)` for YAML reference), custom dqx checks
-  (`src/datalab/checks/`), and the framework itself (`src/datalab/framework/`).
+- **Framework vs domain — strict separation**: `src/datalab/` is the
+  REUSABLE framework (models, adapters, dqx engine, devtools, param helpers)
+  and contains zero domain code — it lifts into any project untouched.
+  Domain code lives in `src/<domain>_etl/` (pure `@transform` functions,
+  custom dqx checks, the 3-line pipeline entrypoint) and is declared to the
+  framework via the layer YAML's `imports:` list — never by editing the
+  framework.
 - **Data quality**: databrickslabs/dqx end to end — checks in YAML (dqx
   metadata format), valid/quarantine split per dataset, optional metrics MV.
 - **Three authoring lanes**: SDP pipelines (all medallion tables), python-file
@@ -63,16 +67,16 @@ config/
 schemas/
   layer_config.schema.json  JSON schema for editor validation (make schema regenerates)
 src/
-  datalab/                Shared python package (installed editable into pipeline + job envs)
+  datalab/                THE FRAMEWORK — reusable, zero domain code (installed editable)
     config.py             pipeline_conf() (read pipeline configuration), fqn()
     params.py             notebook_params() / cli_params() — job-lane parameter contract
     quality.py            DEPRECATED predicate helpers (dqx replaced them)
     framework/            flowspec: models, loader, registry, readers, writers,
                           dq (DQX adapter), generator, devtools, compat
-    checks/               Custom dqx check functions (@check_function, YAML-referenceable)
+  sales_etl/              THE SALES DOMAIN — adopts the framework (also packaged)
+    transformations/      pipeline.py (3-line config-driven entrypoint; SDP root_path)
     transforms/sales.py   pure transforms, registered via @transform("sales.*")
-  sales_etl/              Pipeline root_path
-    transformations/      pipeline.py (3-line config-driven entrypoint)
+    checks/               custom dqx check functions (@check_function)
   jobs/                   Python-file lane: spark_python_task entry points (side effects live here)
     sales/export_customer_summary.py
 tests/                    Unit tests (local Spark) for src/datalab — no workspace needed
@@ -141,9 +145,10 @@ data re-enters via the landing volume or a once-flow. A job calling
   source (cloud_files / table / view), transform steps (registry names),
   dqx quality checks, and target (streaming_table[+cdc] / materialized_view /
   temporary_view / delta_sink). Full reference: `docs/FRAMEWORK.md`.
-- Business logic stays in `src/datalab/transforms/` as pure functions
+- Business logic stays in `src/<domain>_etl/transforms/` as pure functions
   registered with `@transform("<domain>.<name>")`; custom dqx checks in
-  `src/datalab/checks/` with `@check_function`.
+  `src/<domain>_etl/checks/` with `@check_function`. The layer YAML's
+  `imports:` list names these modules — the framework hardcodes none.
 - Validate early: `make validate-configs` (same loader as CI, pytest and the
   pipeline); verify interactively with `notebooks/framework/verify_dataset.py`
   (`datalab.framework.run_dataset` — no deploy needed).
@@ -158,15 +163,14 @@ data re-enters via the landing volume or a once-flow. A job calling
 - Upserts/CDC: `dp.create_streaming_table(...)` +
   `dp.create_auto_cdc_flow(target=..., source=..., keys=[...], sequence_by=...)`.
   This replaces hand-written `MERGE` logic (and the old `apply_changes`).
-- Data quality: expectation decorators (`@dp.expect_all`,
-  `@dp.expect_all_or_drop`, `@dp.expect_or_fail`, ...). Rules live as
-  `{name: sql_expr}` dicts in `src/datalab/transforms/` so the quarantine
-  tables can reuse them via `datalab.quality.violation_predicate`.
+- Data quality: databrickslabs/dqx via the framework (`quality.checks` in the
+  layer YAML) — `dp.expect_*` is retired in this repo; even hand-written
+  datasets should route quality through `datalab.framework.dq`.
 - Parameters: never hardcode catalogs/schemas/paths. Declare them in the
   pipeline resource `configuration:` mapping and read with
   `datalab.config.pipeline_conf(spark, "datalab.<key>")`.
-- Business logic goes in `src/datalab/transforms/` as pure functions with unit
-  tests; transformation files stay thin wiring.
+- Business logic goes in `src/<domain>_etl/transforms/` as pure functions with
+  unit tests; transformation files stay thin wiring.
 - `spark` is injected by the SDP runtime at module scope in pipeline files
   (ruff is configured to allow it there, see `per-file-ignores`).
 
@@ -316,14 +320,17 @@ The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
 
 - **Add a table to an existing pipeline**: add a dataset entry to
   `config/<domain>/<layer>.yml`; if new logic is needed, add a pure
-  `@transform`-registered function in `src/datalab/transforms/` with a unit
-  test. `make validate-configs lint test validate`. Walkthrough:
-  `docs/FRAMEWORK.md`.
+  `@transform`-registered function in `src/<domain>_etl/transforms/` with a
+  unit test (and the module in the layer's `imports:`).
+  `make validate-configs lint test validate`. Walkthrough: `docs/FRAMEWORK.md`.
 - **Add a new domain pipeline** (e.g. finance): create `config/finance/`
-  layer YAMLs + `src/finance_etl/transformations/pipeline.py` (copy the
-  3-line sales one), copy `resources/sales_etl.pipeline.yml` +
-  `resources/sales_etl.job.yml`, rename keys and point
-  `datalab.config_dir` at `config/finance`.
+  layer YAMLs (with `imports: [finance_etl.transforms...]`) +
+  `src/finance_etl/` (`transformations/pipeline.py` copied 3-liner,
+  `transforms/`, `checks/`), add `src/finance_etl` to
+  `[tool.hatch.build.targets.wheel]` packages, copy
+  `resources/sales_etl.pipeline.yml` + `resources/sales_etl.job.yml`,
+  rename keys and point `datalab.config_dir` at `config/finance`.
+  The framework (`src/datalab`) is not touched.
 - **Change quality rules**: edit `quality.checks` (dqx metadata) in the
   layer YAML — target filtering and quarantine stay in sync automatically.
   `make validate-configs` catches invalid rules statically; verify behavior

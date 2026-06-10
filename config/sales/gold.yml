@@ -4,6 +4,8 @@
 schema_version: 1
 domain: sales
 layer: gold
+imports:
+  - sales_etl.transforms.sales
 defaults:
   catalog_conf: datalab.catalog
   schema_conf: datalab.gold_schema

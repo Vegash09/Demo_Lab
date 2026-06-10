@@ -1,26 +1,29 @@
-# sales_etl — Lakeflow Spark Declarative Pipeline
+# sales_etl — the sales domain (framework adopter)
 
-Medallion pipeline for the sales domain. This folder is the pipeline `root_path`
-(see `resources/sales_etl.pipeline.yml`); every file under `transformations/`
-is pipeline source code interpreted by the SDP engine.
+Everything the sales domain owns, kept OUTSIDE the reusable framework
+(`src/datalab/`) so the framework lifts into other projects untouched:
 
 ```
 transformations/
-  bronze_customers.py   Auto Loader ingest of the raw customer feed → bronze
-  silver_customers.py   clean + expectations + quarantine + AUTO CDC upsert → silver
-  gold_customers.py     business aggregates as materialized views → gold
+  pipeline.py       3-line LDP entrypoint: generate(spark, datalab.config_dir)
+transforms/
+  sales.py          pure DataFrame functions, registered @transform("sales.*")
+checks/
+  __init__.py       custom dqx check functions (@check_function)
 ```
 
-Conventions (enforced — see `AGENTS.md` and the `author-sdp-pipeline` skill):
+The datasets themselves are declared in `config/sales/{bronze,silver,gold}.yml`
+(this folder's python is referenced from there via the `imports:` list and
+transform registry names — see `docs/FRAMEWORK.md`).
 
-- `from pyspark import pipelines as dp` — never `import dlt` (deprecated).
-- Dataset functions return DataFrames. No `.write`, `.saveAsTable`, `.start()`,
-  or `.collect()` inside definitions — the engine owns materialization.
-- Business logic lives in `src/datalab/transforms/` as pure functions so it is
-  unit-testable; files here only wire those functions into datasets.
-- Parameters (catalog, schemas, landing paths) come from the pipeline
-  `configuration` mapping — read them with `datalab.config.pipeline_conf`.
-  Never hardcode catalogs, schemas, or workspace paths.
+Conventions:
+
+- Business logic = pure functions here, with unit tests in `tests/`.
+- No hand-written `dp.*` wiring — the framework generates all LDP objects.
+- Parameters come from the pipeline `configuration` mapping (bundle
+  variables); never hardcode catalogs, schemas, or paths.
+- This package is listed in `[tool.hatch.build.targets.wheel]` so the
+  pipeline/job environments can import it.
 
 Run a development refresh:
 
