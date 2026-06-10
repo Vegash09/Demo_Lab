@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
 
 from datalab.framework.context import ResolveContext
 from datalab.framework.models import (
     CloudFilesSource,
+    ColumnSpec,
+    DatasetSpec,
     LayerConfig,
     ReferenceSource,
     SourceSpec,
@@ -73,7 +76,30 @@ def read_references(
     return out
 
 
+def project_columns(df: DataFrame, columns: list[ColumnSpec]) -> DataFrame:
+    """The source→target column mapping from the artifact's ``columns:``.
+
+    Renames, reorders, and casts — casts are ANSI-safe (``try_cast``) so a
+    malformed value becomes NULL for the dqx rules to flag instead of failing
+    the stream."""
+    if not columns:
+        return df
+    projected = []
+    for col in columns:
+        expr = F.col(col.source_name)
+        if col.type:
+            expr = expr.try_cast(col.type)
+        projected.append(expr.alias(col.name))
+    return df.select(*projected)
+
+
 def apply_transforms(df: DataFrame, steps: list[TransformStep]) -> DataFrame:
     for step in steps:
         df = resolve_transform(step.function)(df, **step.args)
     return df
+
+
+def prepare(df: DataFrame, ds: DatasetSpec) -> DataFrame:
+    """Column mapping first (target names/types), then the transform steps
+    (which therefore operate on TARGET column names)."""
+    return apply_transforms(project_columns(df, ds.columns), ds.transform)

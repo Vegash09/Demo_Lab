@@ -1,16 +1,22 @@
 # The datalab framework (flowspec)
 
-Config-driven Lakeflow Declarative Pipelines: a domain's whole medallion flow
-is described in per-layer YAML files, validated by Pydantic models, and
-generated into LDP datasets through reader/writer adapters. Data quality is
+The baseline LDP framework reused across customers: every **target table is
+one YAML artifact**, authored by a coding agent from a natural-language
+request (skill: `author-ldp-artifact`), validated by Pydantic models, and
+generated into Lakeflow Declarative Pipelines datasets through reader/writer
+adapters. Data quality is
 [databrickslabs/dqx](https://databrickslabs.github.io/dqx/) end to end.
 
 ```text
-config/<domain>/{bronze,silver,gold}.yml      what to build (+ dqx rules)
-        │  pydantic LayerConfig (validated at import, CI, and editor)
+config/<domain>/domain.yml                    domain settings (imports, conf keys per layer)
+config/<domain>/<layer>/<table>.yml           ONE artifact per target table:
+        │                                       columns (source→target + types + DQ rules),
+        │                                       transforms, target kind
+        │  pydantic DomainConfig/TableFile (validated at import, CI, and editor)
         ▼
 datalab.framework.generate(spark, config_dir) the 3-line pipeline entrypoint
         │  readers: cloud_files / table / view          (batch or stream)
+        │  columns: projection (rename + ANSI-safe casts)
         │  transforms: registry of pure functions       (src/<domain>_etl/transforms)
         │  dq: DQX apply → valid / quarantine split     (src/<domain>_etl/checks too)
         ▼  writers: streaming table / AUTO CDC / MV / temporary view / sink
@@ -18,60 +24,76 @@ generated graph:  <name>__input → <name>__checked → <name>__valid → target
                                             └─────────→ <name>_quarantine (+ metrics MV)
 ```
 
-## Add a table — YAML only
+**No hardcoded catalogs — ever.** Every location in an artifact is a
+pipeline-conf KEY (`datalab.catalog`, `datalab.silver_schema`, …) resolved per
+environment through bundle variables, so promoting dev → stage → prod never
+edits a config file.
 
-1. Add a dataset entry to the layer file (`config/sales/silver.yml`):
+## Add a table — one artifact
+
+Create `config/<domain>/<layer>/<table>.yml` (file name == target table
+name). Example `config/sales/silver/orders.yml`:
 
 ```yaml
-- name: orders
-  comment: Validated orders, SCD1 per order_id.
-  source: {kind: table, name: orders_raw, schema_conf: datalab.bronze_schema, as_stream: true}
-  transform:
-    - function: sales.clean_orders          # pure fn in src/sales_etl/transforms/
-  quality:
-    checks:                                  # databrickslabs/dqx metadata, verbatim
-      - name: valid_order_id
-        criticality: error                   # error → dropped + quarantined
-        check: {function: is_not_null, arguments: {column: order_id}}
-      - name: plausible_amount
-        criticality: warn                    # warn → flows through, flagged
-        check: {function: is_in_range, arguments: {column: amount, min_limit: 0}}
-    quarantine: {}                           # orders_quarantine, errors-only
-  target:
-    kind: streaming_table
-    cdc: {keys: [order_id], sequence_by: _ingest_ts, scd_type: 1}
+# yaml-language-server: $schema=../../../schemas/table_config.schema.json
+schema_version: 1
+name: orders
+comment: Validated orders, SCD1 per order_id.
+source:
+  kind: table
+  name: orders_raw
+  layer: bronze              # resolves via domain.yml — no hardcoded schemas
+  as_stream: true
+columns:                     # target columns: source→target names + types + rules
+  - name: order_id
+    source: src_order_id     # rename
+    type: string
+    quality:
+      - criticality: error   # → dropped + quarantined (auto-named order_id_is_not_null)
+        check: {function: is_not_null}
+  - name: amount
+    type: decimal(12,2)      # ANSI-safe cast: malformed → NULL for DQ to flag
+    quality:
+      - criticality: warn    # → flows through, flagged
+        check: {function: is_in_range, arguments: {min_limit: 0}}
+  - name: _ingest_ts
+    type: timestamp
+transform:
+  - function: sales.enrich_orders   # only for logic a mapping can't express
+target:
+  kind: streaming_table
+  cdc: {keys: [order_id], sequence_by: _ingest_ts, scd_type: 1}
 ```
 
-2. If you need a new transform, register a pure function in the DOMAIN
-   package (`src/sales_etl/transforms/`) and make sure its module is in the
-   layer's `imports:` list:
+Error rules **auto-create** `orders_quarantine` (rows are never silently
+dropped); add a `quality:` block only for table-level rules, quarantine
+tuning (`include_warnings`, `enabled: false`), metrics, or references.
+
+If a new transform is needed, register a pure function in the DOMAIN package
+and make sure its module is in `domain.yml` `imports:`:
 
 ```python
-@transform("sales.clean_orders")
-def clean_orders(df: DataFrame) -> DataFrame: ...
+@transform("sales.enrich_orders")
+def enrich_orders(df: DataFrame) -> DataFrame: ...
 ```
 
-```yaml
-imports:
-  - sales_etl.transforms.sales
-```
-
-3. `make validate-configs` → `make test` → verify interactively (below) →
-   `make deploy run`.
+Then: `make validate-configs` → `make test` → verify interactively (below) →
+`make deploy run`.
 
 ## Add a domain — the framework is never edited
 
 The framework (`src/datalab/`) contains zero domain code and hardcodes no
 domain module paths; adopting it in a new domain (or lifting it into another
-project) means creating only domain-owned artifacts:
+customer project) means creating only domain-owned artifacts:
 
-1. `config/<domain>/{bronze,silver,gold}.yml` — datasets + dqx rules, with
-   `imports:` naming the domain modules.
-2. `src/<domain>_etl/` — `transforms/` (pure `@transform` functions),
+1. `config/<domain>/domain.yml` — domain name, `imports:`, `catalog_conf`,
+   per-layer `layers:` schema conf keys.
+2. `config/<domain>/<layer>/<table>.yml` — one artifact per target table.
+3. `src/<domain>_etl/` — `transforms/` (pure `@transform` functions),
    `checks/` (custom dqx checks), `transformations/pipeline.py` (copy the
    3-line sales one).
-3. Add `src/<domain>_etl` to `[tool.hatch.build.targets.wheel]` packages.
-4. Copy `resources/sales_etl.pipeline.yml` (+ job yml), rename, and point
+4. Add `src/<domain>_etl` to `[tool.hatch.build.targets.wheel]` packages.
+5. Copy `resources/sales_etl.pipeline.yml` (+ job yml), rename, and point
    `datalab.config_dir` at `config/<domain>`.
 
 ## Choosing a target kind
@@ -86,10 +108,19 @@ project) means creating only domain-owned artifacts:
 
 ## Data quality (dqx) semantics
 
-- `checks:` entries are dqx metadata — anything from the
+- Rules are dqx metadata — anything from the
   [dqx checks reference](https://databrickslabs.github.io/dqx/docs/reference/quality_checks/)
   can be pasted in, including `filter:`, `for_each_column:`, and custom
-  functions from `src/<domain>_etl/checks/`, declared via the layer `imports:` list.
+  functions from `src/<domain>_etl/checks/` (declared via `domain.yml`
+  `imports:`). The NL→check-function mapping table lives in the
+  `author-ldp-artifact` skill.
+- **Column-level rules** (`columns[].quality`) get `check.arguments.column`
+  and a `<column>_<function>` rule name injected automatically. Table-level
+  and multi-column rules go under `quality.checks` with explicit arguments.
+- **Auto-quarantine**: any error-criticality rule creates
+  `<table>_quarantine` even without a `quality.quarantine` block — rows are
+  never silently dropped. Opt out explicitly with
+  `quality: {quarantine: {enabled: false}}`.
 - `criticality: error` rows never reach the target; they land in the
   quarantine table with `_errors` evidence structs.
   `criticality: warn` rows flow into the target (flagged in `_warnings`
@@ -129,8 +160,9 @@ project) means creating only domain-owned artifacts:
 - If a source already has `_errors`/`_warnings` columns, rename the result
   columns per layer: `dq: {result_columns: {errors: _dq_errors, warnings: _dq_warnings}}`.
 - The editor autocompletes/validates configs via the
-  `yaml-language-server` header → `schemas/layer_config.schema.json`
-  (regenerate with `make schema` after model changes).
+  `yaml-language-server` headers → `schemas/table_config.schema.json` and
+  `schemas/domain_config.schema.json` (regenerate with `make schema` after
+  model changes).
 - dqx local execution is experimental upstream; the pinned behaviors we rely
   on are locked by `tests/unit/framework/test_dq.py`. Upgrade
   `databricks-labs-dqx` only after reading its changelog (it is Beta).

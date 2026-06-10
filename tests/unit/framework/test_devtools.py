@@ -43,12 +43,15 @@ def test_run_dataset_reproduces_silver_contract(spark, bronze_sample):
 
     valid = res.valid_df.collect()
     assert [r.customer_id for r in valid] == ["C001"]
-    assert valid[0].email == "asha@example.com"  # transform ran
+    assert valid[0].email == "asha@example.com"  # transform ran post-mapping
+    assert valid[0].age == 34  # columns: cast string→int
+    assert dict(res.valid_df.dtypes)["signup_date"] == "date"
     assert "_errors" not in res.valid_df.columns  # result cols stripped
 
     quarantined = res.quarantine_df.collect()
     assert len(quarantined) == 1
-    assert [e.name for e in quarantined[0]._errors] == ["valid_customer_id"]
+    # derived per-column rule name: <column>_<function>
+    assert [e.name for e in quarantined[0]._errors] == ["customer_id_is_not_null"]
 
     assert res.cdc_plan and "customer_id" in res.cdc_plan  # engine-owned part
 
@@ -61,5 +64,6 @@ def test_run_dataset_unknown_dataset_lists_options(spark):
 def test_plan_needs_no_spark_and_names_quarantine():
     out = plan("config/sales")
     assert "customers_quarantine" in out
-    assert "sales.clean_customers" in out
+    assert "8 mapped column(s)" in out
+    assert "sales.normalize_email" in out
     assert "materialized_view" in out

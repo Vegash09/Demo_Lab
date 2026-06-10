@@ -1,79 +1,130 @@
-"""YAML → validated LayerConfig, with three-station fail-fast validation.
+"""YAML → validated configs, with three-station fail-fast validation.
 
-Station 1 is the editor (JSON schema, ``make schema``); station 2 is this
+Layout (what coding agents author from natural language):
+
+    config/<domain>/domain.yml            environment-agnostic domain settings
+    config/<domain>/<layer>/<table>.yml   ONE file per target table
+
+Station 1 is the editor (JSON schemas, ``make schema``); station 2 is this
 loader (pydantic shape + deep pass), which runs identically in pytest,
 ``make validate-configs`` and at pipeline import; station 3 is the pipeline
 update itself. A bad config never moves data.
 
-CLI: ``python -m datalab.framework.loader config/sales [config/finance ...]``
+CLI: ``python -m datalab.framework.loader config/ [more dirs ...]``
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
 
 from datalab.framework.errors import ConfigError
-from datalab.framework.models import LayerConfig, TableSource, ViewSource
-from datalab.framework.registry import check_registry, import_modules, resolve_transform
+from datalab.framework.models import (
+    DomainConfig,
+    LayerConfig,
+    LayerDefaults,
+    TableFile,
+    TableSource,
+    ViewSource,
+)
+from datalab.framework.registry import check_registry, import_modules
 
 LAYER_ORDER = ("bronze", "silver", "gold")
 
 
-def load_layer_config(path: Path) -> LayerConfig:
+def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         raw = yaml.safe_load(path.read_text())
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path}: invalid YAML — {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigError(f"{path}: expected a mapping at the top level, got {type(raw).__name__}")
+    return raw
+
+
+def _validate(model: type, raw: dict[str, Any], path: Path) -> Any:
     try:
-        return LayerConfig.model_validate(raw)
+        return model.model_validate(raw)
     except ValidationError as exc:
         problems = "\n".join(
             f"  {path}: {'.'.join(str(loc) for loc in err['loc'])}: {err['msg']}"
             for err in exc.errors(include_url=False)
         )
-        raise ConfigError(f"invalid layer config:\n{problems}") from exc
+        raise ConfigError(f"invalid config:\n{problems}") from exc
 
 
-def _deep_validate(config: LayerConfig, path: Path, known_datasets: set[str]) -> None:
+def load_domain(config_dir: Path) -> DomainConfig:
+    domain_path = config_dir / "domain.yml"
+    if not domain_path.exists():
+        domain_path = config_dir / "domain.yaml"
+    if not domain_path.exists():
+        raise ConfigError(
+            f"{config_dir} has no domain.yml — every domain config dir starts with one "
+            "(domain name, imports, catalog_conf, per-layer schema confs)"
+        )
+    return _validate(DomainConfig, _load_yaml(domain_path), domain_path)
+
+
+def _load_table_file(path: Path, domain: DomainConfig) -> TableFile:
+    raw = _load_yaml(path)
+    # `source.layer` references the domain's layer→schema mapping.
+    source = raw.get("source")
+    if isinstance(source, dict) and source.get("layer") and not source.get("schema_conf"):
+        entry = domain.layers.get(source["layer"])
+        if entry is None:
+            raise ConfigError(
+                f"{path}: source.layer {source['layer']!r} has no entry under "
+                "domain.yml layers:"
+            )
+        source = {k: v for k, v in source.items() if k != "layer"}
+        source["schema_conf"] = entry.schema_conf
+        raw = {**raw, "source": source}
+    spec = _validate(TableFile, raw, path)
+    if spec.name != path.stem:
+        raise ConfigError(
+            f"{path}: file is named {path.stem!r} but declares the target table "
+            f"{spec.name!r} — one artifact per target table, file name == table name"
+        )
+    return spec
+
+
+def _deep_validate(config: LayerConfig, where: Path, known_datasets: set[str]) -> None:
     from databricks.labs.dqx.engine import DQEngine
     from databricks.labs.dqx.rule import CHECK_FUNC_REGISTRY
 
-    import_modules(config.imports)
     custom = check_registry()
     for ds in config.datasets:
+        from datalab.framework.registry import resolve_transform
+
         for step in ds.transform:
             resolve_transform(step.function)  # raises ConfigError on unknown names
 
-        if ds.quality:
-            status = DQEngine.validate_checks(
-                [rule.to_dqx() for rule in ds.quality.checks], custom_check_functions=custom
-            )
+        checks = ds.effective_checks()
+        if checks:
+            status = DQEngine.validate_checks(checks, custom_check_functions=custom)
             if status.has_errors:
                 raise ConfigError(
-                    f"{path}: dataset {ds.name!r} has invalid dqx checks:\n{status.to_string()}"
+                    f"{where}/{ds.name}.yml: invalid dqx checks:\n{status.to_string()}"
                 )
-            for rule in ds.quality.checks:
-                ref = rule.check.arguments.get("ref_df_name")
-                if ref and ref not in ds.quality.references:
+            references = ds.quality.references if ds.quality else {}
+            allow_dataset = ds.quality.allow_streaming_dataset_checks if ds.quality else False
+            for meta in checks:
+                check = meta.get("check", {})
+                ref = check.get("arguments", {}).get("ref_df_name")
+                if ref and ref not in references:
                     raise ConfigError(
-                        f"{path}: dataset {ds.name!r} check {rule.check.function!r} uses "
+                        f"{where}/{ds.name}.yml: check {check.get('function')!r} uses "
                         f"ref_df_name {ref!r} but quality.references has no such key"
                     )
-                kind = CHECK_FUNC_REGISTRY.get(rule.check.function)
-                if (
-                    kind == "dataset"
-                    and ds.is_streaming
-                    and not ds.quality.allow_streaming_dataset_checks
-                ):
+                kind = CHECK_FUNC_REGISTRY.get(check.get("function", ""))
+                if kind == "dataset" and ds.is_streaming and not allow_dataset:
                     raise ConfigError(
-                        f"{path}: dataset {ds.name!r} uses dataset-level check "
-                        f"{rule.check.function!r} on a STREAMING target — it would only "
+                        f"{where}/{ds.name}.yml: dataset-level check "
+                        f"{check.get('function')!r} on a STREAMING target would only "
                         "validate per micro-batch. Use a materialized_view target for "
                         "global guarantees, or set quality.allow_streaming_dataset_checks: "
                         "true to accept per-batch semantics."
@@ -81,7 +132,7 @@ def _deep_validate(config: LayerConfig, path: Path, known_datasets: set[str]) ->
 
         if isinstance(ds.source, ViewSource) and ds.source.name not in known_datasets:
             raise ConfigError(
-                f"{path}: dataset {ds.name!r} reads view {ds.source.name!r}, which no "
+                f"{where}/{ds.name}.yml: reads view {ds.source.name!r}, which no "
                 "earlier dataset in this domain defines"
             )
         known_datasets.add(ds.name)
@@ -96,25 +147,47 @@ def load_domain_configs(config_dir: str | Path, layers: list[str] | None = None)
             f"config directory {config_dir} does not exist — check the "
             "datalab.config_dir pipeline configuration value"
         )
+    domain = load_domain(config_dir)
+    import_modules(domain.imports)
+
     wanted = list(layers) if layers else [
-        layer for layer in LAYER_ORDER
-        if (config_dir / f"{layer}.yml").exists() or (config_dir / f"{layer}.yaml").exists()
+        layer for layer in LAYER_ORDER if (config_dir / layer).is_dir()
     ]
     if not wanted:
-        raise ConfigError(f"no {'/'.join(LAYER_ORDER)} YAML files found in {config_dir}")
+        raise ConfigError(
+            f"no layer folders ({'/'.join(LAYER_ORDER)}) found in {config_dir} — "
+            "each target table lives in config/<domain>/<layer>/<table>.yml"
+        )
 
     configs: list[LayerConfig] = []
     known: set[str] = set()
     for layer in wanted:
-        path = config_dir / f"{layer}.yml"
-        if not path.exists():
-            path = config_dir / f"{layer}.yaml"
-        if not path.exists():
-            raise ConfigError(f"requested layer {layer!r} has no YAML file in {config_dir}")
-        config = load_layer_config(path)
-        if config.layer != layer:
-            raise ConfigError(f"{path}: file is named {layer}.yml but declares layer: {config.layer}")
-        _deep_validate(config, path, known)
+        layer_dir = config_dir / layer
+        if not layer_dir.is_dir():
+            raise ConfigError(f"requested layer {layer!r} has no folder in {config_dir}")
+        entry = domain.layers.get(layer)
+        if entry is None:
+            raise ConfigError(
+                f"{config_dir}/domain.yml: layer {layer!r} has table files but no "
+                "layers: entry mapping it to a schema conf key"
+            )
+        files = sorted(layer_dir.glob("*.yml")) + sorted(layer_dir.glob("*.yaml"))
+        if not files:
+            raise ConfigError(f"{layer_dir} is empty — add <table>.yml artifacts or remove it")
+        specs = [_load_table_file(path, domain) for path in files]
+        config = LayerConfig(
+            domain=domain.domain,
+            layer=layer,
+            imports=domain.imports,
+            defaults=LayerDefaults(
+                catalog_conf=domain.catalog_conf,
+                schema_conf=entry.schema_conf,
+                table_properties=entry.table_properties,
+            ),
+            dq=domain.dq,
+            datasets=specs,
+        )
+        _deep_validate(config, layer_dir, known)
         configs.append(config)
     return configs
 
@@ -126,9 +199,10 @@ def main(argv: list[str]) -> int:
     failed = False
     for arg in argv:
         root = Path(arg)
-        domains = sorted(d for d in root.iterdir() if d.is_dir()) if not any(
-            (root / f"{layer}.yml").exists() for layer in LAYER_ORDER
-        ) else [root]
+        if (root / "domain.yml").exists() or (root / "domain.yaml").exists():
+            domains = [root]
+        else:
+            domains = sorted(d for d in root.iterdir() if d.is_dir())
         for domain_dir in domains:
             try:
                 configs = load_domain_configs(domain_dir)
@@ -137,7 +211,7 @@ def main(argv: list[str]) -> int:
                 failed = True
             else:
                 datasets = sum(len(c.datasets) for c in configs)
-                print(f"ok   {domain_dir} — {len(configs)} layer(s), {datasets} dataset(s)")
+                print(f"ok   {domain_dir} — {len(configs)} layer(s), {datasets} table(s)")
     return 1 if failed else 0
 
 

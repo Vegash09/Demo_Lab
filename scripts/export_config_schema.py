@@ -1,8 +1,11 @@
-"""Regenerate schemas/layer_config.schema.json from the Pydantic models.
+"""Regenerate the JSON schemas under schemas/ from the Pydantic models.
 
 Run via ``make schema`` after any change to datalab/framework/models.py.
-The schema powers editor validation through the yaml-language-server header
-comment in every config/<domain>/*.yml.
+The schemas power editor validation through the yaml-language-server header
+comment in every config file:
+
+    config/<domain>/domain.yml          -> domain_config.schema.json
+    config/<domain>/<layer>/<table>.yml -> table_config.schema.json
 """
 
 from __future__ import annotations
@@ -10,16 +13,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from datalab.framework.models import LayerConfig
+from datalab.framework.models import DomainConfig, TableFile
 
-OUT = Path(__file__).resolve().parent.parent / "schemas" / "layer_config.schema.json"
+OUT_DIR = Path(__file__).resolve().parent.parent / "schemas"
+
+EXPORTS = {
+    "domain_config.schema.json": DomainConfig,
+    "table_config.schema.json": TableFile,
+}
 
 
 def main() -> None:
-    OUT.parent.mkdir(exist_ok=True)
-    schema = LayerConfig.model_json_schema()
-    OUT.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n")
-    print(f"wrote {OUT}")
+    OUT_DIR.mkdir(exist_ok=True)
+    for filename, model in EXPORTS.items():
+        out = OUT_DIR / filename
+        out.write_text(json.dumps(model.model_json_schema(), indent=2, sort_keys=True) + "\n")
+        print(f"wrote {out}")
 
 
 if __name__ == "__main__":

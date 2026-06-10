@@ -51,9 +51,21 @@ class CloudFilesSource(ConfigBase):
 class TableSource(ConfigBase):
     kind: Literal["table"]
     name: Identifier
+    # Where the source table lives. `layer` references the domain's layer →
+    # schema mapping (domain.yml); the conf overrides are for tables outside
+    # this domain. All are pipeline-conf KEYS — never literal names.
+    layer: Literal["bronze", "silver", "gold"] | None = None
     catalog_conf: ConfKey | None = None  # None -> layer defaults
     schema_conf: ConfKey | None = None  # None -> layer defaults
     as_stream: bool = False
+
+    @model_validator(mode="after")
+    def _layer_xor_schema(self) -> TableSource:
+        if self.layer and self.schema_conf:
+            raise ValueError(
+                f"source table {self.name!r}: give either layer or schema_conf, not both"
+            )
+        return self
 
 
 class ViewSource(ConfigBase):
@@ -165,8 +177,11 @@ class DQRule(ConfigBase):
 
 
 class QuarantineSpec(ConfigBase):
-    name: Identifier | None = None  # default: <dataset>_quarantine
-    # False == legacy parity: quarantine holds exactly the dropped rows.
+    # Opt-out: error rules auto-create a quarantine (rows are never silently
+    # dropped); set enabled: false to accept silent drops explicitly.
+    enabled: bool = True
+    name: Identifier | None = None  # default: <table>_quarantine
+    # False == quarantine holds exactly the dropped rows.
     include_warnings: bool = False
     table_properties: dict[str, str] = {}
 
@@ -185,7 +200,11 @@ class ReferenceSource(ConfigBase):
 
 
 class QualitySpec(ConfigBase):
-    checks: list[DQRule] = Field(min_length=1)
+    """TABLE-level quality config. Most rules belong on the columns
+    themselves (``columns[].quality``); this block carries multi-column /
+    dataset-level checks and the quarantine/metrics/reference settings."""
+
+    checks: list[DQRule] = []
     quarantine: QuarantineSpec | None = None
     metrics: MetricsSpec = MetricsSpec()
     references: dict[Identifier, ReferenceSource] = {}
@@ -194,13 +213,36 @@ class QualitySpec(ConfigBase):
     allow_streaming_dataset_checks: bool = False
 
 
+class ColumnSpec(ConfigBase):
+    """One target-table column: source→target mapping, data type, and the
+    column's own dqx rules. ``check.arguments.column`` is auto-filled with
+    the target column name."""
+
+    name: Identifier  # target column name
+    source: str | None = None  # source column name; default: same as name
+    type: str | None = None  # Spark data type; cast is ANSI-safe (try_cast)
+    comment: str | None = None
+    quality: list[DQRule] = []
+
+    @property
+    def source_name(self) -> str:
+        return self.source or self.name
+
+
 # --------------------------------------------------------------------------
-# Dataset + layer
+# Dataset (one target table) + layer
 # --------------------------------------------------------------------------
 class DatasetSpec(ConfigBase):
+    """One target table: the unit a coding agent authors from natural
+    language, stored as ONE YAML file under the table's layer folder
+    (``config/<domain>/<layer>/<table>.yml``)."""
+
     name: Identifier
     comment: str | None = None
     source: SourceSpec
+    # Target-table columns: source→target names, data types, per-column dqx
+    # rules. The framework generates the projection (ANSI-safe try_cast).
+    columns: list[ColumnSpec] = []
     transform: list[TransformStep] = []
     quality: QualitySpec | None = None
     target: TargetSpec
@@ -216,10 +258,44 @@ class DatasetSpec(ConfigBase):
             return True
         return bool(self.source.as_stream)
 
-    def quarantine_name(self) -> str | None:
-        if not (self.quality and self.quality.quarantine):
+    def effective_checks(self) -> list[dict[str, Any]]:
+        """All dqx rules for this table: column-level rules (with the target
+        column name and a derived rule name injected) + table-level checks."""
+        out: list[dict[str, Any]] = []
+        for col in self.columns:
+            for rule in col.quality:
+                meta = rule.to_dqx()
+                meta.setdefault("check", {}).setdefault("arguments", {})
+                meta["check"]["arguments"].setdefault("column", col.name)
+                meta.setdefault("name", f"{col.name}_{rule.check.function}")
+                out.append(meta)
+        if self.quality:
+            out.extend(rule.to_dqx() for rule in self.quality.checks)
+        return out
+
+    @property
+    def has_checks(self) -> bool:
+        return bool(self.effective_checks())
+
+    def _has_error_rules(self) -> bool:
+        return any(meta.get("criticality", "error") == "error" for meta in self.effective_checks())
+
+    def quarantine_spec(self) -> QuarantineSpec | None:
+        """Explicit spec if configured; otherwise error rules AUTO-create a
+        default quarantine (rows are never silently dropped). None when
+        disabled, annotate-only (temporary_view), or no error rules exist."""
+        if isinstance(self.target, TemporaryViewTarget):
             return None
-        return self.quality.quarantine.name or f"{self.name}_quarantine"
+        explicit = self.quality.quarantine if self.quality else None
+        if explicit is not None:
+            return explicit if explicit.enabled else None
+        return QuarantineSpec() if self._has_error_rules() else None
+
+    def quarantine_name(self) -> str | None:
+        spec = self.quarantine_spec()
+        if spec is None:
+            return None
+        return spec.name or f"{self.name}_quarantine"
 
     def metrics_name(self) -> str | None:
         if not (self.quality and self.quality.metrics.enabled):
@@ -256,19 +332,33 @@ class DatasetSpec(ConfigBase):
                 f"dataset {name!r}: delta_sink appends from a stream; the source must be streaming"
             )
         if isinstance(t, TemporaryViewTarget) and self.quality:
-            if self.quality.quarantine or self.quality.metrics.enabled:
+            if (self.quality.quarantine and self.quality.quarantine.enabled) or (
+                self.quality.metrics.enabled
+            ):
                 raise ValueError(
                     f"dataset {name!r}: temporary_view targets carry quality results inline "
                     "(_errors/_warnings); quarantine/metrics are not allowed"
                 )
-        if self.quality and self.quality.quarantine:
-            if not any(r.criticality == "error" for r in self.quality.checks):
+        seen_cols: set[str] = set()
+        for col in self.columns:
+            if col.name in seen_cols:
+                raise ValueError(f"dataset {name!r}: duplicate target column {col.name!r}")
+            seen_cols.add(col.name)
+        if self.quality and not self.quality.checks and not any(
+            col.quality for col in self.columns
+        ):
+            raise ValueError(
+                f"dataset {name!r}: a quality block with no checks and no column-level "
+                "rules does nothing — add rules or remove it"
+            )
+        if self.quality and self.quality.quarantine and self.quality.quarantine.enabled:
+            if not self._has_error_rules():
                 raise ValueError(
-                    f"dataset {name!r}: quarantine without any criticality=error check "
+                    f"dataset {name!r}: quarantine without any criticality=error rule "
                     "would always be empty — add an error rule or drop quarantine"
                 )
         if self.quality and self.quality.metrics.enabled:
-            q = self.quality.quarantine
+            q = self.quarantine_spec()
             if q is None or not q.include_warnings:
                 raise ValueError(
                     f"dataset {name!r}: metrics aggregate the quarantine table and need "
@@ -324,3 +414,40 @@ class LayerConfig(ConfigBase):
                     )
                 seen[generated] = f"{label} of dataset {ds.name!r}"
         return self
+
+
+# --------------------------------------------------------------------------
+# File-level models: what coding agents actually author.
+#   config/<domain>/domain.yml            -> DomainConfig
+#   config/<domain>/<layer>/<table>.yml   -> TableFile (one per target table)
+# --------------------------------------------------------------------------
+class LayerEntry(ConfigBase):
+    schema_conf: ConfKey
+    table_properties: dict[str, str] = {}
+
+
+class DomainConfig(ConfigBase):
+    """config/<domain>/domain.yml — environment-agnostic domain settings.
+
+    Catalog and schema values are pipeline-conf KEYS resolved per target
+    (dev/stage/prod) through bundle variables — literal catalog names are
+    rejected by design so promotion across environments never edits configs.
+    """
+
+    schema_version: Literal[1] = 1
+    domain: Identifier
+    # Domain python modules whose import registers @transform functions and
+    # custom dqx checks (e.g. sales_etl.transforms.sales).
+    imports: list[str] = []
+    catalog_conf: ConfKey = "datalab.catalog"
+    layers: dict[Literal["bronze", "silver", "gold"], LayerEntry]
+    dq: DQDefaults = DQDefaults()
+
+
+class TableFile(DatasetSpec):
+    """config/<domain>/<layer>/<table>.yml — one target table per file.
+
+    The file name must equal the target table name; the layer comes from the
+    folder. Everything else is DatasetSpec."""
+
+    schema_version: Literal[1] = 1

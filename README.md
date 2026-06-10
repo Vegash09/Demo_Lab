@@ -11,7 +11,7 @@ Spark Declarative Pipelines** (`pyspark.pipelines`) and shipped as a
 
 | Surface | Where | What |
 |---|---|---|
-| Dataset configs | `config/<domain>/` | Per-layer YAML: sources, transforms, dqx quality rules, targets ([guide](docs/FRAMEWORK.md)) |
+| Dataset configs | `config/<domain>/<layer>/` | ONE artifact per target table: column mappings + data types, dqx rules, target kind ([guide](docs/FRAMEWORK.md)) |
 | Framework | `src/datalab/` | REUSABLE, zero domain code: Pydantic models + LDP adapters + dqx engine + param helpers |
 | Domain code | `src/<domain>_etl/` | Pure `@transform` functions, custom dqx checks, 3-line pipeline entrypoint |
 | Edge jobs | `src/jobs/` + `notebooks/` | python-file lane (headless exports) + notebook lane (human-gated triage) |
@@ -42,7 +42,7 @@ databricks bundle run sales_quarantine_report -t dev  # on-demand quarantine tri
 
 ## The sales_etl pipeline
 
-Generated entirely from `config/sales/*.yml` by the framework:
+Generated entirely from the `config/sales/<layer>/<table>.yml` artifacts:
 
 ```
 landing volume (JSON)
@@ -50,11 +50,12 @@ landing volume (JSON)
    ▼
 bronze.customers_raw            streaming table — raw + _ingest_ts/_source_file
    ▼
-customers__input                framework view — pure fn sales.clean_customers
+customers__input                framework view — 8 mapped columns (rename/cast)
+   │                              + pure fn sales.normalize_email
    ▼
 customers__checked              framework view — dqx checks (_errors/_warnings)
-   │                              error → dropped   (valid_customer_id)
-   │                              warn  → flagged   (valid_email)
+   │                              error → dropped   (customer_id_is_not_null)
+   │                              warn  → flagged   (email_regex_match)
    ├──────────────▶ silver.customers_quarantine   dropped rows + dqx evidence
    ▼  customers__valid
 silver.customers                streaming table + AUTO CDC flow
@@ -73,9 +74,10 @@ mapping — nothing is hardcoded.
   medallion Delta table → **SDP via YAML config** (mandatory); headless
   side-effectful edge work → **python-file** task; human-must-decide →
   **notebook** task.
-- Add a table = add a dataset entry in `config/<domain>/<layer>.yml` —
-  source, transform registry names, dqx checks, target kind. No `dp` wiring
-  by hand; never `import dlt`.
+- Add a table = author ONE artifact `config/<domain>/<layer>/<table>.yml` —
+  columns (source→target names + data types + per-column dqx rules), source,
+  target kind. Agents: use the `author-ldp-artifact` skill. No `dp` wiring by
+  hand; never `import dlt`.
 - Upserts via AUTO CDC (`target.cdc`), data quality via databrickslabs/dqx
   (`quality.checks`, error → quarantine, warn → flagged).
 - Business logic lives in `src/<domain>_etl/transforms/` as pure
@@ -84,7 +86,7 @@ mapping — nothing is hardcoded.
   `notebooks/framework/verify_dataset.py` (`run_dataset` — same code path as
   pytest).
 
-Full conventions: [AGENTS.md](AGENTS.md) and the `author-sdp-pipeline` skill
+Full conventions: [AGENTS.md](AGENTS.md) and the `author-ldp-artifact` skill
 (`.cursor/skills/` / `.claude/skills/`).
 
 ## Dependencies (uv)

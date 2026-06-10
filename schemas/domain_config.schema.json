@@ -1,0 +1,126 @@
+{
+  "$defs": {
+    "DQDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "result_columns": {
+          "$ref": "#/$defs/ResultColumns",
+          "default": {
+            "errors": "_errors",
+            "warnings": "_warnings"
+          }
+        },
+        "variables_conf": {
+          "default": [],
+          "items": {
+            "pattern": "^[A-Za-z][\\w.]*$",
+            "type": "string"
+          },
+          "title": "Variables Conf",
+          "type": "array"
+        }
+      },
+      "title": "DQDefaults",
+      "type": "object"
+    },
+    "LayerEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_conf": {
+          "pattern": "^[A-Za-z][\\w.]*$",
+          "title": "Schema Conf",
+          "type": "string"
+        },
+        "table_properties": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Table Properties",
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_conf"
+      ],
+      "title": "LayerEntry",
+      "type": "object"
+    },
+    "ResultColumns": {
+      "additionalProperties": false,
+      "properties": {
+        "errors": {
+          "default": "_errors",
+          "title": "Errors",
+          "type": "string"
+        },
+        "warnings": {
+          "default": "_warnings",
+          "title": "Warnings",
+          "type": "string"
+        }
+      },
+      "title": "ResultColumns",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "config/<domain>/domain.yml \u2014 environment-agnostic domain settings.\n\nCatalog and schema values are pipeline-conf KEYS resolved per target\n(dev/stage/prod) through bundle variables \u2014 literal catalog names are\nrejected by design so promotion across environments never edits configs.",
+  "properties": {
+    "catalog_conf": {
+      "default": "datalab.catalog",
+      "pattern": "^[A-Za-z][\\w.]*$",
+      "title": "Catalog Conf",
+      "type": "string"
+    },
+    "domain": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "title": "Domain",
+      "type": "string"
+    },
+    "dq": {
+      "$ref": "#/$defs/DQDefaults",
+      "default": {
+        "result_columns": {
+          "errors": "_errors",
+          "warnings": "_warnings"
+        },
+        "variables_conf": []
+      }
+    },
+    "imports": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Imports",
+      "type": "array"
+    },
+    "layers": {
+      "additionalProperties": {
+        "$ref": "#/$defs/LayerEntry"
+      },
+      "propertyNames": {
+        "enum": [
+          "bronze",
+          "silver",
+          "gold"
+        ]
+      },
+      "title": "Layers",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "domain",
+    "layers"
+  ],
+  "title": "DomainConfig",
+  "type": "object"
+}

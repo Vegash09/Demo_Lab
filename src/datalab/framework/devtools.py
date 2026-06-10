@@ -23,7 +23,7 @@ from datalab.framework.dq import DQAdapter, summarize_dq_results
 from datalab.framework.errors import ConfigError
 from datalab.framework.loader import load_domain_configs
 from datalab.framework.models import StreamingTableTarget
-from datalab.framework.readers import apply_transforms, read_source
+from datalab.framework.readers import prepare, read_source
 
 
 @dataclass(frozen=True)
@@ -64,18 +64,17 @@ def run_dataset(
     )
 
     input_df = read_source(spark, ds.source, layer_config, ctx)
-    transformed = apply_transforms(input_df, ds.transform)
+    transformed = prepare(input_df, ds)
 
     checked = valid = quarantine = metrics = None
-    if ds.quality:
+    if ds.has_checks:
         dq = DQAdapter.for_layer(spark, layer_config, ctx)
         checked = dq.apply(spark, transformed, ds)
         valid = dq.valid(checked)
-        if ds.quality.quarantine:
-            quarantine = dq.invalid(
-                checked, include_warnings=ds.quality.quarantine.include_warnings
-            )
-            if ds.quality.metrics.enabled and quarantine is not None:
+        q = ds.quarantine_spec()
+        if q is not None:
+            quarantine = dq.invalid(checked, include_warnings=q.include_warnings)
+            if ds.quality and ds.quality.metrics.enabled and quarantine is not None:
                 metrics = summarize_dq_results(quarantine, dq.errors_col, dq.warnings_col)
     cdc_plan = None
     if isinstance(ds.target, StreamingTableTarget) and ds.target.cdc:
@@ -106,17 +105,19 @@ def plan(config_dir: str | Path, layers: list[str] | None = None) -> str:
         for ds in cfg.datasets:
             src = ds.source
             src_desc = getattr(src, "name", None) or getattr(src, "path_conf", "?")
-            steps = " -> ".join(step.function for step in ds.transform) or "(no transforms)"
-            errors = warns = 0
-            if ds.quality:
-                errors = sum(1 for r in ds.quality.checks if r.criticality == "error")
-                warns = sum(1 for r in ds.quality.checks if r.criticality == "warn")
+            mapping = f"{len(ds.columns)} mapped column(s)" if ds.columns else None
+            steps = " -> ".join(
+                filter(None, [mapping, *(step.function for step in ds.transform)])
+            ) or "(passthrough)"
+            checks = ds.effective_checks()
+            errors = sum(1 for m in checks if m.get("criticality", "error") == "error")
+            warns = sum(1 for m in checks if m.get("criticality") == "warn")
             lines.append(
                 f"  {ds.name}: {src.kind}:{src_desc} -> {steps} -> {ds.target.kind}"
-                + (f" [dq: {errors} error / {warns} warn rule(s)" if ds.quality else "")
+                + (f" [dq: {errors} error / {warns} warn rule(s)" if checks else "")
                 + (f", quarantine={ds.quarantine_name()}" if ds.quarantine_name() else "")
                 + (f", metrics={ds.metrics_name()}" if ds.metrics_name() else "")
-                + ("]" if ds.quality else "")
+                + ("]" if checks else "")
             )
     return "\n".join(lines)
 

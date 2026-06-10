@@ -9,15 +9,15 @@ databrickslabs/dqx. See ``docs/FRAMEWORK.md`` for the authoring guide.
 from datalab.framework.devtools import DatasetRunResult, plan, run_dataset
 from datalab.framework.errors import ConfigError, FrameworkRuntimeError
 from datalab.framework.generator import generate
-from datalab.framework.loader import load_domain_configs, load_layer_config
+from datalab.framework.loader import load_domain, load_domain_configs
 
 __all__ = [
     "ConfigError",
     "DatasetRunResult",
     "FrameworkRuntimeError",
     "generate",
+    "load_domain",
     "load_domain_configs",
-    "load_layer_config",
     "plan",
     "run_dataset",
 ]

@@ -22,7 +22,7 @@ def generate(
 ) -> None:
     ctx = ResolveContext.from_spark(spark)
     for layer_config in load_domain_configs(Path(config_dir), layers):
-        needs_dq = any(ds.quality for ds in layer_config.datasets)
+        needs_dq = any(ds.has_checks for ds in layer_config.datasets)
         dq = DQAdapter.for_layer(spark, layer_config, ctx) if needs_dq else None
         for ds in layer_config.datasets:
-            register_dataset(spark, ds, layer_config, ctx, dq if ds.quality else None)
+            register_dataset(spark, ds, layer_config, ctx, dq if ds.has_checks else None)
