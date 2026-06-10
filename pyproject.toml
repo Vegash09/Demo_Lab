@@ -1,41 +1,94 @@
-[tool.poetry]
-name = "datalab-etl"
-version = "0.1.0"
-description = "Minimal Databricks data processing toolkit with common IO and DQ"
-authors = ["Datalab Team nivethan.venkatachalam@diggibyte.com"]
-license = "MIT"
-readme = "README.md"
-packages = [{ include = "datalab_etl", from = "src" }]
-
-[tool.poetry.dependencies]
-python = "^3.12"
-databricks-labs-dqx = ">=0.9.3"
-databricks-sdk = ">=0.67.0"
-
-# Optional install groups exposed via extras
-pyspark = { version = ">=4.0.0", optional = true }
-delta-spark = { version = ">=4.0.0", optional = true }
-databricks-connect = { version = ">=15.4", optional = true }
-
-[tool.poetry.group.dev.dependencies]
-pytest = "*"
-pytest-cov = "*"
-python-dotenv = "*"
-
-[tool.poetry.extras]
-pyspark = ["pyspark", "delta-spark"]
-dbconnect = ["databricks-connect"]
-
-[tool.pytest.ini_options]
-addopts = "-ra"
-filterwarnings = [
-  "ignore:distutils Version classes are deprecated:DeprecationWarning",
-  "ignore:.*LooseVersion.*:DeprecationWarning",
-]
-markers = [
-  "dbconnect_only: marks tests that require Databricks Connect and a configured profile or host/token",
-]
+# Project metadata + build config + tool configs.
+#
+# Dependency management is `uv`-driven. ONE source of truth:
+#
+#   pyproject.toml [project] + [dependency-groups]
+#         │
+#         │  uv lock   → uv.lock   (transitive pins for reproducibility)
+#         │  uv sync   → .venv/    (creates + populates the venv)
+#         ▼
+#   uv.lock — committed; CI uses `uv sync --frozen` so any unexpected drift fails fast.
+#
+# Use `uv sync` locally; `uv run pytest` for tests; `uv run ruff check` for linting.
+#
+# NOTE on pipeline runtime deps: the Lakeflow Spark Declarative Pipelines runtime
+# installs this project with `--editable ${workspace.file_path}` (see
+# resources/sales_etl.pipeline.yml). Anything you add to [project].dependencies
+# is installed into the pipeline environment on top of the pinned
+# environment_version. Keep it empty unless a transformation truly needs an
+# extra library — pyspark itself is provided by the runtime.
 
 [build-system]
-requires = ["poetry-core>=1.8.0"]
-build-backend = "poetry.core.masonry.api"
+requires      = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+# ---------------------------------------------------------------------------
+# PEP 621 project metadata
+# ---------------------------------------------------------------------------
+[project]
+name            = "datalab"
+version         = "0.2.0"
+description     = "Medallion (bronze→silver→gold) lakehouse framework on Lakeflow Spark Declarative Pipelines, shipped as a Declarative Automation Bundle."
+readme          = "README.md"
+license         = { text = "MIT" }
+requires-python = ">=3.12,<3.14"   # serverless environment v4/v5 ships Python 3.12
+authors         = [{ name = "Datalab Team", email = "nivethan.venkatachalam@diggibyte.com" }]
+keywords        = ["databricks", "lakeflow", "spark-declarative-pipelines", "medallion", "lakehouse"]
+
+# Runtime dependencies installed into the pipeline environment (keep minimal —
+# the SDP runtime already provides pyspark, delta, etc.).
+dependencies = []
+
+# ---------------------------------------------------------------------------
+# Dependency groups (PEP 735) — dev-only tooling, never shipped to pipelines.
+# `uv sync` installs the `dev` group by default.
+# ---------------------------------------------------------------------------
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "ruff>=0.14",
+    # Local Spark for fast unit tests of the pure functions in src/datalab.
+    # pyspark 4.1+ also provides `pyspark.pipelines` so SDP imports resolve
+    # locally. Do NOT add databricks-connect to this venv — it conflicts with
+    # pyspark (both own the `pyspark` namespace).
+    "pyspark>=4.1.0",
+]
+
+# ---------------------------------------------------------------------------
+# Hatchling build target: the shared `datalab` package (src layout).
+# The pipeline environment installs this editable so transformations can
+# `from datalab.transforms import ...`.
+# ---------------------------------------------------------------------------
+[tool.hatch.build.targets.wheel]
+packages = ["src/datalab"]
+
+# ---------------------------------------------------------------------------
+# Tool configs
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-ra --tb=short"
+
+[tool.ruff]
+line-length    = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# pyflakes (F), pycodestyle (E/W), import-sort (I), pyupgrade (UP), bugbear (B)
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]   # line length — handled by line-length above
+
+[tool.ruff.lint.isort]
+known-first-party = ["datalab"]
+
+# `spark` is injected by the SDP runtime in pipeline source files; ruff would
+# otherwise flag it as undefined. Notebooks additionally get `dbutils`/`display`
+# ambient globals (F821) and cell-structured imports (E402). src/jobs/ gets NO
+# ignore — entry points build their own SparkSession, so an undefined name
+# there is a real bug.
+[tool.ruff.lint.per-file-ignores]
+"src/sales_etl/**" = ["F821"]
+"notebooks/**" = ["F821", "E402"]
+
+[tool.uv]
+managed = true

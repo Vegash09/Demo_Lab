@@ -1,0 +1,35 @@
+# Lakeflow Spark Declarative Pipeline for the sales domain (bronze→silver→gold).
+# Source code: src/sales_etl/transformations/*.py (pyspark.pipelines).
+
+resources:
+  pipelines:
+    sales_etl:
+      name: sales_etl
+      catalog: ${var.catalog}
+      schema: ${var.silver_schema}
+      serverless: true
+      channel: CURRENT
+      root_path: "../src/sales_etl"
+
+      libraries:
+        - glob:
+            include: ../src/sales_etl/transformations/**
+
+      environment:
+        # Pins the Python runtime independently of DBR upgrades.
+        environment_version: "4"
+        dependencies:
+          # Installs this repo's pyproject (the shared `datalab` package) into
+          # the pipeline environment from the deployed workspace files.
+          - --editable ${workspace.file_path}
+
+      # Surfaced to pipeline code as Spark conf — read via datalab.config.pipeline_conf.
+      configuration:
+        datalab.env: ${bundle.target}
+        datalab.catalog: ${var.catalog}
+        datalab.bronze_schema: ${var.bronze_schema}
+        datalab.silver_schema: ${var.silver_schema}
+        datalab.gold_schema: ${var.gold_schema}
+        datalab.sales_landing_path: ${var.sales_landing_path}
+
+      permissions: ${var.pipeline_permissions}

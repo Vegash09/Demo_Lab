@@ -1,30 +1,29 @@
-name: CI/CD Prod
+name: "CI/CD · prod"
+
+# Prod deploys on release tags or manual dispatch. Add required reviewers to
+# the `prod` GitHub Environment so deploys need an approval.
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+      - "!v*-rc*"
 
 permissions:
   id-token: write
   contents: read
-  packages: read
-  deployments: write
 
 jobs:
-  run-tests:
-    strategy:
-      matrix:
-        env: [prod]
+  ci:
     uses: ./.github/workflows/common-ci-steps.yml
     with:
-      env: ${{ matrix.env }}
+      target: prod
     secrets: inherit
 
-  deploy-bundle:
-    needs: run-tests
-    strategy:
-      matrix:
-        env: [prod]
+  deploy:
+    needs: ci
     uses: ./.github/workflows/common-cd-steps.yml
     with:
-      env: ${{ matrix.env }}
+      target: prod
     secrets: inherit

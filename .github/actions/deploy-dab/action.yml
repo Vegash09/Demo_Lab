@@ -1,23 +1,56 @@
-name: "Deploy Databricks Asset Bundle"
-description: "Validate and deploy the Databricks bundle for a target environment"
+name: "Deploy Declarative Automation Bundle"
+description: "Validate + deploy the datalab bundle to the given target."
+
 inputs:
-  env:
-    description: "Environment key (databricks bundle target)"
+  target:
+    description: "Bundle target (dev | stage | prod). Avoid the name 'env' here — it shadows GitHub Actions' env: keyword."
     required: true
   profile:
-    description: "Databricks CLI profile to use"
-    required: true
+    description: "Databricks CLI profile."
+    required: false
+    default: "DEFAULT"
+
+  # Per-target overrides. Empty defaults mean 'use whatever databricks.yml says'.
+  # Only string variables can be overridden with --var (complex variables like
+  # pipeline_permissions cannot) — which is why the permission GROUP NAMES are
+  # plain string variables in databricks.yml that the complex defaults reference.
+  catalog:
+    description: "Unity Catalog catalog override for this target."
+    required: false
+    default: ""
+  sales-landing-path:
+    description: "Override for the Auto Loader landing volume path."
+    required: false
+    default: ""
+  reader-group:
+    description: "Workspace group granted read/run access (overrides var.reader_group)."
+    required: false
+    default: ""
+  engineer-group:
+    description: "Workspace group granted manage access (overrides var.engineer_group)."
+    required: false
+    default: ""
+
 runs:
   using: "composite"
   steps:
-    - name: Validate bundle
+    # Validate and deploy in one step so the quoted --var argument array
+    # (group names may contain spaces) doesn't have to cross a step boundary.
+    - name: bundle validate + deploy
       shell: bash
+      env:
+        GIT_SHA: ${{ github.sha }}
+        CI: "true"
+        IN_CATALOG:        ${{ inputs.catalog }}
+        IN_LANDING_PATH:   ${{ inputs.sales-landing-path }}
+        IN_READER_GROUP:   ${{ inputs.reader-group }}
+        IN_ENGINEER_GROUP: ${{ inputs.engineer-group }}
       run: |
-        set -euxo pipefail
-        databricks bundle validate -t "${{ inputs.env }}"
+        ARGS=(-t "${{ inputs.target }}" -p "${{ inputs.profile }}")
+        [ -n "$IN_CATALOG" ]        && ARGS+=(--var "catalog=$IN_CATALOG")
+        [ -n "$IN_LANDING_PATH" ]   && ARGS+=(--var "sales_landing_path=$IN_LANDING_PATH")
+        [ -n "$IN_READER_GROUP" ]   && ARGS+=(--var "reader_group=$IN_READER_GROUP")
+        [ -n "$IN_ENGINEER_GROUP" ] && ARGS+=(--var "engineer_group=$IN_ENGINEER_GROUP")
 
-    - name: Deploy bundle
-      shell: bash
-      run: |
-        set -euxo pipefail
-        databricks bundle deploy -t "${{ inputs.env }}"
+        databricks bundle validate "${ARGS[@]}"
+        databricks bundle deploy   "${ARGS[@]}"

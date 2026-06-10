@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": ".cursor/hooks/pr_template_guard.py",
+        "matcher": "gh\\s+pr\\s+create"
+      }
+    ]
+  }
+}

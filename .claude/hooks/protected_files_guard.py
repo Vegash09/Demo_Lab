@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""PreToolUse guard for production-sensitive files in datalab.
+
+Emits `permissionDecision: "ask"` for Edit/Write/MultiEdit/NotebookEdit calls
+that target files in the protected surface (deploy config, dependency
+manifests, CI/CD, agent harness, documents-of-record). The user is then
+prompted to confirm with a banner explaining which invariants apply.
+Non-protected files pass through with no decision so default permissions take
+over.
+
+Wired into `.claude/settings.json` as a PreToolUse hook.
+
+Keep the PROTECTED list below in sync with:
+  * `.githooks/pre-commit`            (the human-commit counterpart)
+  * AGENTS.md "Protected file surface" table
+When you add a production-sensitive path, update all three in the same change.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+
+PROTECTED: list[tuple[str, str]] = [
+    (r"^databricks\.yml$|^resources/.*\.yml$",
+     "Declarative Automation Bundle manifest (deploy surface)"),
+    (r"^pyproject\.toml$|^uv\.lock$",
+     "dependency manifest (uv-managed; CI runs `uv sync --frozen`)"),
+    (r"^\.databricksignore$",
+     "controls which files ship to the workspace on deploy"),
+    (r"^src/datalab/(config|quality|params)\.py$",
+     "parameterization + quality contracts shared by every pipeline and job lane"),
+    (r"^\.github/(workflows|actions)/.*",
+     "CI/CD pipeline (GitHub OIDC federation, bundle deploy)"),
+    (r"^\.github/pull_request_template\.md$",
+     "unified pull-request template (one format for all PRs)"),
+    (r"^\.claude/(settings\.json|hooks/.*|skills/.*)",
+     "coding-agent harness config (hooks, skills, settings)"),
+    (r"^\.cursor/(rules|hooks|skills)/.*|^\.cursor/hooks\.json$",
+     "Cursor rules + agent hooks + skills (incl. the gh-pr-create template guard)"),
+    (r"^\.githooks/.*",
+     "git pre-commit guard (human-side counterpart to this hook)"),
+    (r"^Makefile$",
+     "developer + CI entrypoints"),
+    (r"^\.env(\..*)?$",
+     "secrets file — must never be committed"),
+    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION)\.md$",
+     "document-of-record for AI coding agents"),
+]
+
+
+def _relpath(file_path: str) -> str:
+    proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    if file_path.startswith(proj + os.sep):
+        return file_path[len(proj) + 1 :]
+    return file_path
+
+
+def _reason(rel: str, category: str) -> str:
+    return (
+        f"PROTECTED FILE — {rel}\n"
+        f"Category: {category}\n\n"
+        "This file is part of the production-sensitive surface for datalab.\n"
+        "Before approving the edit, confirm:\n"
+        "  • The change is captured in AGENTS.md (Common tasks or Critical knowledge sections)\n"
+        "  • For databricks.yml / resources/*.yml: validate locally (`make validate`)\n"
+        "  • For pyproject.toml: run `make lock` and commit uv.lock in the same change\n"
+        "  • For .github/**: keep OIDC auth + `uv sync --frozen` semantics intact\n"
+        "  • For src/datalab/{config,quality,params}.py: every pipeline and job lane depends on these contracts\n\n"
+        "Approve if the change is intentional and matches the AGENTS.md protocol."
+    )
+
+
+def main() -> None:
+    try:
+        payload = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    tool_input = payload.get("tool_input") or {}
+    candidates = [
+        tool_input.get("file_path"),
+        tool_input.get("notebook_path"),
+    ]
+    file_path = next((c for c in candidates if c), "")
+    if not file_path:
+        sys.exit(0)
+
+    rel = _relpath(file_path)
+    for pattern, category in PROTECTED:
+        if re.match(pattern, rel):
+            sys.stdout.write(
+                json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "PreToolUse",
+                            "permissionDecision": "ask",
+                            "permissionDecisionReason": _reason(rel, category),
+                        }
+                    }
+                )
+            )
+            sys.exit(0)
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

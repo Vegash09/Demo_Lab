@@ -1,50 +1,69 @@
-name: Common CD Steps
+name: "CD · deploy bundle"
+
+# Reusable workflow. Called by ci-cd-{dev,stage,prod}.yml after CI passes.
+# Authenticates with GitHub OIDC — no long-lived Databricks secret in GitHub.
 
 on:
   workflow_call:
     inputs:
-      env:
+      target:
+        description: "Bundle target (dev | stage | prod). Avoid the name 'env' here — it shadows GitHub Actions' env: keyword."
         required: true
         type: string
 
 permissions:
-  id-token: write
+  id-token: write    # OIDC
   contents: read
 
 jobs:
   deploy:
+    name: "Deploy to ${{ inputs.target }}"
     runs-on: ubuntu-latest
-    environment: ${{ inputs.env }}
+    # Serialize deploys per target: concurrent pushes queue instead of
+    # interleaving `bundle deploy` state updates. Never cancel a running
+    # deploy — a killed deploy can leave the bundle half-applied.
+    concurrency:
+      group: cd-${{ inputs.target }}
+      cancel-in-progress: false
+    # Resolves `secrets.*` against the GitHub Environment whose name matches
+    # the target (dev / stage / prod). The OIDC federation policy subject must
+    # match `repo:<owner>/<repo>:environment:<target>` — see docs/CICD.md.
+    environment: ${{ inputs.target }}
     env:
-      ENV: ${{ inputs.env }}
-      DATABRICKS_PROFILE: ${{ inputs.env }}
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST:      ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install packaging deps
-        shell: bash
+      # Skip (gracefully, keeping the merge green) when the target's GitHub
+      # Environment has no Databricks secrets yet — e.g. stage/prod before
+      # their workspaces/SPs are provisioned.
+      - name: Gate on environment provisioning
+        id: gate
         run: |
-          set -euxo pipefail
-          python -m pip install --upgrade pip
-          pip install build pyyaml
+          if [ -z "$DATABRICKS_HOST" ] || [ -z "$DATABRICKS_CLIENT_ID" ]; then
+            echo "::notice::GitHub Environment '${{ inputs.target }}' has no DATABRICKS_HOST/DATABRICKS_CLIENT_ID secrets — skipping deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Setup Databricks
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.enabled == 'true'
+
+      - name: Configure Databricks CLI (OIDC)
+        if: steps.gate.outputs.enabled == 'true'
         uses: ./.github/actions/databricks-setup
         with:
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          databricks-host: ${{ secrets.DATABRICKS_HOST }}
-          cluster-id: ${{ secrets.DATABRICKS_CLUSTER_ID }}
-          profile: ${{ inputs.env }}
-          auth-type: SERVICE_PRINCIPAL
+          databricks-host:      ${{ secrets.DATABRICKS_HOST }}
+          databricks-client-id: ${{ secrets.DATABRICKS_CLIENT_ID }}
 
-      - name: DAB deployment
+      - name: Deploy bundle
+        if: steps.gate.outputs.enabled == 'true'
         uses: ./.github/actions/deploy-dab
         with:
-          env: ${{ inputs.env }}
-          profile: ${{ inputs.env }}
+          target: ${{ inputs.target }}
+          # Optional per-environment overrides; empty → databricks.yml defaults.
+          catalog:            ${{ vars.DATALAB_CATALOG || '' }}
+          sales-landing-path: ${{ vars.DATALAB_SALES_LANDING_PATH || '' }}
+          reader-group:       ${{ vars.DATALAB_READER_GROUP || '' }}
+          engineer-group:     ${{ vars.DATALAB_ENGINEER_GROUP || '' }}

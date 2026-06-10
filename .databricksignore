@@ -1,0 +1,21 @@
+# Files NOT to upload on `databricks bundle deploy`. Mirrors .gitignore
+# semantics; .gitignore'd paths (.venv/, caches, .env) are excluded already.
+#
+# The deploy MUST ship: pyproject.toml + src/** (the pipeline environment
+# installs the repo with `--editable ${workspace.file_path}`).
+
+# Dev-only surfaces — not needed at runtime
+tests/
+docs/
+design/
+
+# CI/CD + agent harness
+.github/
+.claude/
+.cursor/
+.githooks/
+
+# Local tooling
+Makefile
+uv.lock
+.markdownlint.json

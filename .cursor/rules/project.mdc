@@ -1,0 +1,43 @@
+---
+description: Project context for datalab (Lakeflow Spark Declarative Pipelines medallion framework deployed via a Declarative Automation Bundle + GitHub OIDC CI/CD).
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# datalab — Cursor rules
+
+Full project context — architecture, codebase layout, pipeline authoring
+rules, build/test/deploy commands, common tasks, gotchas, and security — lives
+in [AGENTS.md](../../AGENTS.md). Read it before editing.
+
+Quick pointers:
+
+- Pipelines use **`from pyspark import pipelines as dp`** — never `import dlt`
+  (deprecated DLT API). Dataset functions return DataFrames; no `.write`,
+  `.saveAsTable`, `.start()`, or `.collect()` inside them. Upserts use
+  `dp.create_streaming_table` + `dp.create_auto_cdc_flow`; data quality uses
+  `@dp.expect_*` expectations (see the `author-sdp-pipeline` skill).
+- Business logic lives in `src/datalab/transforms/` as pure, unit-tested
+  functions; files in `src/<pipeline>/transformations/` are thin SDP wiring.
+  Parameters come from the pipeline `configuration` mapping via
+  `datalab.config.pipeline_conf` — never hardcode catalogs/schemas/paths.
+- Deploy = **Declarative Automation Bundle**: `databricks.yml` +
+  `resources/*.yml`, targets `dev` (mode: development) / `stage` / `prod`.
+  `make validate` before pushing bundle changes.
+- Dependencies are **uv-only**: `pyproject.toml` + committed `uv.lock`
+  (`make lock` after edits; CI runs `uv sync --frozen`). Never add
+  databricks-connect to this venv — it conflicts with the pyspark dev dep.
+- CI (`.github/workflows/common-ci-steps.yml`) runs ruff + pytest (local
+  Spark) + `bundle validate`; CD deploys via **GitHub OIDC** (no client
+  secret). The OIDC subject must match `repo:<owner>/<repo>:environment:<target>`.
+  See docs/CICD.md.
+- Production-sensitive files are protected by
+  `.claude/hooks/protected_files_guard.py` and `.githooks/pre-commit`. Keep
+  both + the AGENTS.md "Protected file surface" table in sync when you change
+  the set.
+- **One PR format for everything.** All PRs use
+  `.github/pull_request_template.md`. When opening a PR from the CLI, fill
+  that template into a body file and run `gh pr create --body-file <file>`
+  (or `--web`). A `beforeShellExecution` hook
+  (`.cursor/hooks/pr_template_guard.py`) blocks `gh pr create` that bypasses
+  the template; CI re-checks every PR body.

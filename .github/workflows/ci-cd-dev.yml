@@ -1,35 +1,30 @@
-name: CI/CD Dev
+name: "CI/CD · dev"
+
+# dev gets full CI on every PR + main push, plus auto-deploy on every push
+# to main. Stage/prod are gated separately (tags / manual dispatch).
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   id-token: write
   contents: read
-  packages: read
-  deployments: write
 
 jobs:
-  run-tests:
-    strategy:
-      matrix:
-        env: [dev]
+  ci:
     uses: ./.github/workflows/common-ci-steps.yml
     with:
-      env: ${{ matrix.env }}
+      target: dev
     secrets: inherit
 
-  deploy-main-bundle:
-    needs: run-tests
+  deploy:
+    needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    strategy:
-      matrix:
-        env: [dev]
     uses: ./.github/workflows/common-cd-steps.yml
     with:
-      env: ${{ matrix.env }}
+      target: dev
     secrets: inherit
