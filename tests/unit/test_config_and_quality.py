@@ -19,8 +19,9 @@ def test_pipeline_conf_default_and_missing(spark):
         pipeline_conf(spark, "datalab.missing")
 
 
-def test_rule_predicates():
+def test_rule_predicates_still_work_but_warn_deprecated():
     rules = {"a": "x IS NOT NULL", "b": "y > 0"}
-    assert all_rules_predicate(rules) == "(x IS NOT NULL) AND (y > 0)"
-    assert violation_predicate(rules) == "NOT ((x IS NOT NULL) AND (y > 0))"
-    assert all_rules_predicate({}) == "true"
+    with pytest.warns(DeprecationWarning, match="dqx"):
+        assert all_rules_predicate(rules) == "(x IS NOT NULL) AND (y > 0)"
+    with pytest.warns(DeprecationWarning, match="dqx"):
+        assert violation_predicate(rules) == "NOT ((x IS NOT NULL) AND (y > 0))"

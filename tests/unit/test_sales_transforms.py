@@ -2,14 +2,8 @@ from datetime import date, datetime
 
 from pyspark.sql import Row
 
-from datalab.quality import all_rules_predicate, violation_predicate
-from datalab.transforms.sales import (
-    QUARANTINE_RULES,
-    WARN_RULES,
-    clean_customers,
-    quarantine_breakdown,
-    summarize_customers_by_city,
-)
+from datalab.framework.registry import TRANSFORMS, discover
+from datalab.transforms.sales import clean_customers, summarize_customers_by_city
 
 # Explicit schema: _rescued_data is None in every row, so Spark cannot infer
 # its type from the data alone.
@@ -69,37 +63,22 @@ def test_clean_customers_standardizes_types_and_email(spark):
     assert first.email == "asha@example.com"
 
 
+def test_clean_customers_tolerates_malformed_values(spark):
+    # Spark 4 ANSI mode: plain casts would throw on 'x'; try_cast yields NULL
+    # for the dqx rules to flag instead of failing the stream.
+    ghost = clean_customers(_raw_customers(spark)).orderBy("customer_name").collect()[1]
+    assert ghost.age is None
+
+
 def test_clean_customers_drops_unknown_columns(spark):
     out = clean_customers(_raw_customers(spark))
     assert "_rescued_data" not in out.columns
 
 
-def test_quarantine_rules_flag_null_customer_id(spark):
-    cleaned = clean_customers(_raw_customers(spark))
-
-    valid = cleaned.where(all_rules_predicate(QUARANTINE_RULES))
-    invalid = cleaned.where(violation_predicate(QUARANTINE_RULES))
-
-    assert valid.count() == 1
-    assert invalid.count() == 1
-    assert invalid.first().customer_name == "Ghost"
-
-
-def test_warn_rules_match_invalid_email(spark):
-    cleaned = clean_customers(_raw_customers(spark))
-    failing = cleaned.where(violation_predicate(WARN_RULES))
-
-    assert failing.count() == 1
-    assert failing.first().email == "not-an-email"
-
-
-def test_quarantine_breakdown_counts_violations_per_rule(spark):
-    cleaned = clean_customers(_raw_customers(spark))
-    rows = quarantine_breakdown(cleaned, QUARANTINE_RULES | WARN_RULES).collect()
-    out = {r.rule: r.violations for r in rows}
-
-    assert out["valid_customer_id"] == 1  # the Ghost row
-    assert out["valid_email"] == 1  # "not-an-email"
+def test_transforms_are_registered_for_yaml():
+    discover()
+    assert TRANSFORMS["sales.clean_customers"] is clean_customers
+    assert TRANSFORMS["sales.summarize_customers_by_city"] is summarize_customers_by_city
 
 
 def test_summarize_customers_by_city(spark):

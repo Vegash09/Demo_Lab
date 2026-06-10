@@ -31,6 +31,10 @@ PROTECTED: list[tuple[str, str]] = [
      "controls which files ship to the workspace on deploy"),
     (r"^src/datalab/(config|quality|params)\.py$",
      "parameterization + quality contracts shared by every pipeline and job lane"),
+    (r"^config/.*\.ya?ml$",
+     "dataset configs — the deployed pipeline definition (validate: make validate-configs)"),
+    (r"^src/datalab/framework/(models|loader|generator|dq|writers)\.py$",
+     "framework core: config contract + LDP/dqx generation semantics"),
     (r"^\.github/(workflows|actions)/.*",
      "CI/CD pipeline (GitHub OIDC federation, bundle deploy)"),
     (r"^\.github/pull_request_template\.md$",
@@ -45,7 +49,7 @@ PROTECTED: list[tuple[str, str]] = [
      "developer + CI entrypoints"),
     (r"^\.env(\..*)?$",
      "secrets file — must never be committed"),
-    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION)\.md$",
+    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK)\.md$",
      "document-of-record for AI coding agents"),
 ]
 

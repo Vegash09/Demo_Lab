@@ -11,9 +11,10 @@ Spark Declarative Pipelines** (`pyspark.pipelines`) and shipped as a
 
 | Surface | Where | What |
 |---|---|---|
-| Pipeline code | `src/sales_etl/transformations/` | SDP datasets: `@dp.table`, `@dp.materialized_view`, expectations, AUTO CDC |
+| Dataset configs | `config/<domain>/` | Per-layer YAML: sources, transforms, dqx quality rules, targets ([guide](docs/FRAMEWORK.md)) |
+| Framework | `src/datalab/framework/` | Pydantic models + LDP adapters + dqx engine — generates the pipelines from YAML |
 | Edge jobs | `src/jobs/` + `notebooks/` | python-file lane (headless exports) + notebook lane (human-gated triage) |
-| Shared library | `src/datalab/` | Pure, unit-tested transforms + config/quality/params helpers |
+| Shared library | `src/datalab/` | Pure, unit-tested `@transform` functions + custom dqx checks + helpers |
 | Deploy | `databricks.yml` + `resources/` | Bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
 | Tests | `tests/` | Unit tests on a local SparkSession — no workspace needed |
 | CI/CD | `.github/` | ruff + pytest + `bundle validate` on PRs; OIDC deploys on merge/tags |
@@ -67,14 +68,19 @@ mapping — nothing is hardcoded.
 ## Authoring rules (the short version)
 
 - Route every new target with the 3-question router (AGENTS.md): managed
-  medallion Delta table → **SDP** (mandatory); headless side-effectful edge
-  work → **python-file** task; human-must-decide → **notebook** task.
-- `from pyspark import pipelines as dp` — never `import dlt` (legacy DLT).
-- Dataset functions return DataFrames; the engine owns all writes. Jobs and
-  notebooks own their writes but never write SDP-owned tables.
-- Upserts via AUTO CDC, data quality via expectations.
-- Business logic lives in `src/datalab/transforms/` as pure functions with
-  unit tests; pipeline files, job entry points, and notebooks are thin wiring.
+  medallion Delta table → **SDP via YAML config** (mandatory); headless
+  side-effectful edge work → **python-file** task; human-must-decide →
+  **notebook** task.
+- Add a table = add a dataset entry in `config/<domain>/<layer>.yml` —
+  source, transform registry names, dqx checks, target kind. No `dp` wiring
+  by hand; never `import dlt`.
+- Upserts via AUTO CDC (`target.cdc`), data quality via databrickslabs/dqx
+  (`quality.checks`, error → quarantine, warn → flagged).
+- Business logic lives in `src/datalab/transforms/` as pure
+  `@transform`-registered functions with unit tests.
+- Verify without deploying: `make validate-configs`, then
+  `notebooks/framework/verify_dataset.py` (`run_dataset` — same code path as
+  pytest).
 
 Full conventions: [AGENTS.md](AGENTS.md) and the `author-sdp-pipeline` skill
 (`.cursor/skills/` / `.claude/skills/`).
