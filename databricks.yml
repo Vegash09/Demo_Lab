@@ -1,26 +1,100 @@
+# Declarative Automation Bundle (formerly Databricks Asset Bundle) for datalab.
+# Docs: https://docs.databricks.com/aws/en/dev-tools/bundles/settings
+#
+# Resources (pipelines, jobs) live in resources/*.yml. Targets share one
+# workspace today; point stage/prod at their own hosts when they exist.
+#
+# One-time prerequisite per target (catalog, schemas, volumes, UC grants —
+# kept out of the bundle lifecycle so `bundle destroy` never touches
+# governance state):  make bootstrap-uc TARGET=<dev|stage|prod>
+#
+# Validate / deploy / run:
+#   make validate     databricks bundle validate -t dev
+#   make deploy       databricks bundle deploy   -t dev
+#   make run          databricks bundle run sales_etl -t dev
+
 bundle:
   name: datalab
 
 include:
-  - permissions/**/*.yml
-  - pipelines/*.yml
+  - resources/*.yml
 
-artifacts:
-  default:
-    type: whl
-    build: pip install --upgrade pip 'poetry>=1.8.0' && poetry build --format wheel
-    path: .
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds the medallion schemas.
+    default: customer_sales
+  bronze_schema:
+    description: Schema for raw/ingested data.
+    default: bronze
+  silver_schema:
+    description: Schema for cleaned, validated data.
+    default: silver
+  gold_schema:
+    description: Schema for business-level aggregates.
+    default: gold
+  sales_landing_path:
+    description: UC volume path where raw sales customer JSON files land (Auto Loader source).
+    default: /Volumes/${var.catalog}/landing/sales/customers/
+  sales_export_path:
+    description: UC volume path where gold sales extracts are exported (python-file lane).
+    default: /Volumes/${var.catalog}/exports/sales/
+  # RBAC pivot points: plain STRING variables so they can diverge per target
+  # (below) and per GitHub Environment (deploy-dab --var; complex variables
+  # cannot be overridden with --var). Groups must exist in the workspace —
+  # see scripts/bootstrap_uc.py for the UC grants that complement these
+  # workspace-resource permissions.
+  reader_group:
+    description: Workspace group granted read/run access to deployed resources.
+    default: demo_analyst
+  engineer_group:
+    description: Workspace group granted manage access to deployed resources.
+    default: Data Science group
+  pipeline_permissions:
+    description: Grants applied to every pipeline resource.
+    type: complex
+    default:
+      - group_name: ${var.reader_group}
+        level: CAN_RUN
+      - group_name: ${var.engineer_group}
+        level: CAN_MANAGE
+  job_permissions:
+    description: Grants applied to every job resource.
+    type: complex
+    default:
+      - group_name: ${var.reader_group}
+        level: CAN_MANAGE_RUN
+      - group_name: ${var.engineer_group}
+        level: CAN_MANAGE
 
 targets:
   dev:
+    # Development copies: resources are prefixed with '[dev <user>]' and
+    # schedules/triggers are paused automatically.
+    mode: development
+    default: true
     workspace:
-      root_path: /Bundles/${bundle.name}/${bundle.target}
-      host: https://adb-7488500312027058.18.azuredatabricks.net/
-  staging:
+      host: https://dbc-425be768-f138.cloud.databricks.com
+    variables:
+      catalog: customer_sales
+
+  stage:
+    mode: production
     workspace:
-      root_path: /Bundles/${bundle.name}/${bundle.target}
-      host: https://adb-7488500312027058.18.azuredatabricks.net/
+      host: https://dbc-425be768-f138.cloud.databricks.com
+      root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
+    variables:
+      catalog: customer_sales_stage
+      # Persona groups, not demo groups: create them before the first deploy
+      # (`databricks groups create`, or account console) — see docs/CICD.md.
+      reader_group: dl_sales_readers
+      engineer_group: dl_sales_engineers
+
   prod:
+    mode: production
     workspace:
-      root_path: /Bundles/${bundle.name}/${bundle.target}
-      host: https://adb-7488500312027058.18.azuredatabricks.net/
+      host: https://dbc-425be768-f138.cloud.databricks.com
+      root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
+    variables:
+      catalog: customer_sales_prod
+      reader_group: dl_sales_readers
+      engineer_group: dl_sales_engineers

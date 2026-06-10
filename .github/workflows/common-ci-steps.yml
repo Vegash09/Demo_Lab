@@ -1,82 +1,67 @@
-name: Common CI Steps
+name: "CI · lint + test + validate"
+
+# Reusable workflow. Called by ci-cd-{dev,stage,prod}.yml.
+# Lint + unit tests run against a local Spark — no workspace, no secrets.
+# Bundle validation authenticates via GitHub OIDC.
 
 on:
   workflow_call:
     inputs:
-      env:
+      target:
+        description: "Bundle target (dev | stage | prod). Avoid the name 'env' here — it shadows GitHub Actions' env: keyword."
         required: true
         type: string
 
 permissions:
-  id-token: write
+  id-token: write    # required for OIDC auth on the validate-bundle job
   contents: read
 
 jobs:
-  pyspark-tests:
-    name: Validate and unit test (PySpark)
+  test:
+    name: "lint + unit test"
     runs-on: ubuntu-latest
-    environment: ${{ inputs.env }}
-    env:
-      ENV: ${{ inputs.env }}
-      DATABRICKS_PROFILE: ${{ inputs.env }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
-      - name: Install dependencies (pyspark)
-        shell: bash
-        run: |
-          set -euxo pipefail
-          python -m pip install --upgrade pip
-          pip install -e ".[pyspark]" pytest python-dotenv
+      - name: Set up Java (local Spark for unit tests)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
 
-      - name: Run unit tests
-        shell: bash
-        run: |
-          set -euxo pipefail
-          # Run only unit tests in the unit_testing folder (explicit path)
-          python -m pytest -m "not dbconnect_only" notebooks/tests/unit_testing -q
+      - name: Sync dependencies (frozen — fails fast if uv.lock drifted)
+        run: uv sync --frozen
 
-  dbconnect-tests:
-    name: Integration tests (dbconnect)
+      - name: Ruff lint
+        run: uv run ruff check src tests notebooks scripts
+
+      - name: Unit tests (local Spark)
+        run: uv run pytest
+
+  validate-bundle:
+    name: "bundle validate (${{ inputs.target }})"
+    needs: test
     runs-on: ubuntu-latest
-    needs: pyspark-tests
-    environment: ${{ inputs.env }}
+    # Resolves secrets.* against the GitHub Environment matching the target.
+    environment: ${{ inputs.target }}
     env:
-      ENV: ${{ inputs.env }}
-      DATABRICKS_PROFILE: ${{ inputs.env }}
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST:      ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies (dbconnect)
-        shell: bash
-        run: |
-          set -euxo pipefail
-          python -m pip install --upgrade pip
-          pip install -e ".[dbconnect]" pytest python-dotenv
-
-      - name: Setup Databricks
+      - name: Configure Databricks CLI (OIDC)
         uses: ./.github/actions/databricks-setup
         with:
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          databricks-host: ${{ secrets.DATABRICKS_HOST }}
-          cluster-id: ${{ secrets.DATABRICKS_CLUSTER_ID }}
-          profile: ${{ inputs.env }}
-          auth-type: SERVICE_PRINCIPAL
+          databricks-host:      ${{ secrets.DATABRICKS_HOST }}
+          databricks-client-id: ${{ secrets.DATABRICKS_CLIENT_ID }}
 
-      - name: Run integration tests
-        shell: bash
-        run: |
-          set -euxo pipefail
-          # Run only tests that require Databricks Connect
-          python -m pytest -m dbconnect_only notebooks/tests/integration_testing -q
+      - name: databricks bundle validate -t ${{ inputs.target }}
+        run: databricks bundle validate -t ${{ inputs.target }}

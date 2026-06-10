@@ -1,0 +1,62 @@
+name: "PR · template check"
+
+# Path-independent enforcement of the single unified PR format. Runs on every
+# PR regardless of how it was created (web UI, `gh pr create`, REST API). The
+# agent hooks (.cursor/hooks.json, .claude/settings.json) catch the CLI path
+# earlier; this is the backstop that guarantees one format for ALL PRs.
+#
+# Escape hatch for genuine exceptions: add the label `override-pr-template`
+# to the PR.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  template-check:
+    name: "PR body follows .github/pull_request_template.md"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || "";
+            const labels = (pr.labels || []).map(l => l.name);
+
+            if (labels.includes("override-pr-template")) {
+              core.notice("`override-pr-template` label present — skipping the template check.");
+              return;
+            }
+
+            const MARKER = "datalab-pr-template";
+            const REQUIRED_HEADINGS = [
+              "## Summary",
+              "## Changes",
+              "## Test plan",
+              "## Checklist",
+            ];
+
+            const problems = [];
+            if (!body.includes(MARKER)) {
+              problems.push(`missing the \`${MARKER}\` marker comment (copy it from the top of .github/pull_request_template.md)`);
+            }
+            for (const h of REQUIRED_HEADINGS) {
+              if (!body.includes(h)) problems.push(`missing required section heading: \`${h}\``);
+            }
+
+            if (problems.length) {
+              core.setFailed(
+                "This PR does not follow the unified template " +
+                "(.github/pull_request_template.md):\n  - " +
+                problems.join("\n  - ") +
+                "\n\nUpdate the PR description to match the template, then re-run. " +
+                "For a genuine exception, add the `override-pr-template` label."
+              );
+            } else {
+              core.info("PR body follows the unified template. ✔");
+            }

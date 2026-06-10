@@ -1,0 +1,52 @@
+# Python-file lane: scheduled, headless export of gold to the export volume
+# (spark_python_task). Reads pipeline-owned tables READ-ONLY (single-writer
+# invariant) — see AGENTS.md "Authoring rules".
+#
+# Reuses the pipeline's exact dependency mechanism: a serverless environment
+# installing this repo with `--editable ${workspace.file_path}` — one delivery
+# path, same caching gotcha (see AGENTS.md Critical knowledge).
+
+resources:
+  jobs:
+    sales_export:
+      name: sales_export
+
+      trigger:
+        # Weekly snapshot; paused automatically in dev (mode: development).
+        periodic:
+          interval: 1
+          unit: WEEKS
+
+      # Bundle variables → job parameters → task argv. Zero hardcoding.
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: gold_schema
+          default: ${var.gold_schema}
+        - name: export_path
+          default: ${var.sales_export_path}
+
+      environments:
+        - environment_key: datalab
+          spec:
+            environment_version: "4"
+            dependencies:
+              - --editable ${workspace.file_path}
+
+      tasks:
+        - task_key: export_customer_summary
+          environment_key: datalab
+          spark_python_task:
+            python_file: ../src/jobs/sales/export_customer_summary.py
+            parameters:
+              - "--catalog"
+              - "{{job.parameters.catalog}}"
+              - "--gold-schema"
+              - "{{job.parameters.gold_schema}}"
+              - "--export-path"
+              - "{{job.parameters.export_path}}"
+
+      queue:
+        enabled: true
+
+      permissions: ${var.job_permissions}

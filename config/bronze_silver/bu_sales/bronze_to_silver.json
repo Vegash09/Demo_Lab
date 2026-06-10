@@ -1,9 +1,0 @@
-{
-  "source": { "table": "customer_sales._bronze.customer" },
-  "target": {
-    "table": "customer_sales._silver.customer",
-    "clusterBy": "city",
-    "mode": "upsert",
-    "merge": { "keys": ["customer_id"] }
-  }
-}
