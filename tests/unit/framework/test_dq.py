@@ -13,7 +13,7 @@ from datalab.framework.loader import load_domain_configs
 
 DOMAIN = """
 schema_version: 1
-domain: sales
+domain: demo
 layers:
   silver: {schema_conf: datalab.silver_schema}
 dq:

@@ -3,7 +3,8 @@
 Python-file lane (spark_python_task): side-effectful by design, which is why
 it lives here and not in an SDP dataset function. Reads the SDP-owned gold
 table (read-only — the pipeline is the single writer) and snapshots it to the
-export volume declared in ``resources/sales_ops.job.yml``.
+export volume declared in ``resources/sales_export.job.yml`` (next to this
+example's src/).
 """
 
 from __future__ import annotations

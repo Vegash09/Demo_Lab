@@ -22,12 +22,12 @@ fi
 
 PATTERNS=(
   '^databricks\.yml$'
-  '^resources/.*\.yml$'
+  '^(resources|examples/[^/]+/resources)/.*\.yml$'
   '^pyproject\.toml$'
   '^uv\.lock$'
   '^\.databricksignore$'
   '^src/datalab/(config|quality|params)\.py$'
-  '^config/.*\.ya?ml$'
+  '^(config|examples/[^/]+/config)/.*\.ya?ml$'
   '^src/datalab/framework/(models|loader|generator|dq|writers)\.py$'
   '^\.github/(workflows|actions)/.*'
   '^\.github/pull_request_template\.md$'

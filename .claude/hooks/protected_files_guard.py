@@ -23,7 +23,7 @@ import re
 import sys
 
 PROTECTED: list[tuple[str, str]] = [
-    (r"^databricks\.yml$|^resources/.*\.yml$",
+    (r"^databricks\.yml$|^(resources|examples/[^/]+/resources)/.*\.yml$",
      "Declarative Automation Bundle manifest (deploy surface)"),
     (r"^pyproject\.toml$|^uv\.lock$",
      "dependency manifest (uv-managed; CI runs `uv sync --frozen`)"),
@@ -31,7 +31,7 @@ PROTECTED: list[tuple[str, str]] = [
      "controls which files ship to the workspace on deploy"),
     (r"^src/datalab/(config|quality|params)\.py$",
      "parameterization + quality contracts shared by every pipeline and job lane"),
-    (r"^config/.*\.ya?ml$",
+    (r"^(config|examples/[^/]+/config)/.*\.ya?ml$",
      "dataset configs — the deployed pipeline definition (validate: make validate-configs)"),
     (r"^src/datalab/framework/(models|loader|generator|dq|writers)\.py$",
      "framework core: config contract + LDP/dqx generation semantics"),

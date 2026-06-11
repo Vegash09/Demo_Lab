@@ -1,11 +1,13 @@
 # Files NOT to upload on `databricks bundle deploy`. Mirrors .gitignore
 # semantics; .gitignore'd paths (.venv/, caches, .env) are excluded already.
 #
-# The deploy MUST ship: pyproject.toml + src/** (the pipeline environment
-# installs the repo with `--editable ${workspace.file_path}`).
+# The deploy MUST ship: pyproject.toml + src/** + examples/** (the pipeline
+# environment installs the repo with `--editable ${workspace.file_path}`, and
+# the example pipeline's code/config live under examples/).
 
 # Dev-only surfaces — not needed at runtime
 tests/
+examples/*/tests/
 docs/
 design/
 
