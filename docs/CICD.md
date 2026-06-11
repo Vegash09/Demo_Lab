@@ -1,7 +1,37 @@
 # CI/CD
 
+[← README](../README.md) · [Architecture](ARCHITECTURE.md) · [Framework](FRAMEWORK.md) · **CI/CD** · [Migration](MIGRATION.md)
+
 GitHub Actions + GitHub OIDC + Declarative Automation Bundles. No long-lived
 Databricks secrets are stored in GitHub.
+
+## Pipeline view
+
+```mermaid
+flowchart LR
+    subgraph TRIGGERS["Triggers"]
+        PR["PR to main"]
+        PUSH["push to main"]
+        RC["tag v*-rc*"]
+        REL["tag v* (non-rc)"]
+    end
+
+    subgraph CI["common-ci-steps"]
+        LINT["uv sync --frozen<br/>ruff check"] --> VC["config validation<br/>(validate-configs loader)"] --> TEST["pytest<br/>(local Spark)"] --> BV["bundle validate<br/>(OIDC)"]
+    end
+
+    subgraph CD["common-cd-steps"]
+        OIDC["OIDC setup<br/>(github-oidc auth)"] --> DEPLOY["deploy-dab<br/>validate + deploy + --var overrides"]
+    end
+
+    PR --> CI
+    PUSH --> CI --> CD
+    RC --> CI
+    REL --> CI
+    CD --> DEV["dev"]
+    RC -.-> STAGE["stage"]
+    REL -.-> PROD["prod<br/>(required reviewers)"]
+```
 
 ## Workflows
 
@@ -24,6 +54,22 @@ Reusable pieces:
 - Composite actions: `.github/actions/databricks-setup` (CLI install +
   `~/.databrickscfg` with `auth_type = github-oidc`),
   `.github/actions/deploy-dab`.
+
+## OIDC trust chain
+
+```mermaid
+sequenceDiagram
+    participant GA as GitHub Actions job<br/>(environment: dev/stage/prod)
+    participant GH as GitHub OIDC issuer
+    participant DB as Databricks account
+    participant WS as Workspace
+
+    GA->>GH: request ID token
+    GH-->>GA: token (subject = repo:dediggibyte/datalab:environment:#lt;target#gt;)
+    GA->>DB: exchange via federation policy on the SP
+    DB-->>GA: short-lived SP credential
+    GA->>WS: bundle validate / deploy as the SP
+```
 
 ## One-time setup per target
 
@@ -81,19 +127,24 @@ For each target (`dev`, `stage`, `prod`):
 
 ## Release flow
 
-```
-feature/fix/debug branch ──PR──▶ main   # CI: lint+test+validate (+ template check)
-        merge ▶ main                    # auto-deploy → dev; head branch auto-deleted
-        tag v1.4.0-rc1                  # CI + deploy → stage
-        tag v1.4.0                      # CI + deploy → prod
+```mermaid
+gitGraph
+    commit id: "main"
+    branch feature/slug
+    commit id: "work"
+    commit id: "PR: CI lint+test+validate"
+    checkout main
+    merge feature/slug tag: "auto-deploy → dev"
+    commit id: "tag v1.4.0-rc1" tag: "deploy → stage"
+    commit id: "tag v1.4.0" tag: "deploy → prod"
 ```
 
 Branching practice (AGENTS.md "Branching & releases"): every branch is cut
 from a fresh `main` and named `feature/<slug>`, `fix/<slug>` or
 `debug/<slug>`; one PR per branch. The repo setting **"Automatically delete
 head branches"** is enabled so merged branches disappear from the remote —
-prune locally with `git fetch --prune`. Re-apply the setting after a repo
-recreation with:
+prune locally with `git fetch --prune`, and re-apply the setting after a
+repo recreation with:
 
 ```bash
 gh repo edit --delete-branch-on-merge

@@ -1,41 +1,86 @@
 # datalab
 
-A reusable, config-driven medallion (bronze → silver → gold) lakehouse
-framework on **Lakeflow Spark Declarative Pipelines** (`pyspark.pipelines`),
-shipped as a **Declarative Automation Bundle** with GitHub OIDC CI/CD.
-
-One target table = **one YAML artifact** (columns + types, dqx quality rules,
-CDC/backfills/fan-in, target kind). The framework validates it and generates
-all the SDP wiring; quality failures land in auto-created quarantine tables
-with evidence. You never write `dp.*` boilerplate, `MERGE` logic, or
-checkpoint management.
+**Config-driven Lakeflow framework for the medallion lakehouse.** Every
+target table is ONE YAML artifact — authored by a human or a coding agent,
+validated by Pydantic, generated into **Lakeflow Spark Declarative Pipelines**
+(`pyspark.pipelines`), quality-checked end to end with
+[databrickslabs/dqx](https://databrickslabs.github.io/dqx/), and deployed to
+Databricks as a **Declarative Automation Bundle** with GitHub-OIDC CI/CD.
 
 > AI coding agents and humans: the document of record is **[AGENTS.md](AGENTS.md)**.
 > Read it before editing.
 
-## Start here
+## Architecture at a glance
 
-| You are… | Read |
+```mermaid
+flowchart LR
+    subgraph AUTHOR["Authoring"]
+        NL["natural-language request"] -->|"agent skill:<br/>author-ldp-artifact"| YML["config/&lt;domain&gt;/&lt;layer&gt;/&lt;table&gt;.yml<br/>ONE artifact per target table"]
+    end
+
+    subgraph FW["Framework — src/datalab/"]
+        YML -->|Pydantic validation| GEN["datalab.framework.generate()"]
+        GEN --> GRAPH["generated LDP graph<br/>readers → columns → transforms → dqx → writers"]
+    end
+
+    subgraph WS["Databricks workspace"]
+        GRAPH --> BR["bronze"] --> SIL["silver"] --> GOLD["gold"]
+        SIL -.->|"error rows +<br/>evidence"| QUAR["quarantine"]
+    end
+
+    subgraph DEPLOY["Deploy"]
+        DAB["databricks.yml +<br/>resources/*.yml"] -->|"bundle deploy<br/>(GitHub OIDC)"| WS
+    end
+```
+
+Three invariants hold everywhere:
+
+- **One artifact per table.** Columns (source→target names + types), dqx
+  rules, transforms and target kind live in a single YAML file. No `dlt`,
+  no hand-wired `dp` calls.
+- **Rows are never silently dropped.** Every error-criticality rule
+  auto-creates `<table>_quarantine` with `_errors` evidence structs.
+- **No hardcoded catalogs — ever.** Every location is a pipeline-conf key
+  resolved per environment through bundle variables; promoting
+  dev → stage → prod never edits a config file.
+
+## Documentation map
+
+```mermaid
+flowchart TD
+    README["README.md<br/>(you are here)"] --> GS["docs/GETTING_STARTED.md<br/>empty folder → deployed pipeline,<br/>no framework-team help needed"]
+    README --> FWK["docs/FRAMEWORK.md<br/>flowspec reference: artifact anatomy ·<br/>target kinds · dqx semantics · capability matrix"]
+    README --> EX["examples/sales/<br/>complete worked domain to copy"]
+    README --> ARCH["docs/ARCHITECTURE.md<br/>system view · lanes · code layout · governance"]
+    README --> CICD["docs/CICD.md<br/>workflows · OIDC setup · release flow"]
+    README --> MIG["docs/MIGRATION.md<br/>legacy DLT → hand-written SDP → flowspec"]
+    README --> AGENTS["AGENTS.md<br/>document of record: authoring rules, router, guards"]
+```
+
+| Doc | Read it when |
 |---|---|
-| Building a pipeline on the framework | **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** — empty folder → deployed pipeline, no framework-team help needed |
-| Looking up an artifact field / SDP capability | **[docs/FRAMEWORK.md](docs/FRAMEWORK.md)** — the complete reference + capability matrix |
-| Wanting a finished example to copy | **[examples/sales/](examples/sales/README.md)** — complete worked domain, mirrors an adopter repo |
-| Understanding the system / governance | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Setting up or debugging deploys | [docs/CICD.md](docs/CICD.md) |
-| Migrating from the legacy DLT-era repo | [docs/MIGRATION.md](docs/MIGRATION.md) |
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | you are building a pipeline on the framework — empty folder → deployed pipeline, no framework-team help needed |
+| [docs/FRAMEWORK.md](docs/FRAMEWORK.md) | you are adding a table or domain: artifact schema, generated graph, target kinds, data-quality semantics, the SDP capability matrix |
+| [examples/sales/](examples/sales/README.md) | you want a finished example to copy — complete worked domain, mirrors an adopter repo |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | you need the system picture: CI/CD → workspace resources, the three authoring lanes, code organization, environments, RBAC/ABAC |
+| [docs/CICD.md](docs/CICD.md) | you are wiring a target or debugging a deploy: workflows, federation policies, GitHub Environments, release flow |
+| [docs/MIGRATION.md](docs/MIGRATION.md) | you knew the legacy/intermediate codebase and need the old → current concept map |
+| [AGENTS.md](AGENTS.md) | always, before editing — routing rules, protected files, PR conventions |
 
-## What's where
+## Repository map
 
 | Surface | Where | What |
 |---|---|---|
-| **Framework** | `src/datalab/` | The ONLY package under `src/` — reusable, zero domain code: Pydantic models, LDP generator, dqx engine, devtools, param helpers. Lifts into any project untouched. |
-| **Reference domains** | `examples/` | Complete worked adoptions (currently `sales/`): config artifacts, domain package, edge jobs, notebook, bundle resources, tests, ABAC SQL. Deployed by this repo's bundle; copy one to start your own domain. |
-| Dataset configs | `examples/sales/config/sales/` (adopters: `config/<domain>/`) | ONE artifact per target table, per layer |
-| Deploy | `databricks.yml` + `examples/*/resources/` | Bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
-| Framework tests | `tests/` | Example-free unit tests on a local SparkSession |
-| Verify notebook | `notebooks/framework/verify_dataset.py` | Run one dataset through the real framework path — no deploy |
+| Framework | `src/datalab/` | the ONLY package under `src/` — REUSABLE, zero domain code: Pydantic models, LDP generator, dqx engine, devtools, param helpers |
+| Reference domains | `examples/` (currently `sales/`) | complete worked adoptions, each mirroring an adopter repo root — copy one to start your own domain |
+| Dataset configs | `examples/sales/config/sales/` (adopters: `config/<domain>/`) | ONE artifact per target table: column mappings + types, dqx rules, target kind |
+| Domain code | `examples/sales/src/sales_etl/` (adopters: `src/<domain>_etl/`) | pure `@transform` functions, custom dqx checks, 3-line pipeline entrypoint |
+| Edge lanes | `examples/sales/src/jobs/sales/` + `examples/sales/notebooks/sales/` | python-file lane (headless exports) + notebook lane (human-gated triage) |
+| Deploy | `databricks.yml` + `examples/*/resources/` (adopters: `resources/`) | bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
+| Tests | `tests/` (framework, example-free) + `examples/sales/tests/` | unit tests on a local SparkSession — no workspace needed |
 | CI/CD | `.github/` | ruff + pytest + config validation + `bundle validate` on PRs; OIDC deploys on merge/tags |
-| Agent harness | `.claude/`, `.cursor/`, `.githooks/` | Skills, PR-template + protected-file guards |
+| Agent harness | `.claude/`, `.cursor/`, `.githooks/` | rules, skills, PR-template + protected-file guards |
+| Docs | `docs/` | the child docs mapped above |
 
 ## Quick start
 
@@ -55,51 +100,32 @@ databricks bundle run sales_export -t dev             # python-file lane example
 databricks bundle run sales_quarantine_report -t dev  # notebook lane example
 ```
 
-`make help` lists everything.
+`make help` lists everything. The full release flow (dev on merge,
+stage on `v*-rc*` tags, prod on `v*` tags) is in
+[docs/CICD.md](docs/CICD.md#release-flow).
 
-## How a table is born (the whole workflow)
+## The sales example, end to end
 
-```yaml
-# examples/sales/config/sales/silver/customers.yml  (one artifact == one table)
-source:  {kind: table, name: customers_raw, layer: bronze, as_stream: true}
-columns:
-  - name: customer_id
-    type: string
-    quality: [{criticality: error, check: {function: is_not_null}}]
-  - {name: email, type: string}
-transform: [{function: sales.normalize_email}]
-target:
-  kind: streaming_table
-  cdc: {keys: [customer_id], sequence_by: _ingest_ts, scd_type: 1}
+The reference pipeline is generated entirely from
+`examples/sales/config/sales/<layer>/<table>.yml` artifacts (an adopter repo
+keeps the same tree at `config/<domain>/`):
+
+```mermaid
+flowchart LR
+    LAND[("landing volume<br/>JSON")] -->|"Auto Loader<br/>cloud_files"| RAW["bronze.customers_raw<br/>streaming table + lineage cols"]
+    RAW --> IN["customers__input<br/>framework view: 8 mapped columns<br/>+ sales.normalize_email"]
+    IN --> CHK["customers__checked<br/>dqx checks → _errors/_warnings"]
+    CHK -->|valid| VAL["customers__valid"]
+    CHK -->|"error → dropped"| QUAR["silver.customers_quarantine<br/>dropped rows + dqx evidence"]
+    VAL -->|"AUTO CDC · SCD1<br/>keys=[customer_id]"| SIL["silver.customers"]
+    SIL --> GOLD["gold.customers_by_city<br/>materialized view"]
 ```
 
-```bash
-make validate-configs   # static validation (same loader as CI and the pipeline)
-make test               # behavior via run_dataset — valid rows, quarantine, casts
-make deploy run         # dev refresh verifies the engine-owned parts (CDC merge)
-```
-
-The framework generates: input/checked/valid views → AUTO CDC into
-`silver.customers` → rejected rows into `silver.customers_quarantine` with
-dqx `_errors` evidence. The full surface (Auto Loader, Kafka in/out, fan-in
-`sources:`, `backfill:` once-flows, snapshot CDC, MV refresh policies) is in
-[docs/FRAMEWORK.md](docs/FRAMEWORK.md) — including what SDP offers that this
-repo deliberately does NOT use, and why.
-
-## Authoring rules (the short version)
-
-- Route every new target with the 3-question router (AGENTS.md): managed
-  medallion Delta table → **SDP via YAML artifact** (mandatory, backfills
-  included); headless side-effectful edge work → **python-file** task;
-  human-must-decide → **notebook** task (no trigger).
-- Business logic lives in your domain package (`src/<domain>_etl/transforms/`)
-  as pure `@transform`-registered functions with unit tests — never in the
-  framework, never as `dp.*` wiring.
-- Upserts via `target.cdc` (AUTO CDC), full-snapshot SCD via
-  `target.cdc_from_snapshot`, quality via dqx rules (error → quarantine,
-  warn → flagged). Never `import dlt`, never hand-written `MERGE`.
-- Nothing hardcoded: locations are conf keys resolved per environment by
-  bundle variables.
+Adding your own table is one artifact + (rarely) one pure `@transform`
+function — the walkthrough is in
+[docs/FRAMEWORK.md](docs/FRAMEWORK.md#add-a-table--one-artifact);
+[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) takes a brand-new domain
+from empty folder to deployed pipeline.
 
 ## Dependencies (uv)
 
