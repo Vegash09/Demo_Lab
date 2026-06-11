@@ -1,5 +1,7 @@
 # The datalab framework (flowspec) — complete reference
 
+[← README](../README.md) · [Architecture](ARCHITECTURE.md) · **Framework** · [CI/CD](CICD.md) · [Migration](MIGRATION.md)
+
 The reusable LDP framework: every **target table is one YAML artifact**,
 authored by hand or by a coding agent from a natural-language request (skill:
 `author-ldp-artifact`), validated by Pydantic models, and generated into
@@ -11,23 +13,26 @@ New to the repo? Read [GETTING_STARTED.md](GETTING_STARTED.md) first — it
 walks a new domain from empty folder to deployed pipeline. This page is the
 reference you come back to.
 
-```text
-config/<domain>/domain.yml                    domain settings (imports, conf keys per layer)
-config/<domain>/<layer>/<table>.yml           ONE artifact per target table:
-        │                                       sources (single or fan-in), columns
-        │                                       (source→target + types + DQ rules),
-        │                                       transforms, backfills, target kind
-        │  pydantic DomainConfig/TableFile (validated at import, CI, and editor)
-        ▼
-datalab.framework.generate(spark, config_dir) the 3-line pipeline entrypoint
-        │  readers: cloud_files / files / table / view / kafka   (batch or stream)
-        │  columns: projection (rename + ANSI-safe casts)
-        │  transforms: registry of pure functions     (your src/<domain>_etl/transforms)
-        │  dq: DQX apply → valid / quarantine split   (your src/<domain>_etl/checks too)
-        ▼  writers: streaming table (1..N flows + once-backfills) / AUTO CDC /
-                    snapshot CDC / MV / temporary view / delta+kafka sink
-generated graph:  <name>__input → <name>__checked → <name>__valid → target
-                                            └─────────→ <name>_quarantine (+ metrics MV)
+```mermaid
+flowchart TD
+    DY["config/&lt;domain&gt;/domain.yml<br/>domain settings: imports, conf keys per layer"]
+    TY["config/&lt;domain&gt;/&lt;layer&gt;/&lt;table&gt;.yml<br/>ONE artifact per target table:<br/>sources (single or fan-in) · columns (source→target + types + DQ rules) ·<br/>transforms · backfills · target kind"]
+    DY --> VAL["Pydantic DomainConfig / TableFile<br/>validated at import, in CI, and in the editor"]
+    TY --> VAL
+    VAL --> GEN["datalab.framework.generate(spark, config_dir)<br/>the 3-line pipeline entrypoint"]
+    GEN --> R["readers<br/>cloud_files · files · table · view · kafka<br/>(batch or stream)"]
+    R --> C["columns<br/>projection: rename +<br/>ANSI-safe casts"]
+    C --> T["transforms<br/>registry of pure functions<br/>src/&lt;domain&gt;_etl/transforms"]
+    T --> Q["dq<br/>dqx apply → valid / quarantine split<br/>(custom checks: src/&lt;domain&gt;_etl/checks)"]
+    Q --> W["writers<br/>streaming table (1..N flows + once-backfills) ·<br/>AUTO CDC · snapshot CDC · MV ·<br/>temporary view · delta/kafka sink"]
+```
+
+Generated dataset graph per artifact:
+
+```mermaid
+flowchart LR
+    IN["&lt;name&gt;__input"] --> CHK["&lt;name&gt;__checked"] --> VAL["&lt;name&gt;__valid"] --> TGT["target"]
+    CHK -->|"error rows"| QUAR["&lt;name&gt;_quarantine<br/>(+ optional metrics MV)"]
 ```
 
 **No hardcoded catalogs — ever.** Every location in an artifact is a
@@ -331,6 +336,14 @@ expectations — dqx still gates upstream in the framework's view chain.
 
 ## Data quality (dqx) semantics
 
+```mermaid
+flowchart LR
+    ROWS["incoming rows"] --> CHK{"dqx checks"}
+    CHK -->|"all pass"| VALID["valid → target"]
+    CHK -->|"warn fails"| FLAG["flagged in _warnings → target"]
+    CHK -->|"error fails"| DROP["dropped → &lt;table&gt;_quarantine<br/>with _errors evidence"]
+```
+
 - Rules are dqx metadata — anything from the
   [dqx checks reference](https://databrickslabs.github.io/dqx/docs/reference/quality_checks/)
   can be pasted in, including `filter:`, `for_each_column:`, and custom
@@ -431,6 +444,14 @@ Built-ins available without any python: `framework.add_lineage`,
 
 ## Add a domain — the framework is never edited
 
+```mermaid
+flowchart LR
+    A["1 · config/&lt;domain&gt;/domain.yml<br/>name, imports, catalog_conf, layers"] --> B["2 · &lt;layer&gt;/&lt;table&gt;.yml<br/>one artifact per table"]
+    B --> C["3 · src/&lt;domain&gt;_etl/<br/>transforms · checks ·<br/>3-line pipeline.py"]
+    C --> D["4 · hatch wheel packages<br/>+= src/&lt;domain&gt;_etl"]
+    D --> E["5 · resources/&lt;domain&gt;_etl.pipeline.yml<br/>point datalab.config_dir at config/&lt;domain&gt;"]
+```
+
 1. `config/<domain>/domain.yml` — domain name, `imports:`, `catalog_conf`,
    per-layer `layers:` schema conf keys.
 2. `config/<domain>/<layer>/<table>.yml` — one artifact per target table.
@@ -446,18 +467,13 @@ example to copy from: [examples/sales/](../examples/sales/README.md).
 
 ## Verify before deploying
 
-- `make validate-configs` — pydantic + static dqx validation of every domain.
-- `notebooks/framework/verify_dataset.py` — run ONE dataset through the real
-  framework path on sample or live data, no deploy: plan, valid rows,
-  quarantine evidence, warnings. The same `run_dataset` API backs the unit
-  tests, so notebook and pytest are literally the same code path.
-  `run_dataset(..., flow="hist_2024")` previews a specific fan-in source or
-  backfill entry.
-- `datalab.framework.capture_graph(spark, config_dir)` — list the full
-  generated dataset/flow graph locally (no Databricks).
-- CDC caveat: the SCD merge itself is engine-owned; `run_dataset` verifies
-  everything up to the valid/quarantine frames and prints the CDC plan. The
-  merge is verified by a dev refresh (`make run`).
+| Step | Command / file | Verifies |
+|---|---|---|
+| 1 | `make validate-configs` | Pydantic + static dqx validation of every domain |
+| 2 | `make test` | unit tests on a local SparkSession |
+| 3 | `notebooks/framework/verify_dataset.py` | ONE dataset through the real framework path on sample or live data, no deploy — plan, valid rows, quarantine evidence, warnings. The same `run_dataset` API backs the unit tests, so notebook and pytest are literally the same code path; `run_dataset(..., flow="hist_2024")` previews a specific fan-in source or backfill entry |
+| 4 | `datalab.framework.capture_graph(spark, config_dir)` | the full generated dataset/flow graph, locally (no Databricks) |
+| 5 | `make deploy run` | the engine-owned parts via a dev refresh — CDC caveat: the SCD merge itself is engine-owned; `run_dataset` verifies everything up to the valid/quarantine frames and prints the CDC plan |
 
 ## Gotchas
 
