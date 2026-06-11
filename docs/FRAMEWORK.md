@@ -112,8 +112,15 @@ customer project) means creating only domain-owned artifacts:
   [dqx checks reference](https://databrickslabs.github.io/dqx/docs/reference/quality_checks/)
   can be pasted in, including `filter:`, `for_each_column:`, and custom
   functions from `src/<domain>_etl/checks/` (declared via `domain.yml`
-  `imports:`). The NL→check-function mapping table lives in the
-  `author-ldp-artifact` skill.
+  `imports:`). The NL→check-function mapping lives in the
+  `author-ldp-artifact` skill and covers the full dqx catalog (completeness,
+  lists/ranges, formats, temporal/freshness, JSON/network/geo/PII,
+  uniqueness, referential, aggregates, reconciliation) — agents must pick the
+  most specific function; `sql_expression`/`sql_query` are last resorts.
+  Rule-shape conventions (auto `<column>_<function>` names, `criticality`
+  defaulting to `error`) deliberately match the dqx rule-generator app
+  (`databricks_dqx_agent`), so rules authored here and rules generated there
+  are interchangeable dqx metadata.
 - **Column-level rules** (`columns[].quality`) get `check.arguments.column`
   and a `<column>_<function>` rule name injected automatically. Table-level
   and multi-column rules go under `quality.checks` with explicit arguments.

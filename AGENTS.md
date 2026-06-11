@@ -348,8 +348,10 @@ The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
   The framework (`src/datalab`) is not touched.
 - **Change quality rules**: edit the column's `quality:` list (or the
   table-level `quality.checks`) in the table's artifact — dqx metadata,
-  NL→function mapping in the `author-ldp-artifact` skill. Target filtering
-  and quarantine stay in sync automatically. `make validate-configs` catches
+  NL→function mapping in the `author-ldp-artifact` skill (full dqx catalog;
+  pick the most specific function — `sql_expression` is a last resort;
+  conventions follow the `databricks_dqx_agent` rule generator). Target
+  filtering and quarantine stay in sync automatically. `make validate-configs` catches
   invalid rules statically; verify behavior with `run_dataset` or the verify
   notebook.
 - **Add a python-file task**: run the 3-question router first. Entry point in

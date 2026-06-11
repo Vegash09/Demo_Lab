@@ -57,27 +57,60 @@ Choosing `target.kind`: incremental/append → `streaming_table`; upsert/SCD →
 
 ## Natural language → dqx rules
 
-Rules are databrickslabs/dqx metadata. Column-scoped rules go under the
-column (the framework injects `column` and a `<col>_<function>` name);
+Rules are databrickslabs/dqx metadata, verbatim. Column-scoped rules go under
+the column (the framework injects `check.arguments.column` and a
+`<column>_<function>` rule name — the dqx rule-generator naming convention);
 multi-column/dataset rules go under `quality.checks` with explicit arguments.
+Always map the request to the MOST SPECIFIC dqx function — `sql_expression` /
+`sql_query` are last resorts, never shortcuts. Argument names are validated
+statically (`make validate-configs`); full catalog:
+[dqx checks reference](https://databrickslabs.github.io/dqx/docs/reference/quality_checks/).
+
+Column-level (row-scoped, under `columns[].quality`):
 
 | User says | dqx check |
 |---|---|
-| "required", "not null", "must have" | `{function: is_not_null}` |
-| "not empty" | `{function: is_not_null_and_not_empty}` |
-| "between X and Y", "at least/most N" | `{function: is_in_range, arguments: {min_limit: X, max_limit: Y}}` |
-| "one of [A, B, C]", "allowed values" | `{function: is_in_list, arguments: {allowed: [A, B, C]}}` |
-| "valid email/phone/pattern" | `{function: regex_match, arguments: {regex: '...'}}` |
-| "valid date/timestamp format" | `{function: is_valid_date}` / `is_valid_timestamp` |
-| "unique", "no duplicates" | `{function: is_unique, arguments: {columns: [...]}}` — dataset-level: needs a `materialized_view` target (or explicit `allow_streaming_dataset_checks: true`) |
-| "must exist in <other table>" | `{function: foreign_key, arguments: {columns: [...], ref_columns: [...], ref_df_name: <key>}}` + `quality.references` |
-| "fresh", "not older than N days" | `{function: is_data_fresh, arguments: {column: ..., max_age_minutes: ...}}` |
-| anything else expressible in SQL | `{function: sql_expression, arguments: {expression: '...'}}` |
+| "required", "not null", "must have" | `is_not_null` |
+| "not empty/blank" | `is_not_null_and_not_empty` (`is_not_empty` if NULL is fine) |
+| "non-empty array" | `is_not_null_and_not_empty_array` |
+| "one of [A, B, C]", "allowed values" | `is_in_list {allowed}` (`is_not_null_and_is_in_list` if also required) |
+| "never one of", "forbidden values" | `is_not_in_list {forbidden}` |
+| "between X and Y", "at least/most N" | `is_in_range {min_limit, max_limit}` (`is_not_in_range` for outside) |
+| "equals / must not equal X" | `is_equal_to` / `is_not_equal_to` |
+| "no less/greater than <col or value>" | `is_not_less_than` / `is_not_greater_than` |
+| "valid email/phone/code pattern" | `regex_match {regex}` |
+| "parseable date/timestamp string" | `is_valid_date` / `is_valid_timestamp` |
+| "not in the future" | `is_not_in_future` (`is_not_in_near_future {offset}`) |
+| "at least N days old", "A ≥ N days after B" | `is_older_than_n_days` / `is_older_than_col2_for_n_days` |
+| "valid JSON", "JSON with keys" | `is_valid_json` / `has_json_keys` |
+| "valid IPv4/IPv6", "inside CIDR" | `is_valid_ipv4_address` / `is_ipv4_address_in_cidr` (+ `ipv6` variants) |
+| "no PII" | `does_not_contain_pii` |
+| "valid latitude/longitude" | `is_latitude` / `is_longitude` |
+| "fresh", "updated within N minutes" | `is_data_fresh {max_age_minutes}` |
+| anything else row-scoped in SQL | `sql_expression {expression}` — last resort |
 
-Criticality: rows that must NOT land in the table → `criticality: error`
-(they go to `<table>_quarantine` automatically — never silently dropped);
-"monitor/flag but keep" → `criticality: warn`. Conditional rules use
-`filter:` (e.g. `email IS NOT NULL`).
+Dataset-level (under `quality.checks`; needs a `materialized_view` target or
+explicit `allow_streaming_dataset_checks: true`):
+
+| User says | dqx check |
+|---|---|
+| "unique", "no duplicates", "primary key" | `is_unique {columns}` |
+| "must exist in <table>", "referential integrity" | `foreign_key {columns, ref_columns, ref_df_name}` + `quality.references` |
+| "row count/sum/avg at least|most N" | `is_aggr_not_less_than` / `is_aggr_not_greater_than` / `is_aggr_equal` / `is_aggr_not_equal` `{aggr_type, group_by}` |
+| "matches/reconciles with <dataset>" | `compare_datasets` |
+| "data arrives every N minutes" | `is_data_fresh_per_time_window` |
+| "schema matches the contract" | `has_valid_schema` |
+| "no statistical outliers" | `has_no_outliers` |
+| dataset-scoped SQL assertion | `sql_query` — last resort |
+
+Criticality (dqx rule-generator convention): rows that must NOT land in the
+table — keys, ids, business invariants → `criticality: error` (they go to
+`<table>_quarantine` automatically — never silently dropped); "monitor/flag
+but keep" — formats and ranges on optional fields → `warn`; omitted →
+`error`. Conditional rules use `filter:` (e.g. `email IS NOT NULL`); the same
+check across many columns uses `for_each_column:`. A request no dqx function
+covers → custom `@check_function` in `src/<domain>_etl/checks/` (module
+listed in `domain.yml` `imports:`), not a pile of `sql_expression`s.
 
 ## If new python is needed
 
