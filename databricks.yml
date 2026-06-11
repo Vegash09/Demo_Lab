@@ -16,8 +16,13 @@
 bundle:
   name: datalab
 
+# Resource definitions. The framework itself deploys nothing; every pipeline
+# and job in this repo belongs to the reference domain under examples/.
+# Adopter repos keep their resources at the conventional root-level
+# resources/*.yml (the glob below stays harmless while the folder is absent).
 include:
   - resources/*.yml
+  - examples/*/resources/*.yml
 
 variables:
   catalog:

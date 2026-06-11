@@ -1,4 +1,5 @@
-"""Generated graph shape + the late-binding regression test."""
+"""Generator behavior on synthetic configs (the sales example's graph-shape
+contract lives in examples/sales/tests/test_pipeline_graph.py)."""
 
 import pytest
 
@@ -9,7 +10,6 @@ CONF = {
     "datalab.bronze_schema": "bronze",
     "datalab.silver_schema": "silver",
     "datalab.gold_schema": "gold",
-    "datalab.sales_landing_path": "/tmp/landing",
 }
 
 
@@ -20,39 +20,13 @@ def configured_spark(spark):
     return spark
 
 
-def test_sales_graph_matches_handwritten_pipeline(configured_spark):
-    captured = capture_graph(configured_spark, "config/sales")
-    names = {name for _, name in captured}
-
-    # bronze: input view + streaming table (was bronze_customers.py)
-    assert {"customers_raw__input", "cat.bronze.customers_raw"} <= names
-    # silver: dq chain + CDC target + quarantine (was silver_customers.py)
-    assert {
-        "customers__input",
-        "customers__checked",
-        "customers__valid",
-        "cat.silver.customers",
-        "customers__cdc_flow",
-        "cat.silver.customers_quarantine",
-    } <= names
-    # gold: input view + MV (was gold_customers.py)
-    assert {"customers_by_city__input", "cat.gold.customers_by_city"} <= names
-
-    # outputs only — each output's flow is captured under the same name
-    kinds = {name: kind for kind, name in captured if kind != "Flow"}
-    assert kinds["cat.silver.customers"] == "StreamingTable"
-    assert kinds["customers__cdc_flow"] == "auto_cdc_flow"
-    assert kinds["cat.gold.customers_by_city"] == "MaterializedView"
-    assert kinds["customers__checked"] == "TemporaryView"
-
-
 def test_late_binding_regression(configured_spark, tmp_path):
     # Two tables in one layer: each generated closure must capture ITS spec,
     # not the last loop iteration's (the classic generator bug).
     (tmp_path / "domain.yml").write_text(
         """
 schema_version: 1
-domain: sales
+domain: demo
 layers:
   gold: {schema_conf: datalab.gold_schema}
 """

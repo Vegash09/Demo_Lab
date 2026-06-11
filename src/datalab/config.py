@@ -16,7 +16,7 @@ def pipeline_conf(spark: SparkSession, key: str, default: str | None = None) -> 
 
     Parameters are declared in the bundle, e.g.::
 
-        # resources/sales_etl.pipeline.yml
+        # <your domain>.pipeline.yml (see examples/sales/resources/)
         configuration:
           datalab.catalog: ${var.catalog}
     """

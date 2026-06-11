@@ -2,8 +2,9 @@
 
 Pure functions only: DataFrame in, DataFrame out. Column selection, renames
 and type casts are declared in the table artifacts (``columns:`` in
-``config/sales/<layer>/<table>.yml``) — these functions carry only the logic
-a mapping cannot express. dqx quality rules also live in the artifacts.
+``config/sales/<layer>/<table>.yml`` under this example) — these functions
+carry only the logic a mapping cannot express. dqx quality rules also live in
+the artifacts.
 """
 
 from __future__ import annotations

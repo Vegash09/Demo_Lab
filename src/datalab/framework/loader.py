@@ -27,6 +27,7 @@ from datalab.framework.models import (
     DomainConfig,
     LayerConfig,
     LayerDefaults,
+    SnapshotFunctionSource,
     TableFile,
     TableSource,
     ViewSource,
@@ -69,20 +70,38 @@ def load_domain(config_dir: Path) -> DomainConfig:
     return _validate(DomainConfig, _load_yaml(domain_path), domain_path)
 
 
+def _resolve_layer_ref(source: Any, domain: DomainConfig, path: Path) -> Any:
+    """`source.layer` references the domain's layer→schema mapping."""
+    if not (isinstance(source, dict) and source.get("layer") and not source.get("schema_conf")):
+        return source
+    entry = domain.layers.get(source["layer"])
+    if entry is None:
+        raise ConfigError(
+            f"{path}: source.layer {source['layer']!r} has no entry under domain.yml layers:"
+        )
+    source = {k: v for k, v in source.items() if k != "layer"}
+    source["schema_conf"] = entry.schema_conf
+    return source
+
+
 def _load_table_file(path: Path, domain: DomainConfig) -> TableFile:
     raw = _load_yaml(path)
-    # `source.layer` references the domain's layer→schema mapping.
-    source = raw.get("source")
-    if isinstance(source, dict) and source.get("layer") and not source.get("schema_conf"):
-        entry = domain.layers.get(source["layer"])
-        if entry is None:
-            raise ConfigError(
-                f"{path}: source.layer {source['layer']!r} has no entry under "
-                "domain.yml layers:"
-            )
-        source = {k: v for k, v in source.items() if k != "layer"}
-        source["schema_conf"] = entry.schema_conf
-        raw = {**raw, "source": source}
+    # Layer references resolve in the single source, every fan-in flow, and
+    # every backfill entry alike.
+    if "source" in raw:
+        raw = {**raw, "source": _resolve_layer_ref(raw.get("source"), domain, path)}
+    for block in ("sources", "backfill"):
+        entries = raw.get(block)
+        if isinstance(entries, list):
+            raw = {
+                **raw,
+                block: [
+                    {**e, "source": _resolve_layer_ref(e.get("source"), domain, path)}
+                    if isinstance(e, dict)
+                    else e
+                    for e in entries
+                ],
+            }
     spec = _validate(TableFile, raw, path)
     if spec.name != path.stem:
         raise ConfigError(
@@ -98,10 +117,12 @@ def _deep_validate(config: LayerConfig, where: Path, known_datasets: set[str]) -
 
     custom = check_registry()
     for ds in config.datasets:
-        from datalab.framework.registry import resolve_transform
+        from datalab.framework.registry import resolve_snapshot_source, resolve_transform
 
         for step in ds.transform:
             resolve_transform(step.function)  # raises ConfigError on unknown names
+        if isinstance(ds.source, SnapshotFunctionSource):
+            resolve_snapshot_source(ds.source.function)  # ConfigError on unknown
 
         checks = ds.effective_checks()
         if checks:
@@ -130,14 +151,19 @@ def _deep_validate(config: LayerConfig, where: Path, known_datasets: set[str]) -
                         "true to accept per-batch semantics."
                     )
 
-        if isinstance(ds.source, ViewSource) and ds.source.name not in known_datasets:
-            raise ConfigError(
-                f"{where}/{ds.name}.yml: reads view {ds.source.name!r}, which no "
-                "earlier dataset in this domain defines"
-            )
+        flow_sources = [src for _, src in ds.streaming_flows()] + [
+            b.source for b in ds.backfill
+        ]
+        for src in flow_sources:
+            if isinstance(src, ViewSource) and src.name not in known_datasets:
+                raise ConfigError(
+                    f"{where}/{ds.name}.yml: reads view {src.name!r}, which no "
+                    "earlier dataset in this domain defines"
+                )
         known_datasets.add(ds.name)
-        if isinstance(ds.source, TableSource):
-            known_datasets.add(ds.source.name)  # cross-layer lineage by name
+        for src in flow_sources:
+            if isinstance(src, TableSource):
+                known_datasets.add(src.name)  # cross-layer lineage by name
 
 
 def load_domain_configs(config_dir: str | Path, layers: list[str] | None = None) -> list[LayerConfig]:

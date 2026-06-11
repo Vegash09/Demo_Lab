@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../../schemas/table_config.schema.json
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
 #
 # Target table: bronze.customers_raw — raw ingestion, source schema preserved
 # (schema evolution on; no column mapping at this layer by design).

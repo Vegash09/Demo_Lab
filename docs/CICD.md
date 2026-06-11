@@ -15,7 +15,8 @@ Databricks secrets are stored in GitHub.
 Reusable pieces:
 
 - `common-ci-steps.yml` — `uv sync --frozen` → `ruff check` → `pytest`
-  (local Spark, Java 21) → `databricks bundle validate -t <target>` (OIDC).
+  (local Spark, Java 21; runs the framework suite AND the examples' suites)
+  → `databricks bundle validate -t <target>` (OIDC).
 - `common-cd-steps.yml` — OIDC setup → `deploy-dab` composite action
   (validate + deploy with optional `--var` overrides).
 - Composite actions: `.github/actions/databricks-setup` (CLI install +
@@ -79,10 +80,21 @@ For each target (`dev`, `stage`, `prod`):
 ## Release flow
 
 ```
-feature branch ──PR──▶ main          # CI: lint+test+validate (+ template check)
-        merge ▶ main                 # auto-deploy → dev
-        tag v1.4.0-rc1               # CI + deploy → stage
-        tag v1.4.0                   # CI + deploy → prod
+feature/fix/debug branch ──PR──▶ main   # CI: lint+test+validate (+ template check)
+        merge ▶ main                    # auto-deploy → dev; head branch auto-deleted
+        tag v1.4.0-rc1                  # CI + deploy → stage
+        tag v1.4.0                      # CI + deploy → prod
+```
+
+Branching practice (AGENTS.md "Branching & releases"): every branch is cut
+from a fresh `main` and named `feature/<slug>`, `fix/<slug>` or
+`debug/<slug>`; one PR per branch. The repo setting **"Automatically delete
+head branches"** is enabled so merged branches disappear from the remote —
+prune locally with `git fetch --prune`. Re-apply the setting after a repo
+recreation with:
+
+```bash
+gh repo edit --delete-branch-on-merge
 ```
 
 ## Local equivalents

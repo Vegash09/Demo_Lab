@@ -20,6 +20,7 @@ from datalab.framework.errors import ConfigError
 
 TRANSFORMS: dict[str, Callable[..., DataFrame]] = {}
 CHECKS: dict[str, Callable[..., Column]] = {}
+SNAPSHOT_SOURCES: dict[str, Callable] = {}
 
 
 def transform(name: str) -> Callable[[Callable[..., DataFrame]], Callable[..., DataFrame]]:
@@ -36,6 +37,19 @@ def check_function(fn: Callable[..., Column]) -> Callable[..., Column]:
     """Register a custom dqx check function under its own name."""
     CHECKS[fn.__name__] = fn
     return fn
+
+
+def snapshot_source(name: str) -> Callable[[Callable], Callable]:
+    """Register an historical-snapshot walker for ``cdc_from_snapshot``
+    (source kind ``snapshot_function``). The SDP contract:
+    ``fn(latest_processed_version | None) -> (DataFrame, version) | None`` —
+    return successive snapshots in ascending version order, None to stop."""
+
+    def decorator(fn: Callable) -> Callable:
+        SNAPSHOT_SOURCES[name] = fn
+        return fn
+
+    return decorator
 
 
 def import_modules(modules: list[str]) -> None:
@@ -64,6 +78,18 @@ def resolve_transform(name: str) -> Callable[..., DataFrame]:
         ) from None
 
 
+def resolve_snapshot_source(name: str) -> Callable:
+    try:
+        return SNAPSHOT_SOURCES[name]
+    except KeyError:
+        raise ConfigError(
+            f"unknown snapshot source {name!r} — registered: "
+            f"{sorted(SNAPSHOT_SOURCES) or '(none)'}. Register it with "
+            "@datalab.framework.registry.snapshot_source(...) in a domain module "
+            "and declare that module in the layer YAML's 'imports:' list."
+        ) from None
+
+
 def check_registry() -> dict[str, Callable[..., Column]]:
     """Custom check functions, in the shape dqx's ``custom_check_functions`` takes."""
     return dict(CHECKS)
@@ -87,3 +113,16 @@ def select_columns(df: DataFrame, columns: list[str]) -> DataFrame:
 @transform("framework.where")
 def where_filter(df: DataFrame, condition: str) -> DataFrame:
     return df.where(condition)
+
+
+@transform("framework.to_json_value")
+def to_json_value(df: DataFrame, key: str | None = None) -> DataFrame:
+    """Pack rows into the Kafka writer contract: a JSON ``value`` column of
+    every (non-key) column, plus an optional string ``key`` column — the
+    last step before a ``kafka_sink`` target."""
+    payload = [c for c in df.columns if c != key]
+    out = df.withColumn("value", F.to_json(F.struct(*payload)))
+    if key is not None:
+        out = out.withColumn("key", F.col(key).cast("string"))
+        return out.select("key", "value")
+    return out.select("value")

@@ -6,12 +6,16 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from datalab.framework.context import ResolveContext
+from datalab.framework.errors import ConfigError
 from datalab.framework.models import (
     CloudFilesSource,
     ColumnSpec,
     DatasetSpec,
+    FileSource,
+    KafkaSource,
     LayerConfig,
     ReferenceSource,
+    SnapshotFunctionSource,
     SourceSpec,
     TableSource,
     TransformStep,
@@ -28,7 +32,10 @@ def read_source(
         if path in ctx.inputs:
             df = ctx.inputs[path]
         elif ctx.force_batch:
-            df = spark.read.format(src.format).options(**src.options).load(path)
+            reader = spark.read.format(src.format).options(**src.options)
+            if src.reader_schema:
+                reader = reader.schema(src.reader_schema)
+            df = reader.load(path)
         else:
             reader = (
                 spark.readStream.format("cloudFiles")
@@ -37,18 +44,29 @@ def read_source(
             )
             if src.schema_hints:
                 reader = reader.option("cloudFiles.schemaHints", src.schema_hints)
+            if src.reader_schema:
+                reader = reader.schema(src.reader_schema)
             df = reader.load(path)
         if src.add_lineage:
             df = resolve_transform("framework.add_lineage")(df)
         return df
+
+    if isinstance(src, FileSource):
+        path = ctx.resolve(src.path_conf)
+        if path in ctx.inputs:
+            return ctx.inputs[path]
+        reader = spark.read.format(src.format).options(**src.options)
+        if src.reader_schema:
+            reader = reader.schema(src.reader_schema)
+        return reader.load(path)
 
     if isinstance(src, TableSource):
         table = ctx.source_fqn(src, layer)
         if table in ctx.inputs:
             return ctx.inputs[table]
         if src.as_stream and not ctx.force_batch:
-            return spark.readStream.table(table)
-        return spark.read.table(table)
+            return spark.readStream.options(**src.options).table(table)
+        return spark.read.options(**src.options).table(table)
 
     if isinstance(src, ViewSource):
         if src.name in ctx.inputs:
@@ -56,6 +74,29 @@ def read_source(
         if src.as_stream and not ctx.force_batch:
             return spark.readStream.table(src.name)
         return spark.read.table(src.name)
+
+    if isinstance(src, KafkaSource):
+        key = f"kafka:{src.topic or src.subscribe_pattern}"
+        if key in ctx.inputs:
+            return ctx.inputs[key]
+        reader = spark.readStream if not ctx.force_batch else spark.read
+        configured = (
+            reader.format("kafka")
+            .option("kafka.bootstrap.servers", ctx.resolve(src.bootstrap_servers_conf))
+            .options(**src.options)
+        )
+        if src.topic:
+            configured = configured.option("subscribe", src.topic)
+        else:
+            configured = configured.option("subscribePattern", src.subscribe_pattern)
+        return configured.load()
+
+    if isinstance(src, SnapshotFunctionSource):
+        raise ConfigError(
+            f"snapshot_function source {src.function!r} has no readable stream/batch "
+            "frame — it is consumed by the cdc_from_snapshot flow directly. Use "
+            "run_dataset to preview its first snapshot."
+        )
 
     raise TypeError(f"unhandled source kind: {src!r}")  # pragma: no cover
 

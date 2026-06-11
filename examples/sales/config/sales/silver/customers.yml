@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../../schemas/table_config.schema.json
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
 #
 # Target table: silver.customers — validated, deduplicated customer profile.
 # columns: declares the source→target mapping with data types (ANSI-safe

@@ -12,9 +12,11 @@ checks/
   __init__.py       custom dqx check functions (@check_function)
 ```
 
-The datasets themselves are declared in `config/sales/{bronze,silver,gold}.yml`
-(this folder's python is referenced from there via the `imports:` list and
-transform registry names — see `docs/FRAMEWORK.md`).
+The datasets themselves are declared in the artifacts under
+`../../config/sales/<layer>/<table>.yml` (this folder's python is referenced
+from there via the `imports:` list and transform registry names — see
+`docs/FRAMEWORK.md`). The full tour of the example lives in
+`examples/sales/README.md`.
 
 Conventions:
 

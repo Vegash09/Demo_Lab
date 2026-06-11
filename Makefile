@@ -27,18 +27,24 @@ lock:  ## Re-resolve dependencies and refresh uv.lock (run after editing pyproje
 	$(UV) lock
 
 # ---- quality gates (same commands CI runs) ----------------------------------
-lint: install  ## Ruff lint over src/, tests/, notebooks/ and scripts/
-	$(UV) run ruff check src tests notebooks scripts
+LINT_PATHS := src tests notebooks scripts examples
+
+lint: install  ## Ruff lint over src/, tests/, notebooks/, scripts/ and examples/
+	$(UV) run ruff check $(LINT_PATHS)
 
 fmt: install  ## Ruff auto-format + fix imports
-	$(UV) run ruff format src tests notebooks scripts
-	$(UV) run ruff check --fix src tests notebooks scripts
+	$(UV) run ruff format $(LINT_PATHS)
+	$(UV) run ruff check --fix $(LINT_PATHS)
 
 test: install  ## Run the unit test suite (local Spark, no workspace needed)
 	$(UV) run pytest
 
-validate-configs: install  ## Validate every config/<domain>/*.yml (pydantic + dqx checks)
-	$(UV) run python -m datalab.framework.loader config/
+# Domain config roots: a root-level config/ (adopter layout) and every
+# examples/<domain>/config/ — $(wildcard) drops whichever doesn't exist.
+CONFIG_DIRS := $(wildcard config) $(wildcard examples/*/config)
+
+validate-configs: install  ## Validate every domain's <layer>/<table>.yml artifacts (pydantic + dqx checks)
+	$(UV) run python -m datalab.framework.loader $(CONFIG_DIRS)
 
 schema: install  ## Regenerate schemas/layer_config.schema.json from the Pydantic models
 	$(UV) run python scripts/export_config_schema.py

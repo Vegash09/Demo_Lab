@@ -46,7 +46,9 @@ print(plan(CONFIG_DIR))
 
 inputs = {}
 if USE_SAMPLE:
-    sample_path = os.path.join(os.path.dirname(CONFIG_DIR), "..", "notebooks", "framework", "sample_data", "customers_raw.json")
+    # The sample feed ships NEXT TO this notebook (workspace-files CWD ==
+    # the notebook's directory), so the path survives repo restructures.
+    sample_path = os.path.join(os.getcwd(), "sample_data", "customers_raw.json")
     sample = (
         spark.read.json(os.path.abspath(sample_path))
         .withColumn("_ingest_ts", F.current_timestamp())

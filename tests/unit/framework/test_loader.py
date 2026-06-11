@@ -18,7 +18,7 @@ columns:
   - name: email
     type: string
 transform:
-  - function: sales.normalize_email
+  - function: testkit.lower_email
 quality:
   quarantine: {}
 target:
@@ -53,8 +53,8 @@ def test_unknown_source_layer(write_domain):
     bad = CUSTOMERS_YML.replace("layer: bronze", "layer: gold")
     domain_without_gold = """
 schema_version: 1
-domain: sales
-imports: [sales_etl.transforms.sales]
+domain: demo
+imports: []
 layers:
   bronze: {schema_conf: datalab.bronze_schema}
   silver: {schema_conf: datalab.silver_schema}
@@ -72,9 +72,9 @@ def test_typoed_key_reports_dotted_path(write_domain):
 
 
 def test_unknown_transform_lists_registered_names(write_domain):
-    bad = CUSTOMERS_YML.replace("sales.normalize_email", "sales.does_not_exist")
+    bad = CUSTOMERS_YML.replace("testkit.lower_email", "testkit.does_not_exist")
     config_dir = write_domain({"silver/customers.yml": bad})
-    with pytest.raises(ConfigError, match="unknown transform .*sales.does_not_exist"):
+    with pytest.raises(ConfigError, match="unknown transform .*testkit.does_not_exist"):
         load_domain_configs(config_dir, ["silver"])
 
 
@@ -126,7 +126,7 @@ def test_ref_df_key_mismatch(write_domain):
 def test_unimportable_imports_module_is_config_error(write_domain):
     domain = """
 schema_version: 1
-domain: sales
+domain: demo
 imports: [no_such_pkg.transforms]
 layers:
   silver: {schema_conf: datalab.silver_schema}

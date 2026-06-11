@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../schemas/domain_config.schema.json
+# yaml-language-server: $schema=../../../../schemas/domain_config.schema.json
 #
 # Domain settings — environment-agnostic by construction: catalog/schema
 # values are pipeline-conf KEYS resolved per target (dev/stage/prod) through
