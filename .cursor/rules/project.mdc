@@ -13,10 +13,11 @@ in [AGENTS.md](../../AGENTS.md). Read it before editing.
 Quick pointers:
 
 - **Pipelines are config-driven**: a target table is ONE YAML artifact
-  (`config/<domain>/<layer>/<table>.yml`; in this repo the example lives at
-  `examples/sales/config/sales/`) — author it with the `author-ldp-artifact`
-  skill; full reference + SDP capability matrix in docs/FRAMEWORK.md. Never
-  hand-write `dp.*` wiring unless the matrix says the framework can't
+  (`config/<catalog>/<schema>/<table>.yml`; in this repo the example lives at
+  `examples/customer_sales/config/customer_sales/`) — author it with the
+  `author-ldp-artifact` skill; full reference + SDP capability matrix in
+  docs/FRAMEWORK.md. Folder paths mirror the UC namespace (docs/NAMING.md).
+  Never hand-write `dp.*` wiring unless the matrix says the framework can't
   express it (`author-sdp-pipeline` skill).
 - When SDP code IS written: **`from pyspark import pipelines as dp`** — never
   `import dlt` (deprecated). Dataset functions return DataFrames; no
@@ -24,8 +25,8 @@ Quick pointers:
   use AUTO CDC (`target.cdc` in the artifact); data quality uses
   **databrickslabs/dqx** via the framework — `dp.expect_*` is retired here.
 - `src/` holds ONLY the framework (`src/datalab/`). Domain business logic
-  lives in the domain package (`src/<domain>_etl/transforms/`, in this repo
-  under `examples/sales/`) as pure, unit-tested `@transform` functions.
+  lives in the domain package (`src/<catalog>_etl/transforms/`, in this repo
+  under `examples/customer_sales/`) as pure, unit-tested `@transform` functions.
   Parameters come from the pipeline `configuration` mapping via
   `datalab.config.pipeline_conf` — never hardcode catalogs/schemas/paths.
 - Deploy = **Declarative Automation Bundle**: `databricks.yml` +

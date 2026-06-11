@@ -704,7 +704,7 @@ class LayerConfig(ConfigBase):
     domain: Identifier
     layer: Literal["bronze", "silver", "gold"]
     # Domain python modules whose import registers this layer's @transform
-    # functions and custom dqx checks (e.g. sales_etl.transforms.sales).
+    # functions and custom dqx checks (e.g. customer_sales_etl.transforms.customers).
     # Keeps the framework free of hardcoded domain module paths.
     imports: list[str] = []
     defaults: LayerDefaults
@@ -752,7 +752,7 @@ class DomainConfig(ConfigBase):
     schema_version: Literal[1] = 1
     domain: Identifier
     # Domain python modules whose import registers @transform functions and
-    # custom dqx checks (e.g. sales_etl.transforms.sales).
+    # custom dqx checks (e.g. customer_sales_etl.transforms.customers).
     imports: list[str] = []
     catalog_conf: ConfKey = "datalab.catalog"
     layers: dict[Literal["bronze", "silver", "gold"], LayerEntry]

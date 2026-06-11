@@ -1,7 +1,7 @@
 """run_dataset/plan on a synthetic domain — framework-only, no example code.
 
-(The shipped sales example exercises the same APIs end to end in
-examples/sales/tests/test_run_dataset_contract.py.)
+(The shipped customer_sales example exercises the same APIs end to end in
+examples/customer_sales/tests/test_run_dataset_contract.py.)
 """
 
 import pytest

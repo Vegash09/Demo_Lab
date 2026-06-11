@@ -17,10 +17,10 @@ flowchart LR
 
     subgraph WS["Databricks workspace"]
         CD --> DAB["Declarative Automation Bundle<br/>databricks.yml + examples/*/resources/*.yml"]
-        DAB --> PL["Lakeflow SDP pipeline: sales_etl<br/>(serverless, environment_version 4)"]
-        DAB --> JOB["job: sales_etl_refresh<br/>daily pipeline_task · paused in dev"]
-        DAB --> EXP["job: sales_export<br/>weekly spark_python_task"]
-        DAB --> QR["job: sales_quarantine_report<br/>on-demand notebook_task"]
+        DAB --> PL["Lakeflow SDP pipeline: customer_sales_etl<br/>(serverless, environment_version 4)"]
+        DAB --> JOB["job: customer_sales_etl_refresh<br/>daily pipeline_task · paused in dev"]
+        DAB --> EXP["job: customer_sales_export<br/>weekly spark_python_task"]
+        DAB --> QR["job: customer_sales_quarantine_report<br/>on-demand notebook_task"]
         JOB --> PL
     end
 ```
@@ -36,9 +36,9 @@ Jobs work the lakehouse edges and only *read* pipeline-owned tables:
 
 ```mermaid
 flowchart LR
-    PL["SDP pipeline sales_etl<br/>bronze → silver → gold<br/>(owns every medallion table)"]
-    PL -->|read-only| EXP["sales_export · python-file lane<br/>examples/sales/src/jobs/sales/export_customer_summary.py<br/>→ /Volumes/&lt;catalog&gt;/exports/sales/ (CSV)"]
-    PL -->|read-only| QR["sales_quarantine_report · notebook lane<br/>examples/sales/notebooks/sales/quarantine_report.py<br/>→ owns customers_quarantine_report"]
+    PL["SDP pipeline customer_sales_etl<br/>bronze → silver → gold<br/>(owns every medallion table)"]
+    PL -->|read-only| EXP["customer_sales_export · python-file lane<br/>examples/customer_sales/src/jobs/customer_sales/export_customer_summary.py<br/>→ /Volumes/&lt;catalog&gt;/exports/sales/ (CSV)"]
+    PL -->|read-only| QR["customer_sales_quarantine_report · notebook lane<br/>examples/customer_sales/notebooks/customer_sales/quarantine_report.py<br/>→ owns customers_quarantine_report"]
     QR -.->|"repaired rows re-enter<br/>via landing"| PL
 ```
 
@@ -46,22 +46,22 @@ Routing is the 3-question router (AGENTS.md, "Authoring rules"):
 
 | New target is… | Lane | Mechanism |
 |---|---|---|
-| a managed medallion Delta table | **SDP via YAML config** (mandatory) | `config/<domain>/<layer>/<table>.yml`; backfills via `backfill:` once-flows |
+| a managed medallion Delta table | **SDP via YAML config** (mandatory) | `config/<catalog>/<schema>/<table>.yml`; backfills via `backfill:` once-flows |
 | headless, side-effectful edge work | **python-file** | `spark_python_task`: argparse + explicit `main()` |
 | human-must-decide | **notebook** | `notebook_task`, no trigger; widgets mirror job parameters |
 
-## Data view (medallion, generated from the sales example's artifacts)
+## Data view (medallion, generated from the customer_sales example's artifacts)
 
 ```mermaid
 flowchart LR
-    YML[["examples/sales/config/sales/*.yml<br/>Pydantic-validated artifacts<br/>(datasets + dqx rules)"]] -.->|"datalab.framework.generate"| BR
+    YML[["examples/customer_sales/config/customer_sales/*.yml<br/>Pydantic-validated artifacts<br/>(datasets + dqx rules)"]] -.->|"datalab.framework.generate"| BR
     LAND[("UC volume<br/>landing/sales/customers")] -->|"Auto Loader cloudFiles"| BR["bronze.customers_raw<br/>streaming_table + lineage cols"]
-    BR --> IN["customers__input<br/>temporary view<br/>(rename + try_cast + sales.normalize_email)"]
+    BR --> IN["customers__input<br/>temporary view<br/>(rename + try_cast + customer_sales.normalize_email)"]
     IN --> CHK["customers__checked<br/>dqx apply_checks_by_metadata<br/>(_errors/_warnings)"]
     CHK -->|get_valid| VAL["customers__valid"]
     CHK -->|"get_invalid<br/>errors only"| QUAR["silver.customers_quarantine<br/>(dqx evidence structs)"]
     VAL -->|"AUTO CDC flow<br/>keys=[customer_id] · sequence_by=_ingest_ts · SCD1"| SIL["silver.customers<br/>create_streaming_table"]
-    SIL --> GOLD["gold.customers_by_city<br/>materialized_view<br/>(sales.summarize_customers_by_city)"]
+    SIL --> GOLD["gold.customers_by_city<br/>materialized_view<br/>(customer_sales.summarize_customers_by_city)"]
 ```
 
 Developers (and agents) edit YAML only; the framework validates configs with
@@ -151,7 +151,7 @@ flowchart TD
   build rights; bronze/landing stay engineer-only.
 - **Layer 3** is row/column-level policy: column masks and row filters under
   the domain's `sql/abac/` folder (this repo:
-  `examples/sales/sql/abac/`). Display-only by convention — agents and CI
+  `examples/customer_sales/sql/abac/`). Display-only by convention — agents and CI
   never execute them; an admin reviews and applies. SDP does offer a
   pipeline-level `row_filter`/column-mask surface (Public Preview); this
   repo deliberately does not use it — access policy stays admin-applied,
@@ -159,7 +159,7 @@ flowchart TD
   `CREATE FUNCTION ... RETURN`, `ALTER TABLE ... SET MASK / SET ROW FILTER`,
   `is_account_group_member()`, `current_user()`. Re-runnable, function
   before ALTER, named `dl_mask_<purpose>` / `dl_rf_<purpose>`. Worked
-  example: `examples/sales/sql/abac/mask_customer_email.sql`.
+  example: `examples/customer_sales/sql/abac/mask_customer_email.sql`.
 
 Group creation stays account/workspace-level (`databricks groups create`) —
 nothing in this repo creates principals.

@@ -1,11 +1,11 @@
 """Named-function registries: transforms and custom dqx check functions.
 
-YAML references functions by registry key (``sales.clean_customers``). The
-framework hardcodes NO domain module paths — each layer YAML declares the
+YAML references functions by registry key (``customer_sales.clean_customers``).
+The framework hardcodes NO domain module paths — each layer YAML declares the
 modules that register its functions via ``imports:``
-(e.g. ``imports: [sales_etl.transforms.sales, sales_etl.checks]``), and the
-loader imports them before resolution. Only the ``framework.*`` built-ins
-below ship with the framework itself.
+(e.g. ``imports: [customer_sales_etl.transforms.customers,
+customer_sales_etl.checks]``), and the loader imports them before resolution.
+Only the ``framework.*`` built-ins below ship with the framework itself.
 """
 
 from __future__ import annotations

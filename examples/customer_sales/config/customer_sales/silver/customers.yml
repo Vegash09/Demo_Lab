@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: silver.customers — validated, deduplicated customer profile.
+# columns: declares the source→target mapping with data types (ANSI-safe
+# casts) and each column's own dqx rules; quality: carries table-level rules
+# and quarantine settings. Rules are databrickslabs/dqx metadata, verbatim.
+schema_version: 1
+name: customers
+comment: Current customer profile per customer_id (SCD1), validated and deduplicated.
+source:
+  kind: table
+  name: customers_raw
+  layer: bronze # resolved via domain.yml layers (no hardcoded schemas)
+  as_stream: true
+columns:
+  - name: customer_id
+    source: customer_id
+    type: string
+    quality:
+      - criticality: error # rows without an id never reach silver
+        check: { function: is_not_null }
+  - name: customer_name
+    type: string
+  - name: age
+    type: int # malformed values become NULL (try_cast), not stream failures
+  - name: city
+    type: string
+  - name: signup_date
+    type: date
+  - name: email
+    type: string
+    quality:
+      - criticality: warn # flows through flagged; not dropped
+        filter: email IS NOT NULL
+        check:
+          function: regex_match
+          arguments:
+            regex: '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+  - name: _ingest_ts
+    type: timestamp
+  - name: _source_file
+    type: string
+transform:
+  - function: customer_sales.normalize_email # lower/trim — beyond what a cast can do
+quality:
+  quarantine:
+    name: customers_quarantine # default would be customers_quarantine anyway
+    include_warnings: false # quarantine == exactly the dropped rows
+target:
+  kind: streaming_table
+  cdc:
+    keys: [customer_id]
+    sequence_by: _ingest_ts
+    scd_type: 1

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: gold.customers_by_city — business aggregate (batch MV).
+schema_version: 1
+name: customers_by_city
+comment: Customer counts and average age per city.
+source:
+  kind: table
+  name: customers
+  layer: silver
+transform:
+  - function: customer_sales.summarize_customers_by_city
+target:
+  kind: materialized_view

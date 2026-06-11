@@ -10,7 +10,8 @@ Where things are explained in depth:
 | Question | Doc |
 |---|---|
 | What does every artifact field mean? | [FRAMEWORK.md](FRAMEWORK.md) — the reference |
-| What does a finished domain look like? | [examples/sales/](../examples/sales/README.md) — copy it |
+| What does a finished domain look like? | [examples/customer_sales/](../examples/customer_sales/README.md) — copy it |
+| How do I name folders/packages/resources? | [NAMING.md](NAMING.md) — folder paths mirror the UC namespace |
 | How do the pieces fit (lanes, governance)? | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | How does CI/CD deploy this? | [CICD.md](CICD.md) |
 | Conventions, gotchas, protected files | [AGENTS.md](../AGENTS.md) |
@@ -29,7 +30,8 @@ databricks auth login --host <your-workspace-url>
 
 ## 1. The mental model (60 seconds)
 
-- A **target table = one YAML artifact** at `config/<domain>/<layer>/<table>.yml`.
+- A **target table = one YAML artifact** at `config/<catalog>/<schema>/<table>.yml`
+  — the path mirrors the UC namespace ([NAMING.md](NAMING.md)).
   You describe *what* (source, columns + types, quality rules, target kind);
   the framework (`src/datalab`) generates all the Lakeflow SDP wiring.
 - **Python is only for logic a mapping can't express** — pure functions
@@ -46,7 +48,9 @@ databricks auth login --host <your-workspace-url>
 ## 2. Create the domain skeleton
 
 Copy the example's shape (in an adopter repo these folders sit at the repo
-root; in this repo new reference domains live under `examples/<domain>/`):
+root; in this repo new reference domains live under `examples/<catalog>/`).
+`finance` is the domain's BASE CATALOG name — folder names carry it
+everywhere ([NAMING.md](NAMING.md)):
 
 ```
 config/finance/domain.yml
@@ -72,7 +76,8 @@ layers:
 ```
 
 `src/finance_etl/transformations/pipeline.py` is 3 lines and never grows —
-copy it from `examples/sales/src/sales_etl/transformations/pipeline.py`.
+copy it from
+`examples/customer_sales/src/customer_sales_etl/transformations/pipeline.py`.
 
 ## 3. Author your first artifacts
 
@@ -161,7 +166,7 @@ def summarize_revenue(df: DataFrame) -> DataFrame:
 
 Then declare it in `domain.yml`: `imports: [finance_etl.transforms.finance]`
 — and add a unit test next to your domain (copy the shape of
-`examples/sales/tests/test_sales_transforms.py`).
+`examples/customer_sales/tests/test_customers_transforms.py`).
 
 ## 5. Validate before any deploy
 
@@ -171,7 +176,7 @@ make lint test           # ruff + pytest (local Spark)
 ```
 
 Run a single dataset through the REAL framework path — no workspace needed —
-in a test (copy `examples/sales/tests/test_run_dataset_contract.py`) or in
+in a test (copy `examples/customer_sales/tests/test_run_dataset_contract.py`) or in
 the `notebooks/framework/verify_dataset.py` notebook on Databricks:
 
 ```python
@@ -186,13 +191,13 @@ dataset/flow the config will generate, locally.
 
 ## 6. Wire the bundle
 
-1. Copy `examples/sales/resources/sales_etl.pipeline.yml` →
+1. Copy `examples/customer_sales/resources/customer_sales_etl.pipeline.yml` →
    `resources/finance_etl.pipeline.yml`; rename the resource key and `name`,
    point `root_path`/`libraries` at `src/finance_etl`, and set
    `datalab.config_dir: ${workspace.file_path}/config/finance`. Keep
    `serverless: true`, `environment_version`, and the
    `--editable ${workspace.file_path}` dependency exactly as they are.
-2. Copy `sales_etl.job.yml` → `finance_etl.job.yml` (the scheduled refresh);
+2. Copy `customer_sales_etl.job.yml` → `finance_etl.job.yml` (the scheduled refresh);
    point `pipeline_task.pipeline_id` at
    `${resources.pipelines.finance_etl.id}`.
 3. Add your variables (e.g. `finance_landing_path`) to `databricks.yml` and
@@ -223,8 +228,9 @@ silver has the valid rows, `<table>_quarantine` holds the rejects with
 Route with the 3-question router (AGENTS.md "Authoring rules"):
 managed medallion table → SDP artifact (always); headless side effects
 (exports, API pulls) → python-file task (copy
-`examples/sales/src/jobs/sales/` + its job yml); a human must read the run →
-notebook task with **no trigger** (copy `examples/sales/notebooks/sales/`).
+`examples/customer_sales/src/jobs/customer_sales/` + its job yml); a human
+must read the run → notebook task with **no trigger** (copy
+`examples/customer_sales/notebooks/customer_sales/`).
 Jobs/notebooks READ pipeline tables, never write them.
 
 ## 9. Ship it

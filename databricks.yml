@@ -11,7 +11,7 @@
 # Validate / deploy / run:
 #   make validate     databricks bundle validate -t dev
 #   make deploy       databricks bundle deploy   -t dev
-#   make run          databricks bundle run sales_etl -t dev
+#   make run          databricks bundle run customer_sales_etl -t dev
 
 bundle:
   name: datalab
