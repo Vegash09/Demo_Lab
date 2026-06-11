@@ -12,18 +12,28 @@ in [AGENTS.md](../../AGENTS.md). Read it before editing.
 
 Quick pointers:
 
-- Pipelines use **`from pyspark import pipelines as dp`** — never `import dlt`
-  (deprecated DLT API). Dataset functions return DataFrames; no `.write`,
-  `.saveAsTable`, `.start()`, or `.collect()` inside them. Upserts use
-  `dp.create_streaming_table` + `dp.create_auto_cdc_flow`; data quality uses
-  `@dp.expect_*` expectations (see the `author-sdp-pipeline` skill).
-- Business logic lives in `src/datalab/transforms/` as pure, unit-tested
-  functions; files in `src/<pipeline>/transformations/` are thin SDP wiring.
+- **Pipelines are config-driven**: a target table is ONE YAML artifact
+  (`config/<domain>/<layer>/<table>.yml`; in this repo the example lives at
+  `examples/sales/config/sales/`) — author it with the `author-ldp-artifact`
+  skill; full reference + SDP capability matrix in docs/FRAMEWORK.md. Never
+  hand-write `dp.*` wiring unless the matrix says the framework can't
+  express it (`author-sdp-pipeline` skill).
+- When SDP code IS written: **`from pyspark import pipelines as dp`** — never
+  `import dlt` (deprecated). Dataset functions return DataFrames; no
+  `.write`, `.saveAsTable`, `.start()`, or `.collect()` inside them. Upserts
+  use AUTO CDC (`target.cdc` in the artifact); data quality uses
+  **databrickslabs/dqx** via the framework — `dp.expect_*` is retired here.
+- `src/` holds ONLY the framework (`src/datalab/`). Domain business logic
+  lives in the domain package (`src/<domain>_etl/transforms/`, in this repo
+  under `examples/sales/`) as pure, unit-tested `@transform` functions.
   Parameters come from the pipeline `configuration` mapping via
   `datalab.config.pipeline_conf` — never hardcode catalogs/schemas/paths.
 - Deploy = **Declarative Automation Bundle**: `databricks.yml` +
-  `resources/*.yml`, targets `dev` (mode: development) / `stage` / `prod`.
-  `make validate` before pushing bundle changes.
+  `examples/*/resources/*.yml` (adopters: `resources/*.yml`), targets `dev`
+  (mode: development) / `stage` / `prod`. `make validate` before pushing
+  bundle changes.
+- Branch from `main` (`feature/…`, `fix/…`, `debug/…`); head branches are
+  auto-deleted on merge (AGENTS.md "Branching & releases").
 - Dependencies are **uv-only**: `pyproject.toml` + committed `uv.lock`
   (`make lock` after edits; CI runs `uv sync --frozen`). Never add
   databricks-connect to this venv — it conflicts with the pyspark dev dep.

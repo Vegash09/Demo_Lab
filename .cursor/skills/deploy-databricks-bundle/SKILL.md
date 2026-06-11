@@ -7,8 +7,10 @@ description: Deploy or troubleshoot the datalab Declarative Automation Bundle (d
 
 The repo ships as a **Declarative Automation Bundle** (formerly Databricks
 Asset Bundle): `databricks.yml` (variables + targets `dev`/`stage`/`prod`) +
-`resources/*.yml` (one SDP pipeline + its refresh job per domain). CI/CD
-deploys via GitHub OIDC; local deploys use your CLI auth.
+per-domain resource files — in this repo `examples/*/resources/*.yml`
+(adopter repos: root-level `resources/*.yml`); one SDP pipeline + its
+refresh job per domain. CI/CD deploys via GitHub OIDC; local deploys use
+your CLI auth.
 
 ## Local deploy (the fast path)
 
@@ -39,8 +41,9 @@ databricks pipelines list-pipelines | head
   `configuration:` mapping → read in Python with
   `datalab.config.pipeline_conf`. Add new parameters in BOTH places.
 - The pipeline environment installs the repo with
-  `--editable ${workspace.file_path}` — `pyproject.toml` + `src/**` must ship,
-  so never add them to `.databricksignore`.
+  `--editable ${workspace.file_path}` — `pyproject.toml` + `src/**` +
+  `examples/**` (code AND config artifacts) must ship, so never add them to
+  `.databricksignore`.
 - `dev` target = `mode: development`: resource names get a `[dev <user>]`
   prefix, triggers are paused, deploys are isolated per user. `stage`/`prod` =
   `mode: production` with fixed `root_path`s.
@@ -79,5 +82,6 @@ target (full walkthrough: `docs/CICD.md`):
 
 1. `databricks bundle validate -t <target>` is clean.
 2. `databricks bundle summary -t <target>` shows the pipeline + job.
-3. A refresh (`make run` / job trigger) completes; expectations metrics appear
-   in the pipeline event log; silver/gold tables are queryable.
+3. A refresh (`make run` / job trigger) completes; silver/gold tables are
+   queryable and `<table>_quarantine` holds only genuinely rejected rows
+   (this repo uses dqx quarantines, not pipeline expectations).

@@ -12,27 +12,32 @@ Bundle).
 
 - **Pipelines are config-driven (flowspec)**: every target table is ONE YAML
   artifact at `config/<domain>/<layer>/<table>.yml` (columns with
-  source→target names + data types, per-column dqx rules, target kind),
-  authored from natural language via the `author-ldp-artifact` skill,
+  source→target names + data types, per-column dqx rules, target kind —
+  plus fan-in `sources:`, one-time `backfill:` flows, AUTO CDC and snapshot
+  CDC), authored from natural language via the `author-ldp-artifact` skill,
   validated by Pydantic models and generated into LDP datasets by
-  `datalab.framework.generate` — see `docs/FRAMEWORK.md`. The per-domain
-  `src/<pipeline>/transformations/pipeline.py` is 3 lines. Never
-  `import dlt` (deprecated).
-- **Framework vs domain — strict separation**: `src/datalab/` is the
-  REUSABLE framework (models, adapters, dqx engine, devtools, param helpers)
-  and contains zero domain code — it lifts into any project untouched.
-  Domain code lives in `src/<domain>_etl/` (pure `@transform` functions,
-  custom dqx checks, the 3-line pipeline entrypoint) and is declared to the
-  framework via `domain.yml`'s `imports:` list — never by editing the
-  framework.
+  `datalab.framework.generate` — see `docs/FRAMEWORK.md` (the full reference,
+  including the SDP capability matrix). The per-domain
+  `transformations/pipeline.py` is 3 lines. Never `import dlt` (deprecated).
+- **Framework vs domain — strict separation**: `src/` contains ONLY
+  `src/datalab/`, the REUSABLE framework (models, adapters, dqx engine,
+  devtools, param helpers) with zero domain code — it lifts into any project
+  untouched. Domain code is declared to the framework via `domain.yml`'s
+  `imports:` list — never by editing the framework.
+- **examples/ holds the reference domains**: `examples/sales/` is a complete
+  worked adoption (config + domain package + edge jobs + notebook + resources
+  + tests + ABAC SQL) laid out to MIRROR an adopter repo root — copy it to
+  start a real domain (`docs/GETTING_STARTED.md`). The bundle deploys it, so
+  it doubles as the framework's integration test; nothing in `src/datalab`
+  depends on it.
 - **Data quality**: databrickslabs/dqx end to end — checks in YAML (dqx
   metadata format), valid/quarantine split per dataset, optional metrics MV.
 - **Three authoring lanes**: SDP pipelines (all medallion tables), python-file
-  job tasks (`src/jobs/`, headless side-effectful edge work) and notebook job
-  tasks (`notebooks/`, human-gated runs). Route with the 3-question router in
-  "Authoring rules" below.
-- **Deploy**: `databricks.yml` + `resources/*.yml`, deployed via GitHub OIDC
-  CI/CD to targets `dev` / `stage` / `prod`.
+  job tasks (headless side-effectful edge work) and notebook job tasks
+  (human-gated runs). Route with the 3-question router in "Authoring rules".
+- **Deploy**: `databricks.yml` + `examples/*/resources/*.yml` (adopters:
+  root-level `resources/*.yml`), deployed via GitHub OIDC CI/CD to targets
+  `dev` / `stage` / `prod`.
 - **Dependencies**: `uv` end to end (`pyproject.toml` + committed `uv.lock`).
   No poetry, no pip requirements files.
 
@@ -40,12 +45,12 @@ Bundle).
 
 ```
 Developer ──push/PR──▶ GitHub Actions ──OIDC──▶ Declarative Automation Bundle
-                       ci-cd-{dev,stage,prod}    (databricks.yml + resources/*.yml)
+                       ci-cd-{dev,stage,prod}    (databricks.yml + examples/*/resources/*.yml)
                        common-ci / common-cd                │ deploys
                                                             ▼
                   ┌──────────────── Lakeflow SDP pipeline: sales_etl ───────────────┐
 landing volume ─▶ │ bronze.customers_raw ─▶ silver.customers (AUTO CDC, SCD1) ─▶ gold │
-(Auto Loader)     │        expectations ──▶ silver.customers_quarantine              │
+(Auto Loader)     │        dqx checks ────▶ silver.customers_quarantine              │
                   └───────────────────────────────────────────────────────────────┘
                        refreshed daily by job sales_etl_refresh (pipeline_task)
 
@@ -57,53 +62,49 @@ landing volume ─▶ │ bronze.customers_raw ─▶ silver.customers (AUTO CDC
 
 ```
 databricks.yml            Bundle: variables (catalog/schemas/paths/permissions), targets dev/stage/prod
-resources/
-  sales_etl.pipeline.yml  SDP pipeline (serverless, environment_version, configuration params)
-  sales_etl.job.yml       Daily refresh job (pipeline_task; paused in dev mode)
-  sales_export.job.yml    Edge job: weekly gold CSV export (spark_python_task)
-  sales_quarantine_report.job.yml  Edge job: on-demand triage notebook (notebook_task, no trigger)
-notebooks/                Notebook lane ONLY (human-gated job tasks; source-format .py)
-  sales/quarantine_report.py
-config/
-  sales/
-    domain.yml            Domain settings: imports, catalog/schema conf keys per layer
-    bronze/customers_raw.yml      ONE artifact per target table, in its layer
-    silver/customers.yml          folder: columns (source→target + types +
-    gold/customers_by_city.yml    per-column dqx rules), transforms, target
-schemas/
-  domain_config.schema.json  JSON schemas for editor validation of domain.yml
-  table_config.schema.json   and <table>.yml artifacts (make schema regenerates)
 src/
-  datalab/                THE FRAMEWORK — reusable, zero domain code (installed editable)
+  datalab/                THE FRAMEWORK — the only package under src/; reusable, zero domain code
     config.py             pipeline_conf() (read pipeline configuration), fqn()
     params.py             notebook_params() / cli_params() — job-lane parameter contract
     quality.py            DEPRECATED predicate helpers (dqx replaced them)
     framework/            flowspec: models, loader, registry, readers, writers,
                           dq (DQX adapter), generator, devtools, compat
-  sales_etl/              THE SALES DOMAIN — adopts the framework (also packaged)
-    transformations/      pipeline.py (3-line config-driven entrypoint; SDP root_path)
-    transforms/sales.py   pure transforms, registered via @transform("sales.*")
-    checks/               custom dqx check functions (@check_function)
-  jobs/                   Python-file lane: spark_python_task entry points (side effects live here)
-    sales/export_customer_summary.py
-tests/                    Unit tests (local Spark) for src/datalab — no workspace needed
+examples/                 REFERENCE domains — each mirrors an adopter repo root (examples/README.md)
+  sales/
+    README.md             File-by-file tour of the complete worked example
+    config/sales/         domain.yml + ONE <layer>/<table>.yml artifact per target table
+    src/sales_etl/        Domain package: 3-line pipeline entrypoint, @transform fns, custom dqx checks
+    src/jobs/sales/       Python-file lane: spark_python_task entry points (side effects live here)
+    notebooks/sales/      Notebook lane: human-gated triage (source-format .py)
+    resources/            This domain's bundle resources (pipeline + 3 jobs; relative paths move as is)
+    tests/                The domain's own unit + contract tests (run with make test)
+    sql/abac/             Display-only column-mask/row-filter SQL — admin-applied, never run by CI/agents
+notebooks/framework/      verify_dataset.py — framework devtool notebook (+ sample data)
+schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml
+                          (make schema regenerates from the Pydantic models)
+tests/                    FRAMEWORK unit tests (local Spark, example-free) — no workspace needed
 scripts/bootstrap_uc.py   One-time UC bootstrap per target: schemas/volumes/GRANTs (make bootstrap-uc)
-sql/abac/                 Column-mask / row-filter SQL — display-only, admin-applied (never run by CI/agents)
-pyproject.toml            PEP 621 + [dependency-groups].dev; hatchling builds src/datalab
+scripts/export_config_schema.py  make schema implementation
+pyproject.toml            PEP 621 + [dependency-groups].dev; hatchling builds src/datalab + the example pkg
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
 .github/                  Workflows (ci-cd-*, common-*, pr-template-check) + composite actions
 .claude/ .cursor/         Agent harness: settings, hooks, skills, rules
 .githooks/pre-commit      Human-side protected-files guard (enable: make enable-githooks)
-docs/                     ARCHITECTURE.md, CICD.md, MIGRATION.md, FRAMEWORK.md
+docs/                     GETTING_STARTED, FRAMEWORK (reference), ARCHITECTURE, CICD, MIGRATION
 ```
+
+Adopter repos use the same shape with the domain at the ROOT instead of under
+examples/: `config/<domain>/`, `src/<domain>_etl/`, `src/jobs/<domain>/`,
+`notebooks/<domain>/`, `resources/*.yml` (see `examples/README.md`).
 
 ## Local development
 
 ```bash
 make install          # uv sync → .venv from uv.lock
-make lint             # ruff check src tests notebooks scripts
-make test             # pytest (local Spark; needs Java 17+)
+make lint             # ruff check src tests notebooks scripts examples
+make test             # pytest (framework suite + example suites; needs Java 17+)
+make validate-configs # validate every domain's artifacts (pydantic + dqx)
 make validate         # databricks bundle validate -t dev
 make deploy           # validate + bundle deploy -t dev
 make run              # databricks bundle run sales_etl -t dev (dev refresh)
@@ -118,9 +119,9 @@ support).
 Three lanes. Route every new target with the **3-question router**:
 
 1. *Is the output a managed Delta table in the medallion, derivable from
-   upstream datasets?* → **SDP**, mandatory. Backfills included — author them
-   as a one-time `@dp.append_flow(target=..., once=True)` in the owning
-   pipeline, never as a job writing the table.
+   upstream datasets?* → **SDP**, mandatory. Backfills included — declare
+   them as `backfill:` entries in the table's artifact (generated as
+   one-time `once` flows), never as a job writing the table.
 2. *Is it a side-effectful action — export to a volume/external system, API
    pull into landing, maintenance of non-SDP tables — running headless on a
    schedule?* → **python-file** (`spark_python_task`, `src/jobs/<domain>/`).
@@ -128,14 +129,18 @@ Three lanes. Route every new target with the **3-question router**:
    (`notebook_task`, `notebooks/<domain>/`, on-demand only — no trigger).
 
 When in doubt: SDP. Exploratory analysis with no managed target stays out of
-the bundle entirely (workspace user folders), never in `resources/*.yml`.
+the bundle entirely (workspace user folders), never in resource files.
 
 | Target type | Lane |
 |---|---|
 | Streaming ingest from cloud storage into bronze (Auto Loader) | SDP (mandatory) |
+| Streaming ingest from Kafka/Event Hubs/MSK | SDP (`source.kind: kafka`) |
 | Incremental silver with CDC/SCD + quality gating + quarantine | SDP (mandatory) |
+| SCD from periodic FULL snapshots (nightly dumps, JDBC extracts) | SDP (`target.cdc_from_snapshot`) |
+| Multi-region/multi-topic fan-in into one streaming table | SDP (`sources:` list — replaces UNION) |
 | Any managed Delta table / aggregate in the medallion (gold MVs) | SDP (mandatory) |
-| Backfill / historical load into an SDP-owned table | SDP `@dp.append_flow(once=True)` |
+| Backfill / historical load into an SDP-owned table | SDP (`backfill:` once-flows) |
+| Streaming publish to Kafka / external Delta destination | SDP (`kafka_sink` / `delta_sink`) |
 | Headless export / API pull / non-SDP table maintenance | python-file |
 | Reusable versioned CLI needing an immutable prod artifact | python-file as `python_wheel_task` (opt-in, `uv build --wheel`) |
 | Human-gated runs: quarantine triage, supervised repair, demos | notebook (on-demand) |
@@ -143,44 +148,50 @@ the bundle entirely (workspace user folders), never in `resources/*.yml`.
 
 **Single-writer invariant**: every UC table has exactly one owning lane. Jobs
 and notebooks may READ SDP-owned tables, never write them — repaired/backfill
-data re-enters via the landing volume or a once-flow. A job calling
+data re-enters via the landing volume or a `backfill:` flow. A job calling
 `.saveAsTable` on an SDP streaming table corrupts pipeline state.
 
 ### SDP lane (config-driven — `config/<domain>/<layer>/<table>.yml`)
 
 - **Add/change a table = author its artifact**, not python: ONE YAML per
   target table in its layer folder (file name == table name) declaring
-  source (cloud_files / table / view), `columns:` (source→target names,
-  data types, per-column dqx rules), transform steps (registry names),
-  table-level quality, and target (streaming_table[+cdc] /
-  materialized_view / temporary_view / delta_sink). NL→artifact recipe:
-  `author-ldp-artifact` skill; full reference: `docs/FRAMEWORK.md`.
+  source(s) (cloud_files / files / table / view / kafka — single `source:`
+  or fan-in `sources:`), `columns:` (source→target names, data types,
+  per-column dqx rules), transform steps (registry names), table-level
+  quality, optional `backfill:` once-flows, and target (streaming_table
+  [+cdc | +cdc_from_snapshot] / materialized_view / temporary_view /
+  delta_sink / kafka_sink). NL→artifact recipe: `author-ldp-artifact` skill;
+  full reference incl. the SDP capability matrix: `docs/FRAMEWORK.md`.
 - Business logic stays in `src/<domain>_etl/transforms/` as pure functions
   registered with `@transform("<domain>.<name>")`; custom dqx checks in
-  `src/<domain>_etl/checks/` with `@check_function`. `domain.yml`'s
-  `imports:` list names these modules — the framework hardcodes none.
+  `src/<domain>_etl/checks/` with `@check_function`; snapshot walkers with
+  `@snapshot_source`. `domain.yml`'s `imports:` list names these modules —
+  the framework hardcodes none.
 - Validate early: `make validate-configs` (same loader as CI, pytest and the
   pipeline); verify interactively with `notebooks/framework/verify_dataset.py`
   (`datalab.framework.run_dataset` — no deploy needed).
 - Hand-written `dp.*` wiring in transformation files is reserved for cases the
-  framework genuinely cannot express — extend the framework first. The rules
-  below then still apply. Import: `from pyspark import pipelines as dp`. The
-  `dlt` module is the old name and must not be used.
+  framework genuinely cannot express (see the capability matrix in
+  `docs/FRAMEWORK.md` for what's deliberately out) — extend the framework
+  first. The rules below then still apply. Import:
+  `from pyspark import pipelines as dp`. The `dlt` module is the old name and
+  must not be used.
 - Datasets: `@dp.table` (streaming), `@dp.materialized_view` (batch),
   `@dp.temporary_view` (pipeline-scoped). Dataset functions **return a
   DataFrame** — never call `.write`, `.saveAsTable`, `.start()`, or
   `.collect()` inside one; the engine owns materialization.
 - Upserts/CDC: `dp.create_streaming_table(...)` +
-  `dp.create_auto_cdc_flow(target=..., source=..., keys=[...], sequence_by=...)`.
-  This replaces hand-written `MERGE` logic (and the old `apply_changes`).
+  `dp.create_auto_cdc_flow(target=..., source=..., keys=[...], sequence_by=...)`
+  — in YAML: `target.cdc`. Snapshot diffing:
+  `dp.create_auto_cdc_from_snapshot_flow` — in YAML:
+  `target.cdc_from_snapshot`. This replaces hand-written `MERGE` logic (and
+  the old `apply_changes`).
 - Data quality: databrickslabs/dqx via the framework (`quality.checks` in the
-  layer YAML) — `dp.expect_*` is retired in this repo; even hand-written
+  artifact) — `dp.expect_*` is retired in this repo; even hand-written
   datasets should route quality through `datalab.framework.dq`.
 - Parameters: never hardcode catalogs/schemas/paths. Declare them in the
   pipeline resource `configuration:` mapping and read with
   `datalab.config.pipeline_conf(spark, "datalab.<key>")`.
-- Business logic goes in `src/<domain>_etl/transforms/` as pure functions with
-  unit tests; transformation files stay thin wiring.
 - `spark` is injected by the SDP runtime at module scope in pipeline files
   (ruff is configured to allow it there, see `per-file-ignores`).
 
@@ -189,8 +200,9 @@ data re-enters via the landing volume or a once-flow. A job calling
 - Entry points: argparse-style flags resolved via
   `datalab.params.cli_params(argv, names)` (snake_case names ↔ kebab-case
   flags), `SparkSession.builder.getOrCreate()`, explicit `main()` +
-  `if __name__ == "__main__":` — see `src/jobs/sales/export_customer_summary.py`.
-- Wire as `spark_python_task` in a `resources/*.job.yml` with job
+  `if __name__ == "__main__":` — see
+  `examples/sales/src/jobs/sales/export_customer_summary.py`.
+- Wire as `spark_python_task` in a `*.job.yml` resource with job
   `parameters:` defaulted from bundle variables; the task `parameters:` list
   maps them to flags via `{{job.parameters.<name>}}`.
 - Serverless `environments:` block installs the repo with
@@ -207,7 +219,7 @@ data re-enters via the landing volume or a once-flow. A job calling
 - Source-format `.py` notebooks (`# Databricks notebook source`). Widgets are
   named identically to the job parameters and resolved via
   `datalab.params.notebook_params(dbutils, names)` — see
-  `notebooks/sales/quarantine_report.py`.
+  `examples/sales/notebooks/sales/quarantine_report.py`.
 - Wire as `notebook_task` with `base_parameters:` mapping
   `{{job.parameters.<name>}}`; **no trigger** — this lane is human-gated by
   definition, run via `databricks bundle run <job> -t dev`.
@@ -215,22 +227,54 @@ data re-enters via the landing volume or a once-flow. A job calling
   are allowed only to tables/volumes the notebook owns (e.g. its report
   snapshot table), never to SDP-owned tables.
 
+## Branching & releases
+
+- **Every change starts from `main`**: `git switch main && git pull`, then a
+  fresh branch named `feature/<slug>`, `fix/<slug>`, or `debug/<slug>`.
+  Never stack new work on a previous feature branch.
+- One PR per branch into `main` (unified template, see "Open a pull
+  request"). CI (lint + test + validate-configs + bundle validate) must be
+  green; merge via the GitHub UI.
+- **Head branches are deleted on merge** — the repo setting
+  "Automatically delete head branches" is ON (re-apply with
+  `gh repo edit --delete-branch-on-merge` if the repo is recreated). After a
+  merge, prune locally: `git switch main && git pull && git fetch --prune`.
+- Releases: merge to `main` auto-deploys dev; tag `vX.Y.Z-rcN` → stage;
+  tag `vX.Y.Z` → prod (`docs/CICD.md`).
+
 ## Critical knowledge (gotchas)
 
 - **DLT → SDP rename.** `import dlt` still works on Databricks but is
   deprecated; this repo standardizes on `pyspark.pipelines` (available in
   Apache Spark 4.1+ and all current DBR channels). `@dlt.view` is now
-  `@dp.temporary_view`; `dlt.apply_changes` is `dp.create_auto_cdc_flow`.
+  `@dp.temporary_view`; `dlt.apply_changes` is `dp.create_auto_cdc_flow`;
+  `dlt.apply_changes_from_snapshot` is `dp.create_auto_cdc_from_snapshot_flow`.
 - **DABs rename.** "Databricks Asset Bundles" became "Declarative Automation
   Bundles" (CLI v0.295.0, March 2026) — non-breaking, the `databricks bundle`
   commands are unchanged.
+- **Flow names are checkpoint identities.** SDP keys each streaming flow's
+  checkpoint on the FLOW NAME: renaming a fan-in `sources[].name` or
+  `backfill[].name` (or converting single-source ↔ fan-in, which changes the
+  generated flow names) abandons state and reprocesses from scratch — pair
+  such changes with a deliberate full refresh.
+- **Streaming FROM a CDC/SCD table** needs
+  `options: {skipChangeCommits: "true"}` on the table source (or read the
+  change feed with `readChangeFeed`); otherwise the downstream stream fails
+  on the first UPDATE/DELETE commit.
+- **Sinks are never cleared by full refresh** (SDP): reprocessed rows are
+  APPENDED to delta/kafka sinks — design consumers for duplicates, and
+  that's why `backfill:` is rejected on sink targets.
+- **Backfills re-run on full refresh.** A completed `backfill:` once-flow
+  idles in the graph and re-runs automatically when the pipeline/table is
+  fully refreshed — leave it in the config (it's the recreation path and the
+  audit trail).
 - **Pipeline deps are NOT `[project].dependencies` at dev time.** The pipeline
   environment installs this repo with `--editable ${workspace.file_path}`
-  (see `resources/sales_etl.pipeline.yml`); `environment_version: "4"` pins
-  Python 3.12 + preinstalled libs. Extra runtime libs go in
-  `[project].dependencies` (picked up by the editable install) — but pipeline
-  environments cache dependencies during development; trigger a full restart
-  if a new dep doesn't show up.
+  (see `examples/sales/resources/sales_etl.pipeline.yml`);
+  `environment_version: "4"` pins Python 3.12 + preinstalled libs. Extra
+  runtime libs go in `[project].dependencies` (picked up by the editable
+  install) — but pipeline environments cache dependencies during development;
+  trigger a full restart if a new dep doesn't show up.
 - **Never install `databricks-connect` into this venv.** It conflicts with the
   `pyspark` dev dependency (both own the `pyspark` namespace). Integration
   testing = deploy + `make run` against dev, not databricks-connect.
@@ -246,7 +290,8 @@ data re-enters via the landing volume or a once-flow. A job calling
   the target and land in `<dataset>_quarantine` with `_errors` evidence
   structs; `warn` rows flow through flagged. Default
   `quarantine.include_warnings: false` keeps quarantine == exactly the
-  dropped rows. One YAML rules list drives both sides.
+  dropped rows. One YAML rules list drives both sides — and with fan-in
+  `sources:`, every flow feeds the same quarantine.
 - **dqx runs with a mocked WorkspaceClient locally** (only DataFrame-in/out
   methods are used — never `*_save_in_table` inside dataset functions), and
   with static `run_time`/`run_id` overwrites ALWAYS — removing them silently
@@ -258,19 +303,24 @@ data re-enters via the landing volume or a once-flow. A job calling
 - **dp.expect_\* is retired in this repo** — dqx owns data quality. Pipeline
   event-log expectation metrics are replaced by quarantine tables, optional
   `*_dq_metrics` MVs and the quarantine-report notebook.
-- **The "no writes" rule is scoped to SDP dataset functions.** `notebooks/`
-  and `src/jobs/` own their writes — that is the point of those lanes —
+- **Local OSS `pyspark.pipelines` lacks Databricks-only symbols/knobs**
+  (AUTO CDC functions, `once`, `cluster_by_auto`, MV `refresh_policy`).
+  `datalab.framework.compat` guards them: graph capture drops the knobs
+  locally (shape-only inspection), anything else raises an actionable error.
+  Tests/capture run fine locally; CDC/once semantics verify via dev refresh.
+- **The "no writes" rule is scoped to SDP dataset functions.** The notebook
+  and python-file lanes own their writes — that is the point of those lanes —
   constrained by the single-writer invariant (never write SDP-owned tables).
   Don't block legitimate `.write` calls there in review.
 - **Job environments share the pipeline's dependency mechanism and gotcha.**
-  the edge-job resources (`resources/sales_*.job.yml`) install the repo with
-  `--editable ${workspace.file_path}` into serverless job environments;
-  like pipeline environments they cache dependencies, so a changed `datalab`
-  package may not appear until the environment rebuilds.
+  The edge-job resources (`examples/sales/resources/sales_*.job.yml`) install
+  the repo with `--editable ${workspace.file_path}` into serverless job
+  environments; like pipeline environments they cache dependencies, so a
+  changed `datalab` package may not appear until the environment rebuilds.
 - **Spark 4 ANSI mode**: serverless/SDP runs with ANSI SQL on, so a plain
   `.cast()` on malformed data **fails the stream** instead of yielding NULL.
-  Cleaning transforms use `try_cast` / `try_to_date` so bad values become
-  NULLs that the quality rules then catch (see `clean_customers`).
+  The framework's `columns:` mapping always casts with `try_cast` so bad
+  values become NULLs that the quality rules then catch.
 - **`python_wheel_task` is opt-in only.** When a target genuinely demands an
   immutable artifact: `artifacts: {type: whl, build: uv build --wheel}` +
   `[project.scripts]` entry + environment dependency `../dist/*.whl` instead
@@ -286,8 +336,9 @@ data re-enters via the landing volume or a once-flow. A job calling
   groups per GitHub Environment. Don't inline group names back into the
   complex defaults.
 - **ABAC SQL is display-only.** Nothing in this repo (CI, agents, scripts)
-  executes `sql/abac/*.sql`; an admin reviews and applies it manually. Keep
-  it that way — auto-applying access policies from a code repo is the
+  executes the `sql/abac/*.sql` files (in this repo:
+  `examples/sales/sql/abac/`); an admin reviews and applies them manually.
+  Keep it that way — auto-applying access policies from a code repo is the
   failure mode the convention exists to prevent.
 
 ## Coding-agent maintenance protocol
@@ -300,6 +351,8 @@ change:
 3. **Any change under `src/datalab/framework/` updates `docs/FRAMEWORK.md`
    in the same commit** — the framework is the shared baseline for every
    customer project; undocumented behavior changes break downstream adopters.
+   If the models changed, also run `make schema` and commit the regenerated
+   `schemas/*.json`.
 4. If you change the protected set itself, update **all three** in one commit:
    `.claude/hooks/protected_files_guard.py`, `.githooks/pre-commit`, and the
    table below.
@@ -308,11 +361,11 @@ change:
 
 | Path (regex) | Why it's protected |
 |---|---|
-| `^databricks\.yml$`, `^resources/.*\.yml$` | Declarative Automation Bundle (deploy surface) |
+| `^databricks\.yml$`, `^(resources\|examples/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle (deploy surface) |
 | `^pyproject\.toml$`, `^uv\.lock$` | dependency manifests (uv-managed, CI `--frozen`) |
 | `^\.databricksignore$` | controls what ships to the workspace |
 | `^src/datalab/(config|quality|params)\.py$` | parameterization + quality contracts used by every pipeline and job lane |
-| `^config/.*\.ya?ml$` | dataset configs — the deployed pipeline definition |
+| `^(config\|examples/[^/]+/config)/.*\.ya?ml$` | dataset configs — the deployed pipeline definition |
 | `^src/datalab/framework/(models|loader|generator|dq|writers)\.py$` | framework core: config contract + LDP/dqx generation semantics |
 | `^\.github/(workflows\|actions)/.*` | CI/CD (OIDC, bundle deploy) |
 | `^\.github/pull_request_template\.md$` | unified PR template |
@@ -321,7 +374,7 @@ change:
 | `^\.githooks/.*` | git pre-commit guard |
 | `^Makefile$` | developer + CI entrypoints |
 | `^\.env(\..*)?$` | secrets — never commit |
-| `^(AGENTS\|CLAUDE\|README)\.md$`, `^docs/(ARCHITECTURE\|CICD\|MIGRATION\|FRAMEWORK)\.md$` | documents of record |
+| `^(AGENTS\|CLAUDE\|README)\.md$`, `^docs/(ARCHITECTURE\|CICD\|MIGRATION\|FRAMEWORK\|GETTING_STARTED)\.md$` | documents of record |
 
 The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
 
@@ -332,33 +385,34 @@ The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
 ## Common tasks
 
 - **Add a table to an existing pipeline**: create ONE artifact
-  `config/<domain>/<layer>/<table>.yml` (file name == table name) with the
-  columns/types/DQ rules — follow the `author-ldp-artifact` skill; if new
-  logic is needed, add a pure `@transform`-registered function in
-  `src/<domain>_etl/transforms/` with a unit test (and the module in
-  `domain.yml` `imports:`). `make validate-configs lint test validate`.
-  Walkthrough: `docs/FRAMEWORK.md`.
-- **Add a new domain pipeline** (e.g. finance): create
-  `config/finance/domain.yml` + `<layer>/<table>.yml` artifacts +
-  `src/finance_etl/` (`transformations/pipeline.py` copied 3-liner,
-  `transforms/`, `checks/`), add `src/finance_etl` to
-  `[tool.hatch.build.targets.wheel]` packages, copy
-  `resources/sales_etl.pipeline.yml` + `resources/sales_etl.job.yml`,
-  rename keys and point `datalab.config_dir` at `config/finance`.
-  The framework (`src/datalab`) is not touched.
+  `config/<domain>/<layer>/<table>.yml` (file name == table name; in this
+  repo: `examples/sales/config/sales/...`) with the columns/types/DQ rules —
+  follow the `author-ldp-artifact` skill; if new logic is needed, add a pure
+  `@transform`-registered function in `src/<domain>_etl/transforms/` with a
+  unit test (and the module in `domain.yml` `imports:`).
+  `make validate-configs lint test validate`. Reference: `docs/FRAMEWORK.md`.
+- **Backfill an SDP table**: add a `backfill:` entry (name + batch source;
+  streaming source when the target has `cdc:`) to the table's artifact —
+  never a job write. Names are checkpoint identities; the flow re-runs on
+  full refresh by design. See "Backfills" in `docs/FRAMEWORK.md`.
+- **Add a new domain pipeline** (e.g. finance): follow
+  `docs/GETTING_STARTED.md` end to end — copy the `examples/sales/` shape
+  (config + `src/<domain>_etl` + resources), add the domain package dir to
+  `[tool.hatch.build.targets.wheel]` packages, point `datalab.config_dir` at
+  the new config dir. The framework (`src/datalab`) is not touched.
 - **Change quality rules**: edit the column's `quality:` list (or the
   table-level `quality.checks`) in the table's artifact — dqx metadata,
   NL→function mapping in the `author-ldp-artifact` skill (full dqx catalog;
   pick the most specific function — `sql_expression` is a last resort;
   conventions follow the `databricks_dqx_agent` rule generator). Target
-  filtering and quarantine stay in sync automatically. `make validate-configs` catches
-  invalid rules statically; verify behavior with `run_dataset` or the verify
-  notebook.
+  filtering and quarantine stay in sync automatically. `make validate-configs`
+  catches invalid rules statically; verify behavior with `run_dataset` or the
+  verify notebook.
 - **Add a python-file task**: run the 3-question router first. Entry point in
   `src/jobs/<domain>/` (argparse via `datalab.params.cli_params`, pure logic
   in `src/datalab` with a unit test), copy the `sales_export` job shape from
-  `resources/sales_export.job.yml` (parameters from bundle variables,
-  `environments` block, `permissions: ${var.job_permissions}`).
+  `examples/sales/resources/sales_export.job.yml` (parameters from bundle
+  variables, `environments` block, `permissions: ${var.job_permissions}`).
   `make lint test validate`.
 - **Add a notebook task**: router first — only if a human must read the run.
   Source-format `.py` under `notebooks/<domain>/`, widgets named after the job
@@ -366,31 +420,38 @@ The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
   `sales_quarantine_report` job shape (no trigger). `make lint test validate`.
 - **Add a dependency**: edit `pyproject.toml`, `make lock`, commit both files.
   For pipeline-runtime deps, remember the environment caching gotcha above.
-- **Change deploy config**: edit `databricks.yml` / `resources/*.yml`, then
-  `make validate` before pushing; update `docs/` if targets or variables moved.
+- **Change deploy config**: edit `databricks.yml` / the domain's
+  `resources/*.yml`, then `make validate` before pushing; update `docs/` if
+  targets or variables moved.
 - **Change access (RBAC/ABAC)**: workspace-resource permissions → the
   `reader_group`/`engineer_group` variables (per-target overrides in
   `databricks.yml`, per-environment via `DATALAB_*_GROUP` repo variables);
   data grants → `scripts/bootstrap_uc.py` (keep its CATALOGS/GROUPS dicts in
   sync with `databricks.yml`), re-run `make bootstrap-uc`; row/column
-  policies → add display-only SQL under `sql/abac/` following the conventions
-  in `docs/ARCHITECTURE.md` — never execute them from CI or an agent session.
+  policies → add display-only SQL under the domain's `sql/abac/` following
+  the conventions in `docs/ARCHITECTURE.md` — never execute them from CI or
+  an agent session.
 - **Open a pull request**: fill `.github/pull_request_template.md` into a body
   file and `gh pr create --body-file <file>` (or `--web`). Keep the
   `datalab-pr-template` marker and the `##` section headings — the hook + CI
-  enforce them.
+  enforce them. Branch from `main`; the head branch is auto-deleted on merge
+  (see "Branching & releases").
 
 ## Agent don'ts
 
 - Don't use `import dlt`, `dlt.*` APIs, or hand-written MERGE/upsert logic in
-  pipelines — use `pyspark.pipelines` + AUTO CDC.
+  pipelines — use `pyspark.pipelines` + AUTO CDC (via `target.cdc` /
+  `target.cdc_from_snapshot` in the artifact).
 - Don't perform writes or actions inside dataset functions.
 - Don't hardcode catalogs, schemas, hosts, or volume paths in pipeline code —
   use bundle variables + pipeline `configuration`.
+- Don't rename fan-in/backfill flow names (or convert single-source ↔ fan-in)
+  casually — flow names are streaming-checkpoint identities.
 - Don't introduce poetry/pip-requirements workflows — deps are uv-only.
 - Don't edit `uv.lock` by hand.
 - Don't commit `.env`, workspace state (`.databricks/`), or `.venv`.
 - Don't open a PR that bypasses the unified template.
+- Don't branch off a feature branch — new work branches from `main`.
 
 ## Security
 

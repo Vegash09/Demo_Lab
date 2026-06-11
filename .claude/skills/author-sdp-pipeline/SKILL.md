@@ -1,90 +1,74 @@
 ---
 name: author-sdp-pipeline
-description: Author or modify Lakeflow Spark Declarative Pipelines (pyspark.pipelines) in this repo — add tables, materialized views, expectations, quarantine tables, AUTO CDC upserts, or a whole new domain pipeline. Use when the user asks to add/change pipeline code, bronze/silver/gold tables, data quality rules, CDC/upsert logic, or mentions SDP, DLT migration, dp.table, or transformations.
+description: Hand-write Lakeflow SDP (pyspark.pipelines) code for the RARE case the config-driven framework cannot express — after checking the capability matrix. Use when a request needs dp.* wiring beyond the YAML artifact surface (e.g. Kinesis/Pub/Sub sources, preview features) or when extending the framework itself. For normal add/change-a-table requests use the author-ldp-artifact skill instead.
 ---
 
-# Author an SDP pipeline (pyspark.pipelines)
+# Hand-written SDP code — the escape hatch, not the default
 
-Pipelines are Python files under `src/<pipeline>/transformations/`, interpreted
-by the Lakeflow SDP engine. The bundle resource (`resources/<pipeline>.pipeline.yml`)
-points `root_path` at `src/<pipeline>` and globs the transformations folder.
+**STOP first**: in this repo a target table is ONE YAML artifact
+(`author-ldp-artifact` skill). Hand-written `dp.*` wiring is reserved for
+what the framework genuinely cannot express. Check the **SDP capability
+matrix** in `docs/FRAMEWORK.md` — fan-in sources, backfills, AUTO CDC
+(feed + snapshot), kafka in/out, file batch reads, clustering and MV refresh
+policies are ALL config-expressible. If a gap is real, prefer EXTENDING the
+framework (models + readers/writers + tests + FRAMEWORK.md) over a one-off
+file; one-off wiring is for true edge cases and prototypes.
 
-## Hard rules
+## Hard rules (apply to any hand-written dataset)
 
 1. `from pyspark import pipelines as dp` — **never** `import dlt` (deprecated).
 2. Dataset functions return a DataFrame. No `.write`, `.saveAsTable`,
-   `.start()`, `.collect()`, or other actions inside definitions.
-3. Business logic = pure functions in `src/datalab/transforms/<domain>.py`
-   with unit tests in `tests/unit/`. Transformation files stay thin wiring.
-4. No hardcoded catalogs/schemas/paths. Read parameters with
-   `datalab.config.pipeline_conf(spark, "datalab.<key>")` and declare them in
-   the pipeline resource `configuration:` mapping.
-5. `spark` exists at module scope in pipeline files (runtime-injected); tag
-   usages with `# noqa: F821`.
+   `.start()`, `.collect()`, `.count()`, `.toPandas()` inside definitions —
+   the engine evaluates them multiple times and owns materialization.
+3. Data quality goes through dqx (`datalab.framework.dq`), NOT `dp.expect_*`
+   (retired in this repo — quarantine evidence beats event-log metrics).
+4. Business logic = pure functions in the DOMAIN package
+   (`src/<domain>_etl/transforms/`) with unit tests; the pipeline file stays
+   thin wiring placed next to the generated entrypoint
+   (`transformations/` folder, globbed by the pipeline resource).
+5. No hardcoded catalogs/schemas/paths — declare under the resource
+   `configuration:` mapping, read with
+   `datalab.config.pipeline_conf(spark, "datalab.<key>")`.
+6. `spark` exists at module scope in pipeline files (runtime-injected); the
+   transformations folder has a ruff `F821` allowance.
+7. Single-writer invariant: never touch tables another pipeline/lane owns.
 
-## API cheat sheet
+## Current API cheat sheet (June 2026)
 
 | Need | Use |
 |---|---|
-| Streaming table (incremental) | `@dp.table(name=..., comment=...)` over `spark.readStream` |
-| Batch table / aggregate | `@dp.materialized_view(name=..., comment=...)` over `spark.read` |
-| Pipeline-scoped intermediate | `@dp.temporary_view(comment=...)` |
-| Append-only multi-source | `@dp.append_flow(target=...)` |
-| Upsert / CDC (replaces MERGE & `apply_changes`) | `dp.create_streaming_table(name=...)` + `dp.create_auto_cdc_flow(target=..., source=..., keys=[...], sequence_by=..., stored_as_scd_type=1or2)` |
-| DQ warn (keep rows, log metrics) | `@dp.expect_all({name: sql_expr})` |
-| DQ drop (remove violating rows) | `@dp.expect_all_or_drop({...})` |
-| DQ fail (stop the flow) | `@dp.expect_or_fail(name, sql_expr)` |
-| File ingest | `spark.readStream.format("cloudFiles")` (Auto Loader) |
+| Streaming table | `@dp.table(name=..., comment=...)` over `spark.readStream` |
+| Batch table / aggregate | `@dp.materialized_view(...)` over `spark.read` |
+| Pipeline-scoped intermediate | `@dp.temporary_view(...)` |
+| Fan-in / multi-source append | `dp.create_streaming_table(name=...)` + N × `@dp.append_flow(target=..., name=<stable>)` — flow names are checkpoint identities |
+| One-time backfill | `@dp.append_flow(target=..., name=..., once=True)` over a BATCH read; re-runs on full refresh |
+| Upsert / CDC (replaces MERGE & `apply_changes`) | `dp.create_streaming_table(...)` + `dp.create_auto_cdc_flow(target=, source=, keys=, sequence_by=, stored_as_scd_type=1|2, apply_as_deletes=, ...)` |
+| SCD from full snapshots | `dp.create_auto_cdc_from_snapshot_flow(target=, source=<view or (version)->(df,version) fn>, keys=, ...)` |
+| External delta/kafka destination | `dp.create_sink(name, format="delta"|"kafka", options)` + `@dp.append_flow(target=<sink>)` |
+| File ingest | `spark.readStream.format("cloudFiles")` (Auto Loader; SDP manages schemaLocation/checkpoints) |
+| Stream from an SCD/updated table | `spark.readStream.option("skipChangeCommits", "true").table(...)` or CDF (`readChangeFeed`) |
 
-## Layer conventions
+Databricks-only symbols/knobs (AUTO CDC fns, `once`, `cluster_by_auto`, MV
+`refresh_policy`) are missing from local OSS pyspark — route through
+`datalab.framework.compat` so local tests/capture stay green.
 
-- **bronze**: Auto Loader ingest, preserve source, add `_ingest_ts` +
-  `_source_file` lineage columns. Table property `datalab.layer: bronze`.
-- **silver**: clean via a pure transform → validated view carrying
-  expectations → AUTO CDC into the silver table; a quarantine table captures
-  rows violating `QUARANTINE_RULES` using
-  `datalab.quality.violation_predicate` (one rules dict drives both sides).
-  See `src/sales_etl/transformations/silver_customers.py` for the canonical
-  shape.
-- **gold**: `@dp.materialized_view` aggregates calling a pure summarize
-  function.
+Avoid (Public Preview, deliberately unused here): `@dp.update_flow`,
+`@dp.foreach_batch_sink`, real-time mode, pipeline-level row filters/masks
+(ABAC is display-only SQL — see ARCHITECTURE.md).
 
-## Add a table to an existing pipeline
+## If the gap is worth keeping: extend the framework instead
 
-1. Write/extend the pure function + rules dicts in
-   `src/datalab/transforms/<domain>.py`; add unit tests.
-2. Wire it in `src/<pipeline>/transformations/<layer>_<entity>.py` following
-   the cheat sheet.
-3. `make lint && make test && make validate`.
-4. Verify with a dev refresh: `make run`.
-
-## Add a new domain pipeline (e.g. finance)
-
-1. Create `src/finance_etl/transformations/` (+ a short README like
-   `src/sales_etl/README.md`).
-2. Copy `resources/sales_etl.pipeline.yml` → `resources/finance_etl.pipeline.yml`;
-   rename the resource key, `name`, `root_path`, the libraries glob, and the
-   `configuration` keys it needs. Keep `serverless: true`,
-   `environment_version`, and the `--editable ${workspace.file_path}`
-   dependency.
-3. Copy `resources/sales_etl.job.yml` → `resources/finance_etl.job.yml`; point
-   `pipeline_task.pipeline_id` at `${resources.pipelines.finance_etl.id}`.
-4. Add any new variables to `databricks.yml` (defaults + per-target overrides).
-5. New transforms module `src/datalab/transforms/finance.py` + unit tests.
-6. `make lint test validate`, then deploy + `databricks bundle run finance_etl -t dev`.
+1. Model the field(s) in `src/datalab/framework/models.py` (+ validators).
+2. Read/write it in `readers.py` / `writers.py` (late-binding rule: closures
+   bind loop state via DEFAULT ARGUMENTS only).
+3. Unit tests (`tests/unit/framework/`), `make schema`, and document the
+   field + matrix row in `docs/FRAMEWORK.md` — same commit (AGENTS.md
+   maintenance protocol; these are protected files).
 
 ## Done check
 
-- [ ] No `import dlt`, no writes/actions inside dataset functions
-- [ ] Logic is in `src/datalab/transforms/` with passing unit tests
-- [ ] Parameters declared in the resource `configuration:`; none hardcoded
-- [ ] `make lint`, `make test`, `make validate` all pass
-- [ ] Dev refresh succeeds (`make run`) and expectations show in the pipeline UI
-
-## Not every target is a pipeline
-
-Run the 3-question router in AGENTS.md ("Authoring rules") before reaching for
-SDP: managed medallion Delta table → SDP (this skill); headless side-effectful
-edge work (exports, API pulls) → python-file task (`src/jobs/<domain>/` +
-`resources/sales_export.job.yml` shape); human-gated runs → notebook task
-(`notebooks/<domain>/`, on-demand, no trigger).
+- [ ] Capability matrix consulted; artifact lane genuinely insufficient
+- [ ] No `import dlt`, no writes/actions inside dataset functions, dqx not dp.expect_*
+- [ ] Logic in the domain package with passing unit tests
+- [ ] Parameters via `configuration:`; nothing hardcoded
+- [ ] `make validate-configs lint test validate` pass; dev refresh verified (`make run`)

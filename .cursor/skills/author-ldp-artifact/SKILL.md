@@ -6,14 +6,17 @@ description: Create or modify a pipeline table from a natural-language request b
 # Author an LDP artifact from a natural-language request
 
 This repo is a config-driven framework: a target table is ONE YAML artifact.
-You never write `dp.*` wiring. Full reference: `docs/FRAMEWORK.md`.
+You never write `dp.*` wiring. Full reference (every field + the SDP
+capability matrix): `docs/FRAMEWORK.md`.
 
 ## Where the artifact goes
 
 `config/<domain>/<layer>/<table>.yml` — the layer folder is the medallion
 layer of the TARGET table; the **file name must equal the target table name**.
 The domain's `domain.yml` maps layers → schema conf keys and lists the python
-`imports:`.
+`imports:`. In THIS repo the domains live under `examples/<domain>/config/`
+(e.g. `examples/sales/config/sales/silver/customers.yml`); adopter repos use
+root-level `config/<domain>/`.
 
 **Never hardcode a catalog or schema name.** Locations are pipeline-conf KEYS
 (`datalab.catalog`, `datalab.silver_schema`, …) resolved per environment by
@@ -23,15 +26,18 @@ artifact. If a request names a catalog literally, map it to the conf key.
 ## Artifact recipe
 
 ```yaml
-# yaml-language-server: $schema=../../../schemas/table_config.schema.json
+# yaml-language-server: $schema=<relative path to>/schemas/table_config.schema.json
 schema_version: 1
 name: <table>                  # == file name
 comment: <one line, business language>
-source:                        # where the data comes from
-  kind: table                  #   table | cloud_files | view
+source:                        # where the data comes from (OR sources:, below)
+  kind: table                  #   table | cloud_files | files | view | kafka
   name: <upstream table>
   layer: <upstream layer>      #   resolves via domain.yml (preferred)
   as_stream: true              #   stream for incremental, omit for batch
+  options: {}                  #   reader options verbatim (e.g.
+                               #   skipChangeCommits when streaming from an
+                               #   SCD/CDC table; readChangeFeed for CDF)
 columns:                       # target columns: source→target + type + rules
   - name: <target col>         #   target column name
     source: <source col>       #   omit when identical
@@ -44,16 +50,34 @@ quality:                       # table-level rules + quarantine settings
   quarantine: {}               #   error rules AUTO-quarantine even without this
 target:
   kind: streaming_table        #   streaming_table | materialized_view |
-                               #   temporary_view | delta_sink
-  cdc:                         #   upsert/SCD — only with a streaming source
+                               #   temporary_view | delta_sink | kafka_sink
+  cdc:                         #   upsert/SCD from a change feed (streaming source)
     keys: [<business key>]
-    sequence_by: <ordering col>
-    scd_type: 1                #   2 for history tracking
+    sequence_by: <ordering col>   # list for tiebreaks: [ts, seq_no]
+    scd_type: 1                #   2 for history tracking (__START_AT/__END_AT)
+    # apply_as_deletes / apply_as_truncates / column_list / except_columns /
+    # ignore_null_updates / track_history_*: see docs/FRAMEWORK.md
 ```
 
-Choosing `target.kind`: incremental/append → `streaming_table`; upsert/SCD →
-`streaming_table` + `cdc`; batch table or aggregate ("normal delta table") →
-`materialized_view`; pipeline-scoped/dynamic view → `temporary_view`.
+Choosing `target.kind`: incremental/append → `streaming_table`; upsert/SCD
+from a change feed → `streaming_table` + `cdc`; SCD from periodic FULL
+snapshots (nightly dumps) → `streaming_table` + `cdc_from_snapshot` (batch
+source); batch table or aggregate ("normal delta table") →
+`materialized_view`; pipeline-scoped/dynamic view → `temporary_view`;
+external destinations only → `delta_sink` / `kafka_sink`.
+
+NL cues for the rest of the surface (details: `docs/FRAMEWORK.md`):
+
+| User says | Authoring move |
+|---|---|
+| "from both/all of …", "merge the EU and US feeds" | `sources:` fan-in list (one NAMED flow per feed — names are checkpoint identities, keep them stable) |
+| "load the history / one-time backfill" | `backfill:` entry (batch source for plain tables, STREAMING source when the target has `cdc:`); it re-runs on full refresh by design |
+| "from Kafka / Event Hubs / MSK" | `source.kind: kafka` (`bootstrap_servers_conf` is a conf KEY; decode value in columns/transforms) |
+| "read the files as a batch / one-off folder" | `source.kind: files` (MVs and backfills) |
+| "we get a full dump every night, keep history" | `target.cdc_from_snapshot` (+ `@snapshot_source` function for historical snapshot SETS) |
+| "publish to Kafka" | `target.kind: kafka_sink` + `transform: [{function: framework.to_json_value, args: {key: <id>}}]` |
+| "cluster/partition by …" | `cluster_by:` / `cluster_by_auto: true` / `partition_cols:` (clustering XOR partitioning) |
+| "the MV must never silently full-recompute" | `target.refresh_policy: incremental_strict` |
 
 ## Natural language → dqx rules
 
@@ -133,4 +157,5 @@ Pure function in `src/<domain>_etl/transforms/` with
 A brand-new domain additionally needs: `config/<domain>/domain.yml`,
 `src/<domain>_etl/` package (+ hatch wheel packages entry in pyproject.toml),
 a copied pipeline resource pointing `datalab.config_dir` at the config dir —
-see "Add a domain" in `docs/FRAMEWORK.md`.
+follow `docs/GETTING_STARTED.md` end to end (copy the `examples/sales/`
+shape).
