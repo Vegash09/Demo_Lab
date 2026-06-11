@@ -181,8 +181,8 @@ res = run_dataset(spark, "config/finance", "silver", "invoices",
 res.valid_df.show(); res.quarantine_df.show()
 ```
 
-`datalab.framework.devtools.capture_graph(spark, "config/finance")` prints
-every dataset/flow the config will generate, locally.
+`datalab.framework.capture_graph(spark, "config/finance")` prints every
+dataset/flow the config will generate, locally.
 
 ## 6. Wire the bundle
 

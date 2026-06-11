@@ -6,7 +6,7 @@ reader/writer adapters, with data quality fully delegated to
 databrickslabs/dqx. See ``docs/FRAMEWORK.md`` for the authoring guide.
 """
 
-from datalab.framework.devtools import DatasetRunResult, plan, run_dataset
+from datalab.framework.devtools import DatasetRunResult, capture_graph, plan, run_dataset
 from datalab.framework.errors import ConfigError, FrameworkRuntimeError
 from datalab.framework.generator import generate
 from datalab.framework.loader import load_domain, load_domain_configs
@@ -15,6 +15,7 @@ __all__ = [
     "ConfigError",
     "DatasetRunResult",
     "FrameworkRuntimeError",
+    "capture_graph",
     "generate",
     "load_domain",
     "load_domain_configs",

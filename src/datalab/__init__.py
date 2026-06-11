@@ -1,12 +1,13 @@
-"""datalab — shared, unit-testable building blocks for the SDP medallion pipelines.
+"""datalab — the reusable, config-driven lakehouse framework.
 
-Everything in this package is plain PySpark: pure DataFrame-in/DataFrame-out
-functions plus small helpers. No `pyspark.pipelines` imports, no I/O, no side
-effects — that is what makes it testable with a local SparkSession.
-
-Pipeline source files under ``src/<pipeline>/transformations/`` import from
-here and wire the functions into `@dp.table` / `@dp.materialized_view`
-definitions.
+The only package under ``src/``; zero domain code, lifts into any project
+untouched. ``datalab.framework`` turns per-table YAML artifacts into Lakeflow
+SDP datasets (see ``docs/FRAMEWORK.md``); ``datalab.config`` /
+``datalab.params`` carry the parameterization contracts for the pipeline and
+job lanes. Domain business logic lives in domain packages
+(``src/<domain>_etl/`` in adopter repos, ``examples/<domain>/src/`` here),
+declared to the framework via each ``domain.yml``'s ``imports:`` list — and
+everything is unit-testable with a local SparkSession.
 """
 
 __version__ = "0.2.0"

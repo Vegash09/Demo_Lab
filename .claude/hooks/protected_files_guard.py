@@ -29,8 +29,8 @@ PROTECTED: list[tuple[str, str]] = [
      "dependency manifest (uv-managed; CI runs `uv sync --frozen`)"),
     (r"^\.databricksignore$",
      "controls which files ship to the workspace on deploy"),
-    (r"^src/datalab/(config|quality|params)\.py$",
-     "parameterization + quality contracts shared by every pipeline and job lane"),
+    (r"^src/datalab/(config|params)\.py$",
+     "parameterization contracts shared by every pipeline and job lane"),
     (r"^(config|examples/[^/]+/config)/.*\.ya?ml$",
      "dataset configs — the deployed pipeline definition (validate: make validate-configs)"),
     (r"^src/datalab/framework/(models|loader|generator|dq|writers)\.py$",
@@ -49,7 +49,7 @@ PROTECTED: list[tuple[str, str]] = [
      "developer + CI entrypoints"),
     (r"^\.env(\..*)?$",
      "secrets file — must never be committed"),
-    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK)\.md$",
+    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK|GETTING_STARTED)\.md$",
      "document-of-record for AI coding agents"),
 ]
 
@@ -71,7 +71,7 @@ def _reason(rel: str, category: str) -> str:
         "  • For databricks.yml / resources/*.yml: validate locally (`make validate`)\n"
         "  • For pyproject.toml: run `make lock` and commit uv.lock in the same change\n"
         "  • For .github/**: keep OIDC auth + `uv sync --frozen` semantics intact\n"
-        "  • For src/datalab/{config,quality,params}.py: every pipeline and job lane depends on these contracts\n\n"
+        "  • For src/datalab/{config,params}.py: every pipeline and job lane depends on these contracts\n\n"
         "Approve if the change is intentional and matches the AGENTS.md protocol."
     )
 

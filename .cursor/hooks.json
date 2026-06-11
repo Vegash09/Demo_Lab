@@ -1,7 +1,17 @@
 {
   "version": 1,
   "hooks": {
+    "preToolUse": [
+      {
+        "command": ".cursor/hooks/branch_guard.py",
+        "matcher": "Write|Edit|StrReplace|Delete|Notebook|MultiEdit"
+      }
+    ],
     "beforeShellExecution": [
+      {
+        "command": ".cursor/hooks/branch_guard.py",
+        "matcher": "git[\\s\\S]*(commit|merge|rebase|cherry-pick|revert|push)"
+      },
       {
         "command": ".cursor/hooks/pr_template_guard.py",
         "matcher": "gh\\s+pr\\s+create"

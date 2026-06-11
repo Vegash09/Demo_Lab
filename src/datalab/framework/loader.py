@@ -10,7 +10,8 @@ loader (pydantic shape + deep pass), which runs identically in pytest,
 ``make validate-configs`` and at pipeline import; station 3 is the pipeline
 update itself. A bad config never moves data.
 
-CLI: ``python -m datalab.framework.loader config/ [more dirs ...]``
+CLI: ``python -m datalab.framework config/ [more dirs ...]`` (the
+``__main__`` wrapper around :func:`main` below).
 """
 
 from __future__ import annotations
@@ -220,7 +221,7 @@ def load_domain_configs(config_dir: str | Path, layers: list[str] | None = None)
 
 def main(argv: list[str]) -> int:
     if not argv:
-        print("usage: python -m datalab.framework.loader <config-dir> [<config-dir> ...]")
+        print("usage: python -m datalab.framework <config-dir> [<config-dir> ...]")
         return 2
     failed = False
     for arg in argv:

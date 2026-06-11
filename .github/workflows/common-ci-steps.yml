@@ -39,7 +39,18 @@ jobs:
         run: uv sync --frozen
 
       - name: Ruff lint
-        run: uv run ruff check src tests notebooks scripts
+        # Same paths as `make lint` — examples/ holds the reference domains
+        # (domain packages + their tests) and is part of the linted surface.
+        run: uv run ruff check src tests notebooks scripts examples
+
+      - name: Validate dataset configs (pydantic + static dqx checks)
+        # Same loader as `make validate-configs`, the pipeline import, and the
+        # editor schemas: a bad artifact fails CI before any deploy. Mirrors
+        # the Makefile's CONFIG_DIRS (root config/ for adopters, examples/*/config here).
+        run: |
+          dirs=()
+          for d in config examples/*/config; do [ -d "$d" ] && dirs+=("$d"); done
+          uv run python -m datalab.framework "${dirs[@]}"
 
       - name: Unit tests (local Spark)
         run: uv run pytest
