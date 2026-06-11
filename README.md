@@ -50,7 +50,8 @@ Three invariants hold everywhere:
 flowchart TD
     README["README.md<br/>(you are here)"] --> GS["docs/GETTING_STARTED.md<br/>empty folder → deployed pipeline,<br/>no framework-team help needed"]
     README --> FWK["docs/FRAMEWORK.md<br/>flowspec reference: artifact anatomy ·<br/>target kinds · dqx semantics · capability matrix"]
-    README --> EX["examples/sales/<br/>complete worked domain to copy"]
+    README --> NAM["docs/NAMING.md<br/>folder structure mirrors the UC namespace:<br/>catalog · schema · table"]
+    README --> EX["examples/customer_sales/<br/>complete worked domain to copy"]
     README --> ARCH["docs/ARCHITECTURE.md<br/>system view · lanes · code layout · governance"]
     README --> CICD["docs/CICD.md<br/>workflows · OIDC setup · release flow"]
     README --> MIG["docs/MIGRATION.md<br/>legacy DLT → hand-written SDP → flowspec"]
@@ -61,7 +62,8 @@ flowchart TD
 |---|---|
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | you are building a pipeline on the framework — empty folder → deployed pipeline, no framework-team help needed |
 | [docs/FRAMEWORK.md](docs/FRAMEWORK.md) | you are adding a table or domain: artifact schema, generated graph, target kinds, data-quality semantics, the SDP capability matrix |
-| [examples/sales/](examples/sales/README.md) | you want a finished example to copy — complete worked domain, mirrors an adopter repo |
+| [docs/NAMING.md](docs/NAMING.md) | you are naming anything: folder paths mirror the UC namespace (catalog → schema → table), package/resource naming rules |
+| [examples/customer_sales/](examples/customer_sales/README.md) | you want a finished example to copy — complete worked domain, mirrors an adopter repo |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | you need the system picture: CI/CD → workspace resources, the three authoring lanes, code organization, environments, RBAC/ABAC |
 | [docs/CICD.md](docs/CICD.md) | you are wiring a target or debugging a deploy: workflows, federation policies, GitHub Environments, release flow |
 | [docs/MIGRATION.md](docs/MIGRATION.md) | you knew the legacy/intermediate codebase and need the old → current concept map |
@@ -72,12 +74,12 @@ flowchart TD
 | Surface | Where | What |
 |---|---|---|
 | Framework | `src/datalab/` | the ONLY package under `src/` — REUSABLE, zero domain code: Pydantic models, LDP generator, dqx engine, devtools, param helpers |
-| Reference domains | `examples/` (currently `sales/`) | complete worked adoptions, each mirroring an adopter repo root — copy one to start your own domain |
-| Dataset configs | `examples/sales/config/sales/` (adopters: `config/<domain>/`) | ONE artifact per target table: column mappings + types, dqx rules, target kind |
-| Domain code | `examples/sales/src/sales_etl/` (adopters: `src/<domain>_etl/`) | pure `@transform` functions, custom dqx checks, 3-line pipeline entrypoint |
-| Edge lanes | `examples/sales/src/jobs/sales/` + `examples/sales/notebooks/sales/` | python-file lane (headless exports) + notebook lane (human-gated triage) |
+| Reference domains | `examples/` (currently `customer_sales/`) | complete worked adoptions, each named after its base UC catalog and mirroring an adopter repo root — copy one to start your own domain |
+| Dataset configs | `examples/customer_sales/config/customer_sales/` (adopters: `config/<catalog>/`) | ONE artifact per target table: column mappings + types, dqx rules, target kind — path mirrors `<catalog>.<schema>.<table>` |
+| Domain code | `examples/customer_sales/src/customer_sales_etl/` (adopters: `src/<catalog>_etl/`) | pure `@transform` functions, custom dqx checks, 3-line pipeline entrypoint |
+| Edge lanes | `examples/customer_sales/src/jobs/customer_sales/` + `examples/customer_sales/notebooks/customer_sales/` | python-file lane (headless exports) + notebook lane (human-gated triage) |
 | Deploy | `databricks.yml` + `examples/*/resources/` (adopters: `resources/`) | bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
-| Tests | `tests/` (framework, example-free) + `examples/sales/tests/` | unit tests on a local SparkSession — no workspace needed |
+| Tests | `tests/` (framework, example-free) + `examples/customer_sales/tests/` | unit tests on a local SparkSession — no workspace needed |
 | CI/CD | `.github/` | ruff + pytest + config validation + `bundle validate` on PRs; OIDC deploys on merge/tags |
 | Agent harness | `.claude/`, `.cursor/`, `.githooks/` | rules, skills, PR-template + protected-file guards |
 | Docs | `docs/` | the child docs mapped above |
@@ -94,26 +96,27 @@ make lint test          # ruff + pytest (framework suite + example suites)
 databricks auth login --host https://dbc-425be768-f138.cloud.databricks.com
 make validate           # bundle validate -t dev
 make deploy             # deploy to dev (resources prefixed [dev <you>])
-make run                # refresh the sales_etl example pipeline
+make run                # refresh the customer_sales_etl example pipeline
 
-databricks bundle run sales_export -t dev             # python-file lane example
-databricks bundle run sales_quarantine_report -t dev  # notebook lane example
+databricks bundle run customer_sales_export -t dev             # python-file lane example
+databricks bundle run customer_sales_quarantine_report -t dev  # notebook lane example
 ```
 
 `make help` lists everything. The full release flow (dev on merge,
 stage on `v*-rc*` tags, prod on `v*` tags) is in
 [docs/CICD.md](docs/CICD.md#release-flow).
 
-## The sales example, end to end
+## The customer_sales example, end to end
 
 The reference pipeline is generated entirely from
-`examples/sales/config/sales/<layer>/<table>.yml` artifacts (an adopter repo
-keeps the same tree at `config/<domain>/`):
+`examples/customer_sales/config/customer_sales/<schema>/<table>.yml` artifacts
+(an adopter repo keeps the same tree at `config/<catalog>/` — the path mirrors
+the UC namespace, see [docs/NAMING.md](docs/NAMING.md)):
 
 ```mermaid
 flowchart LR
     LAND[("landing volume<br/>JSON")] -->|"Auto Loader<br/>cloud_files"| RAW["bronze.customers_raw<br/>streaming table + lineage cols"]
-    RAW --> IN["customers__input<br/>framework view: 8 mapped columns<br/>+ sales.normalize_email"]
+    RAW --> IN["customers__input<br/>framework view: 8 mapped columns<br/>+ customer_sales.normalize_email"]
     IN --> CHK["customers__checked<br/>dqx checks → _errors/_warnings"]
     CHK -->|valid| VAL["customers__valid"]
     CHK -->|"error → dropped"| QUAR["silver.customers_quarantine<br/>dropped rows + dqx evidence"]

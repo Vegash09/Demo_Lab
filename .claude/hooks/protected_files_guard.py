@@ -49,7 +49,7 @@ PROTECTED: list[tuple[str, str]] = [
      "developer + CI entrypoints"),
     (r"^\.env(\..*)?$",
      "secrets file — must never be committed"),
-    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK|GETTING_STARTED)\.md$",
+    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK|GETTING_STARTED|NAMING)\.md$",
      "document-of-record for AI coding agents"),
 ]
 

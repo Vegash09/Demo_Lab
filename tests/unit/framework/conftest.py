@@ -3,8 +3,8 @@
 These tests must pass with ``src/datalab`` alone (the framework lifts into
 other projects without the examples/ tree). Synthetic domains therefore use
 ``imports: []`` plus the ``testkit.*`` transforms registered below, never a
-real domain package. End-to-end coverage against the shipped sales example
-lives in ``examples/sales/tests/``.
+real domain package. End-to-end coverage against the shipped customer_sales
+example lives in ``examples/customer_sales/tests/``.
 """
 
 import pytest

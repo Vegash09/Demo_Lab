@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../../../schemas/domain_config.schema.json
+#
+# Domain settings — environment-agnostic by construction: catalog/schema
+# values are pipeline-conf KEYS resolved per target (dev/stage/prod) through
+# bundle variables. Never put a literal catalog name here.
+schema_version: 1
+domain: customer_sales
+imports: # python modules registering this domain's @transform fns + custom checks
+  - customer_sales_etl.transforms.customers
+catalog_conf: datalab.catalog
+layers:
+  bronze:
+    schema_conf: datalab.bronze_schema
+    table_properties:
+      datalab.layer: bronze
+  silver:
+    schema_conf: datalab.silver_schema
+    table_properties:
+      datalab.layer: silver
+  gold:
+    schema_conf: datalab.gold_schema
+    table_properties:
+      datalab.layer: gold

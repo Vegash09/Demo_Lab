@@ -39,8 +39,10 @@ flowchart LR
 pipeline-conf KEY (`datalab.catalog`, `datalab.silver_schema`, …) resolved per
 environment through bundle variables, so promoting dev → stage → prod never
 edits a config file. In this repo the worked example lives at
-`examples/sales/config/sales/`; in an adopter repo the same tree sits at
-`config/<domain>/`.
+`examples/customer_sales/config/customer_sales/`; in an adopter repo the same
+tree sits at `config/<catalog>/`. Folder paths mirror the UC namespace —
+`config/<catalog>/<schema>/<table>.yml` ⇒ `<catalog>.<schema>.<table>` — see
+[NAMING.md](NAMING.md).
 
 ## The artifact, field by field
 
@@ -347,7 +349,7 @@ flowchart LR
 - Rules are dqx metadata — anything from the
   [dqx checks reference](https://databrickslabs.github.io/dqx/docs/reference/quality_checks/)
   can be pasted in, including `filter:`, `for_each_column:`, and custom
-  functions from `src/<domain>_etl/checks/` (declared via `domain.yml`
+  functions from `src/<catalog>_etl/checks/` (declared via `domain.yml`
   `imports:`). The NL→check-function mapping lives in the
   `author-ldp-artifact` skill and covers the full dqx catalog; pick the most
   specific function — `sql_expression`/`sql_query` are last resorts.
@@ -418,9 +420,9 @@ an actionable error instead of an AttributeError.
 
 ## Add a table — one artifact
 
-Create `config/<domain>/<layer>/<table>.yml` (file name == target table
+Create `config/<catalog>/<schema>/<table>.yml` (file name == target table
 name). Worked example with quality + CDC:
-`examples/sales/config/sales/silver/customers.yml`. Then:
+`examples/customer_sales/config/customer_sales/silver/customers.yml`. Then:
 
 ```bash
 make validate-configs   # pydantic + static dqx validation; fix what it names
@@ -434,7 +436,7 @@ If new logic is needed, register a pure function in the DOMAIN package and
 list its module in `domain.yml` `imports:`:
 
 ```python
-@transform("sales.enrich_orders")
+@transform("customer_sales.enrich_orders")
 def enrich_orders(df: DataFrame, with_tax: bool = False) -> DataFrame: ...
 ```
 
@@ -446,24 +448,26 @@ Built-ins available without any python: `framework.add_lineage`,
 
 ```mermaid
 flowchart LR
-    A["1 · config/&lt;domain&gt;/domain.yml<br/>name, imports, catalog_conf, layers"] --> B["2 · &lt;layer&gt;/&lt;table&gt;.yml<br/>one artifact per table"]
-    B --> C["3 · src/&lt;domain&gt;_etl/<br/>transforms · checks ·<br/>3-line pipeline.py"]
-    C --> D["4 · hatch wheel packages<br/>+= src/&lt;domain&gt;_etl"]
-    D --> E["5 · resources/&lt;domain&gt;_etl.pipeline.yml<br/>point datalab.config_dir at config/&lt;domain&gt;"]
+    A["1 · config/&lt;catalog&gt;/domain.yml<br/>name, imports, catalog_conf, layers"] --> B["2 · &lt;schema&gt;/&lt;table&gt;.yml<br/>one artifact per table"]
+    B --> C["3 · src/&lt;catalog&gt;_etl/<br/>transforms · checks ·<br/>3-line pipeline.py"]
+    C --> D["4 · hatch wheel packages<br/>+= src/&lt;catalog&gt;_etl"]
+    D --> E["5 · resources/&lt;catalog&gt;_etl.pipeline.yml<br/>point datalab.config_dir at config/&lt;catalog&gt;"]
 ```
 
-1. `config/<domain>/domain.yml` — domain name, `imports:`, `catalog_conf`,
-   per-layer `layers:` schema conf keys.
-2. `config/<domain>/<layer>/<table>.yml` — one artifact per target table.
-3. `src/<domain>_etl/` — `transforms/` (pure `@transform` functions),
+1. `config/<catalog>/domain.yml` — domain name (== base catalog name,
+   [NAMING.md](NAMING.md)), `imports:`, `catalog_conf`, per-layer `layers:`
+   schema conf keys.
+2. `config/<catalog>/<schema>/<table>.yml` — one artifact per target table.
+3. `src/<catalog>_etl/` — `transforms/` (pure `@transform` functions),
    `checks/` (custom dqx checks), `transformations/pipeline.py` (copy the
-   3-line sales one verbatim).
+   3-line customer_sales one verbatim).
 4. Add the domain package dir to `[tool.hatch.build.targets.wheel]` packages.
-5. Copy `examples/sales/resources/sales_etl.pipeline.yml` (+ job yml),
-   rename, point `datalab.config_dir` at the new config dir.
+5. Copy `examples/customer_sales/resources/customer_sales_etl.pipeline.yml`
+   (+ job yml), rename, point `datalab.config_dir` at the new config dir.
 
 Full walkthrough: [GETTING_STARTED.md](GETTING_STARTED.md). The shipped
-example to copy from: [examples/sales/](../examples/sales/README.md).
+example to copy from:
+[examples/customer_sales/](../examples/customer_sales/README.md).
 
 ## Verify before deploying
 

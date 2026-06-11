@@ -17,7 +17,7 @@ your CLI auth.
 ```bash
 make validate          # databricks bundle validate -t dev
 make deploy            # validate + databricks bundle deploy -t dev
-make run               # databricks bundle run sales_etl -t dev (refresh)
+make run               # databricks bundle run customer_sales_etl -t dev (refresh)
 # other targets:
 make deploy TARGET=stage
 ```

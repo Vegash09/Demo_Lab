@@ -55,7 +55,7 @@ PATTERNS=(
   '^Makefile$'
   '^\.env(\..*)?$'
   '^(AGENTS|CLAUDE|README)\.md$'
-  '^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK|GETTING_STARTED)\.md$'
+  '^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK|GETTING_STARTED|NAMING)\.md$'
 )
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR || true)

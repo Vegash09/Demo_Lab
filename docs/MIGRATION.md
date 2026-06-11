@@ -14,8 +14,9 @@ flowchart LR
 ```
 
 Today `src/` contains only the framework; complete reference domains live
-under `examples/` (this repo's example: `examples/sales/config/sales/`).
-See [FRAMEWORK.md](FRAMEWORK.md).
+under `examples/` (this repo's example:
+`examples/customer_sales/config/customer_sales/`). See
+[FRAMEWORK.md](FRAMEWORK.md) and the naming contract in [NAMING.md](NAMING.md).
 
 ## Concept map (legacy → current)
 
@@ -28,7 +29,7 @@ See [FRAMEWORK.md](FRAMEWORK.md).
 | full-snapshot dimension reloads | `target.cdc_from_snapshot:` (SDP diffs successive snapshots, SCD1/2) |
 | `SimpleDQ` / DQX checks JSON (`criticality: error/warn`) | dqx rules verbatim in the artifact (`columns[].quality` + `quality.checks`); `criticality` kept its meaning |
 | DQX quarantine writer | auto-created `<table>_quarantine` with `_errors` evidence structs — error rules never silently drop rows |
-| `config/**/*.json` per pipeline | `config/<domain>/domain.yml` + `<layer>/<table>.yml` (Pydantic + JSON-schema validated) |
+| `config/**/*.json` per pipeline | `config/<catalog>/domain.yml` + `<schema>/<table>.yml` (Pydantic + JSON-schema validated) |
 | notebook widgets (`get_widget_value`) | `pipeline_conf(spark, key)` (SDP) / `datalab.params.*` (job lanes) |
 | notebook business logic + test mirror | pure functions in `src/<domain>_etl/transforms/` + pytest; integration = dev refresh |
 | `pipelines/*.job.yml` (job clusters) | `resources/*.pipeline.yml` (serverless SDP) + `resources/*.job.yml` (pipeline_task) |
@@ -60,9 +61,23 @@ See [FRAMEWORK.md](FRAMEWORK.md).
   v0.295.0): naming only; `databricks bundle` commands unchanged.
 - **Repo layout (June 2026):** `src/sales_etl`, `src/jobs`, `notebooks/sales`,
   `config/sales`, the `resources/sales_*.yml` files and `sql/abac/` moved
-  into the self-contained `examples/sales/` tree; `src/` now holds only the
+  into a self-contained `examples/sales/` tree; `src/` now holds only the
   framework. Adopter repos keep the root-level layout (`examples/README.md`
   maps one to the other).
+- **UC-namespace naming (June 2026, [NAMING.md](NAMING.md)):** the example
+  domain was renamed `sales` → `customer_sales` so folder paths mirror the UC
+  namespace (the catalog is `customer_sales`): `examples/sales/` →
+  `examples/customer_sales/`, `config/sales/` → `config/customer_sales/`,
+  `src/sales_etl/` → `src/customer_sales_etl/` (transforms module
+  `sales.py` → `customers.py`, registry keys `sales.*` → `customer_sales.*`),
+  `src/jobs/sales/` → `src/jobs/customer_sales/`, `notebooks/sales/` →
+  `notebooks/customer_sales/`, resources `sales_etl` / `sales_export` /
+  `sales_quarantine_report` → `customer_sales_etl` / `customer_sales_export` /
+  `customer_sales_quarantine_report`. The UC volumes (`landing.sales`,
+  `exports.sales`) and the `sales_landing_path`/`sales_export_path` variables
+  kept their names — they reference the unrenamed volumes. Renaming the
+  resource keys recreates the deployed pipeline/jobs on next deploy (full
+  refresh required).
 
 ## Carry-overs
 
@@ -70,10 +85,10 @@ The sales customer flow kept its semantics across all three eras:
 
 - bronze→silver column selection + `to_date(signup_date)` → the artifact's
   `columns:` mapping (ANSI-safe `try_cast`) + the pure
-  `sales.normalize_email` transform.
+  `customer_sales.normalize_email` transform.
 - DQX `is_not_null(customer_id)` (error) and the email regex (warn) → the
   same dqx functions, now per-column `quality:` rules in
-  `examples/sales/config/sales/silver/customers.yml`.
+  `examples/customer_sales/config/customer_sales/silver/customers.yml`.
 - MERGE on `customer_id` → AUTO CDC keyed on `customer_id`, sequenced by the
   `_ingest_ts` lineage column (`target.cdc`).
 - Quarantine table `…customer_quarantine` → `silver.customers_quarantine`

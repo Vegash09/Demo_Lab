@@ -1,5 +1,5 @@
-"""Generator behavior on synthetic configs (the sales example's graph-shape
-contract lives in examples/sales/tests/test_pipeline_graph.py)."""
+"""Generator behavior on synthetic configs (the customer_sales example's
+graph-shape contract lives in examples/customer_sales/tests/test_pipeline_graph.py)."""
 
 import pytest
 

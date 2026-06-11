@@ -56,8 +56,8 @@ validate:  ## databricks bundle validate -t $(TARGET)
 deploy: validate  ## Deploy the bundle to $(TARGET)
 	databricks bundle deploy -t $(TARGET)
 
-run:  ## Trigger a refresh of the sales_etl pipeline on $(TARGET)
-	databricks bundle run sales_etl -t $(TARGET)
+run:  ## Trigger a refresh of the customer_sales_etl pipeline on $(TARGET)
+	databricks bundle run customer_sales_etl -t $(TARGET)
 
 destroy:  ## Tear down everything the bundle deployed to $(TARGET) (asks first)
 	databricks bundle destroy -t $(TARGET)

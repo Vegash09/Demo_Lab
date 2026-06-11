@@ -11,12 +11,14 @@ capability matrix): `docs/FRAMEWORK.md`.
 
 ## Where the artifact goes
 
-`config/<domain>/<layer>/<table>.yml` — the layer folder is the medallion
-layer of the TARGET table; the **file name must equal the target table name**.
-The domain's `domain.yml` maps layers → schema conf keys and lists the python
-`imports:`. In THIS repo the domains live under `examples/<domain>/config/`
-(e.g. `examples/sales/config/sales/silver/customers.yml`); adopter repos use
-root-level `config/<domain>/`.
+`config/<catalog>/<schema>/<table>.yml` — the path mirrors the UC namespace
+(`docs/NAMING.md`): the folder is the domain's BASE CATALOG name, the
+subfolder is the target table's schema (medallion layer), and the **file name
+must equal the target table name**. The domain's `domain.yml` maps layers →
+schema conf keys and lists the python `imports:`. In THIS repo the domains
+live under `examples/<catalog>/config/`
+(e.g. `examples/customer_sales/config/customer_sales/silver/customers.yml`);
+adopter repos use root-level `config/<catalog>/`.
 
 **Never hardcode a catalog or schema name.** Locations are pipeline-conf KEYS
 (`datalab.catalog`, `datalab.silver_schema`, …) resolved per environment by
@@ -154,8 +156,8 @@ Pure function in `src/<domain>_etl/transforms/` with
    quarantine evidence, casts.
 4. `make validate` (bundle), then deploy/run from a dev refresh.
 
-A brand-new domain additionally needs: `config/<domain>/domain.yml`,
-`src/<domain>_etl/` package (+ hatch wheel packages entry in pyproject.toml),
+A brand-new domain additionally needs: `config/<catalog>/domain.yml`,
+`src/<catalog>_etl/` package (+ hatch wheel packages entry in pyproject.toml),
 a copied pipeline resource pointing `datalab.config_dir` at the config dir —
-follow `docs/GETTING_STARTED.md` end to end (copy the `examples/sales/`
-shape).
+follow `docs/GETTING_STARTED.md` end to end (copy the
+`examples/customer_sales/` shape; naming contract: `docs/NAMING.md`).

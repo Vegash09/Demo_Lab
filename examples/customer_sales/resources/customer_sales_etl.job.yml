@@ -1,0 +1,29 @@
+# Scheduled refresh of the customer_sales_etl pipeline. The job carries the
+# schedule and notifications; the pipeline owns all compute and transformation
+# logic.
+
+resources:
+  jobs:
+    customer_sales_etl_refresh:
+      name: customer_sales_etl_refresh
+
+      trigger:
+        # Run once a day, a day after the previous run. Paused automatically
+        # in the dev target (mode: development).
+        periodic:
+          interval: 1
+          unit: DAYS
+
+      # email_notifications:
+      #   on_failure:
+      #     - data-platform@your-org.com
+
+      tasks:
+        - task_key: refresh_customer_sales_etl
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.customer_sales_etl.id}
+
+      queue:
+        enabled: true
+
+      permissions: ${var.job_permissions}
