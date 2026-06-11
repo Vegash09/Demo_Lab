@@ -32,15 +32,20 @@ Quick pointers:
   `examples/*/resources/*.yml` (adopters: `resources/*.yml`), targets `dev`
   (mode: development) / `stage` / `prod`. `make validate` before pushing
   bundle changes.
-- Branch from `main` (`feature/…`, `fix/…`, `debug/…`); head branches are
-  auto-deleted on merge (AGENTS.md "Branching & releases").
+- **MANDATORY branch-first protocol**: before editing ANY file, verify a
+  work branch is checked out — if on `main`, your FIRST action is
+  `git switch main && git pull && git switch -c <feature|fix|debug>/<slug>`.
+  Never edit, commit, or push while on `main`; one PR per branch; head
+  branches are auto-deleted on merge (AGENTS.md "Branching & releases").
+  Enforced by `.cursor/hooks/branch_guard.py` (file edits + git
+  commit/push-to-main are denied on `main`) and `.githooks/pre-commit`.
 - Dependencies are **uv-only**: `pyproject.toml` + committed `uv.lock`
   (`make lock` after edits; CI runs `uv sync --frozen`). Never add
   databricks-connect to this venv — it conflicts with the pyspark dev dep.
-- CI (`.github/workflows/common-ci-steps.yml`) runs ruff + pytest (local
-  Spark) + `bundle validate`; CD deploys via **GitHub OIDC** (no client
-  secret). The OIDC subject must match `repo:<owner>/<repo>:environment:<target>`.
-  See docs/CICD.md.
+- CI (`.github/workflows/common-ci-steps.yml`) runs ruff + validate-configs +
+  pytest (local Spark) + `bundle validate`; CD deploys via **GitHub OIDC**
+  (no client secret). The OIDC subject must match
+  `repo:<owner>/<repo>:environment:<target>`. See docs/CICD.md.
 - Production-sensitive files are protected by
   `.claude/hooks/protected_files_guard.py` and `.githooks/pre-commit`. Keep
   both + the AGENTS.md "Protected file surface" table in sync when you change

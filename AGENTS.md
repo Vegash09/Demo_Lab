@@ -66,9 +66,8 @@ src/
   datalab/                THE FRAMEWORK — the only package under src/; reusable, zero domain code
     config.py             pipeline_conf() (read pipeline configuration), fqn()
     params.py             notebook_params() / cli_params() — job-lane parameter contract
-    quality.py            DEPRECATED predicate helpers (dqx replaced them)
     framework/            flowspec: models, loader, registry, readers, writers,
-                          dq (DQX adapter), generator, devtools, compat
+                          dq (DQX adapter), generator, devtools, compat, context, errors
 examples/                 REFERENCE domains — each mirrors an adopter repo root (examples/README.md)
   sales/
     README.md             File-by-file tour of the complete worked example
@@ -208,9 +207,10 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
 - Serverless `environments:` block installs the repo with
   `--editable ${workspace.file_path}` — the same mechanism as the pipeline,
   one dependency-delivery path.
-- Reuse `datalab.quality.all_rules_predicate` / `violation_predicate` for any
-  valid/invalid split. If you find yourself wanting upsert semantics, the
-  target should have been SDP — never reintroduce `MERGE`.
+- Any valid/invalid split belongs upstream in the SDP lane (dqx rules in the
+  table's artifact — quarantine evidence included); jobs consume the already
+  gated tables. If you find yourself wanting upsert semantics, the target
+  should have been SDP — never reintroduce `MERGE`.
 - No per-file ruff ignores here: entry points own their SparkSession, so an
   undefined name is a real bug.
 
@@ -229,9 +229,16 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
 
 ## Branching & releases
 
-- **Every change starts from `main`**: `git switch main && git pull`, then a
-  fresh branch named `feature/<slug>`, `fix/<slug>`, or `debug/<slug>`.
-  Never stack new work on a previous feature branch.
+- **MANDATORY — branch before you touch anything.** Every change (agent or
+  human) starts from `main`: `git switch main && git pull`, then a fresh
+  branch named `feature/<slug>`, `fix/<slug>`, or `debug/<slug>` depending on
+  the work. Never edit files, commit, or push while `main` is checked out,
+  and never stack new work on a previous feature branch. This is ENFORCED,
+  not just convention: `.cursor/hooks/branch_guard.py` denies file edits and
+  `git commit`/`git push`-to-main in BOTH agent harnesses (wired in
+  `.cursor/hooks.json` and `.claude/settings.json`), and
+  `.githooks/pre-commit` blocks human commits on `main`. If a guard blocks
+  you mid-task: create the branch (uncommitted edits carry over) and retry.
 - One PR per branch into `main` (unified template, see "Open a pull
   request"). CI (lint + test + validate-configs + bundle validate) must be
   green; merge via the GitHub UI.
@@ -364,7 +371,7 @@ change:
 | `^databricks\.yml$`, `^(resources\|examples/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle (deploy surface) |
 | `^pyproject\.toml$`, `^uv\.lock$` | dependency manifests (uv-managed, CI `--frozen`) |
 | `^\.databricksignore$` | controls what ships to the workspace |
-| `^src/datalab/(config|quality|params)\.py$` | parameterization + quality contracts used by every pipeline and job lane |
+| `^src/datalab/(config|params)\.py$` | parameterization contracts used by every pipeline and job lane |
 | `^(config\|examples/[^/]+/config)/.*\.ya?ml$` | dataset configs — the deployed pipeline definition |
 | `^src/datalab/framework/(models|loader|generator|dq|writers)\.py$` | framework core: config contract + LDP/dqx generation semantics |
 | `^\.github/(workflows\|actions)/.*` | CI/CD (OIDC, bundle deploy) |
@@ -381,6 +388,11 @@ The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
 - Agents: `.claude/hooks/protected_files_guard.py` (PreToolUse).
 - Humans: `.githooks/pre-commit` — enable with `make enable-githooks`; bypass a
   single commit with `make commit-protected MSG="..."` (`PROTECTED_EDIT_OK=1`).
+
+Separate from the protected-file surface, `.cursor/hooks/branch_guard.py`
+(agents, both harnesses) and the same `.githooks/pre-commit` (humans) enforce
+the branch-first policy — no edits/commits/pushes while `main` is checked out
+(see "Branching & releases").
 
 ## Common tasks
 
@@ -451,6 +463,9 @@ The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
 - Don't edit `uv.lock` by hand.
 - Don't commit `.env`, workspace state (`.databricks/`), or `.venv`.
 - Don't open a PR that bypasses the unified template.
+- Don't make ANY change while `main` is checked out — first action of every
+  task is `git switch -c <feature|fix|debug>/<slug>` from a fresh `main`
+  (enforced by `branch_guard` + the pre-commit hook).
 - Don't branch off a feature branch — new work branches from `main`.
 
 ## Security

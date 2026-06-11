@@ -44,7 +44,7 @@ test: install  ## Run the unit test suite (local Spark, no workspace needed)
 CONFIG_DIRS := $(wildcard config) $(wildcard examples/*/config)
 
 validate-configs: install  ## Validate every domain's <layer>/<table>.yml artifacts (pydantic + dqx checks)
-	$(UV) run python -m datalab.framework.loader $(CONFIG_DIRS)
+	$(UV) run python -m datalab.framework $(CONFIG_DIRS)
 
 schema: install  ## Regenerate schemas/layer_config.schema.json from the Pydantic models
 	$(UV) run python scripts/export_config_schema.py

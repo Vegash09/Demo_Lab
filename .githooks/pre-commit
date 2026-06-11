@@ -20,13 +20,30 @@ if [[ "${PROTECTED_EDIT_OK:-}" == "1" ]]; then
   exit 0
 fi
 
+# ---- branch-first policy (AGENTS.md "Branching & releases") -----------------
+# main only moves via PRs: direct commits on main/master are blocked. The
+# agent-side counterpart is .cursor/hooks/branch_guard.py (both harnesses).
+# symbolic-ref (not rev-parse) so the very first commit on an unborn branch
+# is caught too; detached HEAD yields "" and passes.
+branch=$(git symbolic-ref --short -q HEAD 2>/dev/null || echo "")
+if [[ "$branch" == "main" || "$branch" == "master" ]]; then
+  {
+    printf '\n  COMMIT BLOCKED — you are on %s.\n\n' "$branch"
+    printf '  Every change starts from a fresh branch (feature/<slug>, fix/<slug>,\n'
+    printf '  debug/<slug>) and lands in main via a PR. Move your work over with:\n\n'
+    printf '      git switch -c <feature|fix|debug>/<slug>      # keeps staged changes\n\n'
+    printf '  (Emergency bypass, discouraged: PROTECTED_EDIT_OK=1 git commit ...)\n\n'
+  } >&2
+  exit 1
+fi
+
 PATTERNS=(
   '^databricks\.yml$'
   '^(resources|examples/[^/]+/resources)/.*\.yml$'
   '^pyproject\.toml$'
   '^uv\.lock$'
   '^\.databricksignore$'
-  '^src/datalab/(config|quality|params)\.py$'
+  '^src/datalab/(config|params)\.py$'
   '^(config|examples/[^/]+/config)/.*\.ya?ml$'
   '^src/datalab/framework/(models|loader|generator|dq|writers)\.py$'
   '^\.github/(workflows|actions)/.*'
@@ -38,7 +55,7 @@ PATTERNS=(
   '^Makefile$'
   '^\.env(\..*)?$'
   '^(AGENTS|CLAUDE|README)\.md$'
-  '^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK)\.md$'
+  '^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK|GETTING_STARTED)\.md$'
 )
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
@@ -78,7 +95,7 @@ fi
     • For databricks.yml / resources/*.yml — validate locally (`make validate`).
     • For pyproject.toml — `make lock` was run and uv.lock is in the same commit.
     • For .github/** — OIDC auth + `uv sync --frozen` semantics stay intact.
-    • For src/datalab/{config,quality,params}.py — every pipeline and job lane depends on these.
+    • For src/datalab/{config,params}.py — every pipeline and job lane depends on these.
 
   This commit is BLOCKED until you acknowledge. To proceed:
 

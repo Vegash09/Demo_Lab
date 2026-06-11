@@ -1,7 +1,6 @@
 import pytest
 
 from datalab.config import fqn, pipeline_conf
-from datalab.quality import all_rules_predicate, violation_predicate
 
 
 def test_fqn():
@@ -17,11 +16,3 @@ def test_pipeline_conf_default_and_missing(spark):
     assert pipeline_conf(spark, "datalab.does_not_exist", "fallback") == "fallback"
     with pytest.raises(ValueError, match="datalab.missing"):
         pipeline_conf(spark, "datalab.missing")
-
-
-def test_rule_predicates_still_work_but_warn_deprecated():
-    rules = {"a": "x IS NOT NULL", "b": "y > 0"}
-    with pytest.warns(DeprecationWarning, match="dqx"):
-        assert all_rules_predicate(rules) == "(x IS NOT NULL) AND (y > 0)"
-    with pytest.warns(DeprecationWarning, match="dqx"):
-        assert violation_predicate(rules) == "NOT ((x IS NOT NULL) AND (y > 0))"

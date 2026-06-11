@@ -453,8 +453,8 @@ example to copy from: [examples/sales/](../examples/sales/README.md).
   tests, so notebook and pytest are literally the same code path.
   `run_dataset(..., flow="hist_2024")` previews a specific fan-in source or
   backfill entry.
-- `datalab.framework.devtools.capture_graph(spark, config_dir)` — list the
-  full generated dataset/flow graph locally (no Databricks).
+- `datalab.framework.capture_graph(spark, config_dir)` — list the full
+  generated dataset/flow graph locally (no Databricks).
 - CDC caveat: the SCD merge itself is engine-owned; `run_dataset` verifies
   everything up to the valid/quarantine frames and prints the CDC plan. The
   merge is verified by a dev refresh (`make run`).

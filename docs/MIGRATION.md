@@ -42,7 +42,7 @@ history stays navigable.
 |---|---|
 | `@dp.table` / `@dp.materialized_view` source files per table | ONE `<layer>/<table>.yml` artifact; `make validate-configs` replaces "does it import" |
 | `@dp.expect_all_or_drop(QUARANTINE_RULES)` / `@dp.expect_all(WARN_RULES)` | dqx rules in the artifact: `criticality: error` (drop + quarantine) / `warn` (flag); `dp.expect_*` is retired in this repo |
-| `datalab.quality.violation_predicate` quarantine filter | dqx `get_invalid` + evidence structs (the helpers in `datalab.quality` remain only as deprecated shims) |
+| `datalab.quality.violation_predicate` quarantine filter | dqx `get_invalid` + evidence structs (the deprecated `datalab.quality` shims are removed; git history has them) |
 | Hand-wired `dp.create_auto_cdc_flow` calls | `target.cdc:` in the artifact |
 | `@dp.append_flow(once=True)` backfills by hand | `backfill:` entries in the artifact |
 | Rules dicts in `src/datalab/transforms/` | Domain transforms moved to `src/<domain>_etl/transforms/`; the framework owns no domain code |

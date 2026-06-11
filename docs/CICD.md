@@ -14,9 +14,11 @@ Databricks secrets are stored in GitHub.
 
 Reusable pieces:
 
-- `common-ci-steps.yml` — `uv sync --frozen` → `ruff check` → `pytest`
-  (local Spark, Java 21; runs the framework suite AND the examples' suites)
-  → `databricks bundle validate -t <target>` (OIDC).
+- `common-ci-steps.yml` — `uv sync --frozen` → `ruff check` (same paths as
+  `make lint`, examples/ included) → config validation
+  (`python -m datalab.framework`, the `make validate-configs` loader) →
+  `pytest` (local Spark, Java 21; runs the framework suite AND the examples'
+  suites) → `databricks bundle validate -t <target>` (OIDC).
 - `common-cd-steps.yml` — OIDC setup → `deploy-dab` composite action
   (validate + deploy with optional `--var` overrides).
 - Composite actions: `.github/actions/databricks-setup` (CLI install +
