@@ -36,6 +36,10 @@ GROUPS = {
 
 SCHEMAS = ["bronze", "silver", "gold", "landing", "exports"]
 
+# The CI/CD deploy service principal (GitHub OIDC) — needs full rights on the
+# catalog it deploys pipelines/tables into. Keep in sync with docs/CICD.md.
+DEPLOY_SP = "437346a1-0b53-418a-80d4-abaf2586ed97"
+
 
 def bootstrap_sql(target: str, managed_location: str = "") -> list[str]:
     """Idempotent DDL + grants for one target. Readers see gold (and silver
@@ -49,7 +53,11 @@ def bootstrap_sql(target: str, managed_location: str = "") -> list[str]:
     reader = GROUPS[target]["reader"]
     engineer = GROUPS[target]["engineer"]
     location = f" MANAGED LOCATION '{managed_location}'" if managed_location else ""
-    stmts = [f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location}"]
+    stmts = [
+        f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location}",
+        # The deploy SP owns everything the bundle creates in this catalog.
+        f"GRANT ALL PRIVILEGES ON CATALOG `{catalog}` TO `{DEPLOY_SP}`",
+    ]
     stmts += [f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{s}`" for s in SCHEMAS]
     stmts += [
         f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`sales`",
