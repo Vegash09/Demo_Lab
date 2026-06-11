@@ -22,8 +22,14 @@ from datalab.framework.context import ResolveContext
 from datalab.framework.dq import DQAdapter, summarize_dq_results
 from datalab.framework.errors import ConfigError
 from datalab.framework.loader import load_domain_configs
-from datalab.framework.models import StreamingTableTarget
+from datalab.framework.models import (
+    DatasetSpec,
+    SnapshotFunctionSource,
+    SourceSpec,
+    StreamingTableTarget,
+)
 from datalab.framework.readers import prepare, read_source
+from datalab.framework.registry import resolve_snapshot_source
 
 
 @dataclass(frozen=True)
@@ -38,6 +44,21 @@ class DatasetRunResult:
     cdc_plan: str | None
 
 
+def _pick_flow_source(ds: DatasetSpec, flow: str | None) -> SourceSpec:
+    if flow is None:
+        return ds.primary_source
+    for fs in ds.sources:
+        if fs.name == flow:
+            return fs.source
+    for b in ds.backfill:
+        if b.name == flow:
+            return b.source
+    names = [fs.name for fs in ds.sources] + [b.name for b in ds.backfill]
+    raise ConfigError(
+        f"dataset {ds.name!r} has no flow {flow!r} — flows: {names or '(single source)'}"
+    )
+
+
 def run_dataset(
     spark: SparkSession,
     config_dir: str | Path,
@@ -46,7 +67,10 @@ def run_dataset(
     *,
     params: Mapping[str, str] | None = None,
     inputs: Mapping[str, DataFrame] | None = None,
+    flow: str | None = None,
 ) -> DatasetRunResult:
+    """Run one dataset (by default its primary flow; pass ``flow=`` to pick a
+    fan-in source or backfill entry by name) through the framework path."""
     configs = load_domain_configs(Path(config_dir), [layer])
     layer_config = configs[0]
     matches = [d for d in layer_config.datasets if d.name == dataset]
@@ -63,7 +87,18 @@ def run_dataset(
         else ResolveContext(spark=spark, inputs=inputs or {}, force_batch=True)
     )
 
-    input_df = read_source(spark, ds.source, layer_config, ctx)
+    source = _pick_flow_source(ds, flow)
+    if isinstance(source, SnapshotFunctionSource):
+        # Preview the FIRST snapshot the registered walker yields.
+        result = resolve_snapshot_source(source.function)(None)
+        if result is None:
+            raise ConfigError(
+                f"snapshot source {source.function!r} returned no first snapshot "
+                "(fn(None) -> None) — nothing to preview"
+            )
+        input_df = result[0]
+    else:
+        input_df = read_source(spark, source, layer_config, ctx)
     transformed = prepare(input_df, ds)
 
     checked = valid = quarantine = metrics = None
@@ -84,6 +119,13 @@ def run_dataset(
             f"{dataset} by keys={list(cdc.keys)} ordered by {cdc.sequence_by!r}, "
             f"SCD type {cdc.scd_type}"
         )
+    elif isinstance(ds.target, StreamingTableTarget) and ds.target.cdc_from_snapshot:
+        snap = ds.target.cdc_from_snapshot
+        cdc_plan = (
+            f"AUTO CDC FROM SNAPSHOT (engine-owned, verify with a dev refresh): "
+            f"diff successive snapshots into {dataset} by keys={list(snap.keys)}, "
+            f"SCD type {snap.scd_type}; keys absent from the newest snapshot are deleted"
+        )
 
     return DatasetRunResult(
         spec=ds,
@@ -103,8 +145,16 @@ def plan(config_dir: str | Path, layers: list[str] | None = None) -> str:
     for cfg in load_domain_configs(Path(config_dir), layers):
         lines.append(f"layer {cfg.layer} (domain {cfg.domain})")
         for ds in cfg.datasets:
-            src = ds.source
-            src_desc = getattr(src, "name", None) or getattr(src, "path_conf", "?")
+            src = ds.primary_source
+            src_desc = (
+                getattr(src, "name", None)
+                or getattr(src, "path_conf", None)
+                or getattr(src, "function", None)
+                or getattr(src, "topic", None)
+                or getattr(src, "subscribe_pattern", "?")
+            )
+            if ds.sources:
+                src_desc = f"fan-in[{', '.join(fs.name for fs in ds.sources)}]"
             mapping = f"{len(ds.columns)} mapped column(s)" if ds.columns else None
             steps = " -> ".join(
                 filter(None, [mapping, *(step.function for step in ds.transform)])
@@ -114,6 +164,7 @@ def plan(config_dir: str | Path, layers: list[str] | None = None) -> str:
             warns = sum(1 for m in checks if m.get("criticality") == "warn")
             lines.append(
                 f"  {ds.name}: {src.kind}:{src_desc} -> {steps} -> {ds.target.kind}"
+                + (f" (+{len(ds.backfill)} backfill once-flow(s))" if ds.backfill else "")
                 + (f" [dq: {errors} error / {warns} warn rule(s)" if checks else "")
                 + (f", quarantine={ds.quarantine_name()}" if ds.quarantine_name() else "")
                 + (f", metrics={ds.metrics_name()}" if ds.metrics_name() else "")

@@ -38,14 +38,37 @@ class ConfigBase(BaseModel):
 # --------------------------------------------------------------------------
 # Sources (discriminated on `kind`)
 # --------------------------------------------------------------------------
+FileFormat = Literal["json", "csv", "parquet", "avro", "orc", "text", "xml", "binaryFile"]
+
+
 class CloudFilesSource(ConfigBase):
+    """Streaming ingest from cloud storage via Auto Loader (``cloudFiles``).
+
+    SDP manages schemaLocation/checkpoints itself; everything else from the
+    Auto Loader option catalog goes in ``options:`` verbatim
+    (``cloudFiles.inferColumnTypes``, ``cloudFiles.schemaEvolutionMode``,
+    ``cloudFiles.maxFilesPerTrigger``, per-format reader options, …)."""
+
     kind: Literal["cloud_files"]
     path_conf: ConfKey
-    format: Literal["json", "csv", "parquet", "avro"] = "json"
+    format: FileFormat = "json"
     options: dict[str, str] = {}
     # NOT named `schema` — that shadows BaseModel.schema.
-    schema_hints: str | None = None
+    schema_hints: str | None = None  # cloudFiles.schemaHints (partial contract)
+    reader_schema: str | None = None  # full explicit DDL schema (skips inference)
     add_lineage: bool = True
+
+
+class FileSource(ConfigBase):
+    """BATCH read of files (``spark.read.format(...).load(path)``) — for
+    materialized views over file drops and for ``backfill:`` once-flows.
+    For incremental ingest use ``cloud_files`` instead."""
+
+    kind: Literal["files"]
+    path_conf: ConfKey
+    format: FileFormat | Literal["delta"] = "parquet"
+    options: dict[str, str] = {}
+    reader_schema: str | None = None
 
 
 class TableSource(ConfigBase):
@@ -58,6 +81,11 @@ class TableSource(ConfigBase):
     catalog_conf: ConfKey | None = None  # None -> layer defaults
     schema_conf: ConfKey | None = None  # None -> layer defaults
     as_stream: bool = False
+    # Reader options, passed verbatim. Streaming: skipChangeCommits (REQUIRED
+    # when the source is an AUTO CDC/SCD target or takes updates/deletes),
+    # readChangeFeed + startingVersion (stream the change feed), …
+    # Batch: versionAsOf / timestampAsOf time travel, …
+    options: dict[str, str] = {}
 
     @model_validator(mode="after")
     def _layer_xor_schema(self) -> TableSource:
@@ -76,47 +104,212 @@ class ViewSource(ConfigBase):
     as_stream: bool = True
 
 
+class KafkaSource(ConfigBase):
+    """Streaming read from Kafka — including Kafka-compatible endpoints such
+    as Azure Event Hubs' Kafka surface and AWS MSK.
+
+    The frame arrives with the Kafka wire schema (binary ``key``/``value``,
+    ``topic``, ``partition``, ``offset``, ``timestamp``); decode in
+    ``columns:``/``transform:``. Auth/tuning options (``kafka.security.*``,
+    ``startingOffsets``, ``maxOffsetsPerTrigger``, …) pass through verbatim."""
+
+    kind: Literal["kafka"]
+    bootstrap_servers_conf: ConfKey  # kafka.bootstrap.servers is per-environment
+    topic: str | None = None  # subscribe
+    subscribe_pattern: str | None = None  # subscribePattern
+    options: dict[str, str] = {}
+
+    @model_validator(mode="after")
+    def _exactly_one_subscription(self) -> KafkaSource:
+        if bool(self.topic) == bool(self.subscribe_pattern):
+            raise ValueError("kafka source needs exactly one of topic or subscribe_pattern")
+        return self
+
+
+class SnapshotFunctionSource(ConfigBase):
+    """Historical snapshot sets for ``cdc_from_snapshot`` (pattern B): a
+    registered ``@snapshot_source`` function with the SDP contract
+    ``(latest_processed_version | None) -> (DataFrame, version) | None``.
+    Only valid with a ``streaming_table`` + ``cdc_from_snapshot`` target."""
+
+    kind: Literal["snapshot_function"]
+    function: str  # registry key, e.g. 'sales.customer_snapshots'
+
+
 SourceSpec = Annotated[
-    CloudFilesSource | TableSource | ViewSource, Field(discriminator="kind")
+    CloudFilesSource
+    | FileSource
+    | TableSource
+    | ViewSource
+    | KafkaSource
+    | SnapshotFunctionSource,
+    Field(discriminator="kind"),
 ]
+
+
+def _is_streaming_source(src: object) -> bool:
+    if isinstance(src, (CloudFilesSource, KafkaSource)):
+        return True
+    if isinstance(src, (FileSource, SnapshotFunctionSource)):
+        return False
+    return bool(getattr(src, "as_stream", False))
+
+
+class FlowSource(ConfigBase):
+    """One named source flow of a multi-source (fan-in) streaming table.
+
+    ``name`` is part of the generated flow name — SDP uses the flow name as
+    the streaming-checkpoint identity, so RENAMING a flow abandons its
+    checkpoint and reprocesses from scratch. Pick stable names."""
+
+    name: Identifier
+    source: SourceSpec
+    comment: str | None = None
+
+
+class BackfillSpec(ConfigBase):
+    """A one-time historical load into the target (``once=True`` flow).
+
+    Runs once, then idles in the graph as an audit trail — and re-runs
+    automatically on a FULL REFRESH to recreate its slice of the table.
+    Leave it in the config after it completes; deleting it deletes that
+    data's recreation path."""
+
+    name: Identifier
+    source: SourceSpec
+    comment: str | None = None
 
 
 # --------------------------------------------------------------------------
 # Targets (discriminated on `kind`)
 # --------------------------------------------------------------------------
 class CdcSpec(ConfigBase):
+    """AUTO CDC (``dp.create_auto_cdc_flow``) — upserts/SCD from a change feed.
+
+    A CDC-fed streaming table accepts ONLY CDC flows (SDP rule): extra
+    ``sources:`` become further CDC flows and ``backfill:`` entries become
+    ``once`` CDC flows (whose sources must therefore be STREAMING)."""
+
     keys: list[Identifier] = Field(min_length=1)
-    sequence_by: str
+    # str, or a list for multi-column ordering (becomes struct(): first field
+    # orders, later fields break ties). Must be sortable, never NULL.
+    sequence_by: str | list[str]
     scd_type: Literal[1, 2] = 1
-    apply_as_deletes: str | None = None
-    except_columns: list[str] = []
+    apply_as_deletes: str | None = None  # SQL condition marking DELETE events
+    apply_as_truncates: str | None = None  # SQL condition → full truncate; SCD1 only
+    column_list: list[str] = []  # include-list of source columns …
+    except_columns: list[str] = []  # … OR exclude-list (not both)
     ignore_null_updates: bool = False
-    track_history_except_columns: list[str] = []
+    track_history_columns: list[str] = []  # SCD2: only these open history rows …
+    track_history_except_columns: list[str] = []  # … OR all except these (not both)
+
+    @property
+    def sequence_columns(self) -> list[str]:
+        return [self.sequence_by] if isinstance(self.sequence_by, str) else list(self.sequence_by)
 
     @model_validator(mode="after")
-    def _keys_not_excluded(self) -> CdcSpec:
+    def _consistent(self) -> CdcSpec:
+        if isinstance(self.sequence_by, list) and not self.sequence_by:
+            raise ValueError("cdc.sequence_by list cannot be empty")
+        if self.column_list and self.except_columns:
+            raise ValueError("cdc: give either column_list or except_columns, not both")
+        if self.track_history_columns and self.track_history_except_columns:
+            raise ValueError(
+                "cdc: give either track_history_columns or track_history_except_columns, not both"
+            )
+        if self.apply_as_truncates and self.scd_type != 1:
+            raise ValueError("cdc.apply_as_truncates is SCD type 1 only (SDP does not "
+                             "support truncates for SCD2)")
         clash = set(self.keys) & set(self.except_columns)
         if clash:
             raise ValueError(f"cdc.keys {sorted(clash)} cannot also be in cdc.except_columns")
-        if self.sequence_by in self.except_columns:
-            raise ValueError(f"cdc.sequence_by {self.sequence_by!r} cannot be in cdc.except_columns")
+        for seq in self.sequence_columns:
+            if seq in self.except_columns:
+                raise ValueError(f"cdc.sequence_by {seq!r} cannot be in cdc.except_columns")
+        if self.column_list:
+            missing = [k for k in self.keys if k not in self.column_list]
+            if missing:
+                raise ValueError(f"cdc.keys {missing} must be included in cdc.column_list")
         return self
+
+
+class SnapshotCdcSpec(ConfigBase):
+    """AUTO CDC FROM SNAPSHOT (``dp.create_auto_cdc_from_snapshot_flow``) —
+    SCD1/SCD2 computed by DIFFING successive full snapshots (keys absent from
+    the newest snapshot are deleted). Two patterns, chosen by the dataset's
+    ``source:``:
+
+    * batch ``table``/``files``/``view`` source → the prepared frame is
+      re-read on every pipeline update (periodic snapshots);
+    * ``snapshot_function`` source → a registered ``@snapshot_source``
+      function walks an historical snapshot set version by version."""
+
+    keys: list[Identifier] = Field(min_length=1)
+    scd_type: Literal[1, 2] = 1
+    track_history_columns: list[str] = []
+    track_history_except_columns: list[str] = []
+
+    @model_validator(mode="after")
+    def _consistent(self) -> SnapshotCdcSpec:
+        if self.track_history_columns and self.track_history_except_columns:
+            raise ValueError(
+                "cdc_from_snapshot: give either track_history_columns or "
+                "track_history_except_columns, not both"
+            )
+        return self
+
+
+SCD2_PERIOD_COLUMNS = ("__START_AT", "__END_AT")
 
 
 class StreamingTableTarget(ConfigBase):
     kind: Literal["streaming_table"]
     cdc: CdcSpec | None = None
+    cdc_from_snapshot: SnapshotCdcSpec | None = None
     partition_cols: list[str] = []
     cluster_by: list[str] = []
+    cluster_by_auto: bool = False  # automatic liquid clustering (may combine with cluster_by)
     table_properties: dict[str, str] = {}
     table_schema: str | None = Field(None, alias="schema")
+
+    @model_validator(mode="after")
+    def _one_cdc_mode(self) -> StreamingTableTarget:
+        if self.cdc and self.cdc_from_snapshot:
+            raise ValueError(
+                "streaming_table: cdc and cdc_from_snapshot cannot share a target "
+                "(SDP forbids mixing feed-CDC and snapshot-CDC flows)"
+            )
+        if self.partition_cols and (self.cluster_by or self.cluster_by_auto):
+            raise ValueError("partition_cols cannot be combined with liquid clustering")
+        scd2 = (self.cdc and self.cdc.scd_type == 2) or (
+            self.cdc_from_snapshot and self.cdc_from_snapshot.scd_type == 2
+        )
+        if scd2 and self.table_schema:
+            missing = [c for c in SCD2_PERIOD_COLUMNS if c not in self.table_schema]
+            if missing:
+                raise ValueError(
+                    f"SCD type 2 with an explicit schema must declare {missing} "
+                    "(same data type as sequence_by) — SDP requirement"
+                )
+        return self
 
 
 class MaterializedViewTarget(ConfigBase):
     kind: Literal["materialized_view"]
     partition_cols: list[str] = []
     cluster_by: list[str] = []
+    cluster_by_auto: bool = False
     table_properties: dict[str, str] = {}
+    table_schema: str | None = Field(None, alias="schema")
+    # SDP refresh policy (Beta): auto (cost-based) | incremental (fall back to
+    # full) | incremental_strict (fail instead of full recompute) | full.
+    refresh_policy: Literal["auto", "incremental", "incremental_strict", "full"] | None = None
+
+    @model_validator(mode="after")
+    def _clustering(self) -> MaterializedViewTarget:
+        if self.partition_cols and (self.cluster_by or self.cluster_by_auto):
+            raise ValueError("partition_cols cannot be combined with liquid clustering")
+        return self
 
 
 class TemporaryViewTarget(ConfigBase):
@@ -128,7 +321,8 @@ class TemporaryViewTarget(ConfigBase):
 class DeltaSinkTarget(ConfigBase):
     """Streaming append to a delta table/path OUTSIDE pipeline management
     (dp.create_sink + dp.append_flow). Prefer materialized_view for ordinary
-    batch tables — this is for external destinations only."""
+    batch tables — this is for external destinations only. NOTE (SDP): a full
+    refresh does NOT clear sink data; reprocessed rows are appended."""
 
     kind: Literal["delta_sink"]
     table_conf: ConfKey | None = None
@@ -142,8 +336,27 @@ class DeltaSinkTarget(ConfigBase):
         return self
 
 
+class KafkaSinkTarget(ConfigBase):
+    """Streaming append to a Kafka topic (dp.create_sink format=kafka +
+    dp.append_flow) — also Kafka-compatible endpoints (Event Hubs, MSK).
+
+    The flow's frame must follow the Kafka writer contract: a ``value``
+    column (string/binary; ``framework.to_json_value`` packs rows for you),
+    optional ``key``/``partition``/``headers``/``topic`` columns. Same SDP
+    caveat as delta_sink: full refresh never clears sink data."""
+
+    kind: Literal["kafka_sink"]
+    bootstrap_servers_conf: ConfKey
+    topic: str | None = None  # static topic; omit to route via a per-row `topic` column
+    options: dict[str, str] = {}
+
+
 TargetSpec = Annotated[
-    StreamingTableTarget | MaterializedViewTarget | TemporaryViewTarget | DeltaSinkTarget,
+    StreamingTableTarget
+    | MaterializedViewTarget
+    | TemporaryViewTarget
+    | DeltaSinkTarget
+    | KafkaSinkTarget,
     Field(discriminator="kind"),
 ]
 
@@ -239,7 +452,13 @@ class DatasetSpec(ConfigBase):
 
     name: Identifier
     comment: str | None = None
-    source: SourceSpec
+    # Exactly one of `source` (single flow) or `sources` (fan-in: one named
+    # append/CDC flow per entry — the SDP replacement for UNION, keeps the
+    # target incrementally updatable).
+    source: SourceSpec | None = None
+    sources: list[FlowSource] = []
+    # One-time historical loads (`once` flows); re-run only on full refresh.
+    backfill: list[BackfillSpec] = []
     # Target-table columns: source→target names, data types, per-column dqx
     # rules. The framework generates the projection (ANSI-safe try_cast).
     columns: list[ColumnSpec] = []
@@ -253,10 +472,24 @@ class DatasetSpec(ConfigBase):
         return [v] if isinstance(v, dict) else v
 
     @property
+    def primary_source(self) -> SourceSpec:
+        """The single source, or the first fan-in flow's source (devtools)."""
+        if self.source is not None:
+            return self.source
+        return self.sources[0].source
+
+    def streaming_flows(self) -> list[tuple[str | None, SourceSpec]]:
+        """(flow-name-suffix, source) per continuous flow; suffix None for the
+        legacy single-source form (keeps existing view/flow/checkpoint names)."""
+        if self.sources:
+            return [(fs.name, fs.source) for fs in self.sources]
+        return [(None, self.primary_source)]
+
+    @property
     def is_streaming(self) -> bool:
-        if isinstance(self.source, CloudFilesSource):
-            return True
-        return bool(self.source.as_stream)
+        if self.sources:
+            return True  # every fan-in source is validated streaming
+        return _is_streaming_source(self.primary_source)
 
     def effective_checks(self) -> list[dict[str, Any]]:
         """All dqx rules for this table: column-level rules (with the target
@@ -305,31 +538,113 @@ class DatasetSpec(ConfigBase):
     @model_validator(mode="after")
     def _cross_rules(self) -> DatasetSpec:
         t, name = self.target, self.name
+
+        # ---- source/sources/backfill shape -------------------------------
+        if (self.source is None) == (not self.sources):
+            raise ValueError(
+                f"dataset {name!r}: give exactly one of source (single flow) or "
+                "sources (fan-in flow list)"
+            )
+        if self.sources:
+            if not isinstance(t, (StreamingTableTarget, DeltaSinkTarget, KafkaSinkTarget)):
+                raise ValueError(
+                    f"dataset {name!r}: sources (fan-in) is for streaming_table or "
+                    "sink targets — materialized_view/temporary_view take one source"
+                )
+            for fs in self.sources:
+                if not _is_streaming_source(fs.source):
+                    raise ValueError(
+                        f"dataset {name!r}: fan-in source {fs.name!r} must be "
+                        "streaming (cloud_files/kafka, or as_stream: true)"
+                    )
+        flow_names = [fs.name for fs in self.sources] + [b.name for b in self.backfill]
+        dupes = {n for n in flow_names if flow_names.count(n) > 1}
+        if dupes:
+            raise ValueError(
+                f"dataset {name!r}: duplicate flow name(s) {sorted(dupes)} across "
+                "sources/backfill — flow names are checkpoint identities, keep them unique"
+            )
+        for spec in [self.source, *(fs.source for fs in self.sources),
+                     *(b.source for b in self.backfill)]:
+            if isinstance(spec, SnapshotFunctionSource) and not (
+                isinstance(t, StreamingTableTarget) and t.cdc_from_snapshot and spec is self.source
+            ):
+                raise ValueError(
+                    f"dataset {name!r}: a snapshot_function source is only valid as the "
+                    "single source of a streaming_table with cdc_from_snapshot"
+                )
+
+        # ---- backfill rules ----------------------------------------------
+        if self.backfill:
+            if not isinstance(t, StreamingTableTarget):
+                raise ValueError(
+                    f"dataset {name!r}: backfill is for streaming_table targets "
+                    "(sinks are never cleared by full refresh; MVs recompute instead)"
+                )
+            if t.cdc_from_snapshot:
+                raise ValueError(
+                    f"dataset {name!r}: cdc_from_snapshot computes history from the "
+                    "snapshots themselves — backfill is not applicable"
+                )
+            for b in self.backfill:
+                if t.cdc and not _is_streaming_source(b.source):
+                    raise ValueError(
+                        f"dataset {name!r}: backfill {b.name!r} feeds a CDC target, so "
+                        "its source must be STREAMING (SDP: AUTO CDC once-flows read "
+                        "streaming sources)"
+                    )
+                if not t.cdc and _is_streaming_source(b.source):
+                    raise ValueError(
+                        f"dataset {name!r}: backfill {b.name!r} must be a BATCH source "
+                        "(files, or table/view without as_stream) — once-flows read "
+                        "batch frames"
+                    )
+
+        # ---- target kind ↔ source mode -----------------------------------
         if isinstance(t, StreamingTableTarget):
-            if t.cdc and not self.is_streaming:
+            if t.cdc_from_snapshot:
+                if self.sources:
+                    raise ValueError(
+                        f"dataset {name!r}: cdc_from_snapshot takes the single dataset "
+                        "source as its snapshot feed — fan-in sources are not supported"
+                    )
+                if self.is_streaming:
+                    raise ValueError(
+                        f"dataset {name!r}: cdc_from_snapshot diffs BATCH snapshots — "
+                        "use a batch table/files/view source (or snapshot_function), "
+                        "not a streaming one"
+                    )
+                if isinstance(self.source, SnapshotFunctionSource) and self.has_checks:
+                    raise ValueError(
+                        f"dataset {name!r}: quality rules cannot gate a snapshot_function "
+                        "source (the engine consumes the function's frames whole; there "
+                        "is no stream to split into valid/quarantine). Validate the "
+                        "snapshot upstream, or ingest snapshots via a batch source first."
+                    )
+            elif t.cdc and not self.is_streaming:
                 raise ValueError(
                     f"dataset {name!r}: target.cdc needs a streaming source — "
                     "set source.as_stream: true or use a cloud_files source"
                 )
-            if not self.is_streaming:
+            elif not t.cdc and not self.is_streaming:
                 raise ValueError(
                     f"dataset {name!r}: a streaming_table target needs a streaming "
                     "source; for batch sources use target.kind: materialized_view"
                 )
         if isinstance(t, MaterializedViewTarget):
-            if isinstance(self.source, CloudFilesSource):
+            if isinstance(self.primary_source, (CloudFilesSource, KafkaSource)):
                 raise ValueError(
-                    f"dataset {name!r}: cloud_files sources are streaming; a "
-                    "materialized_view target needs a batch source"
+                    f"dataset {name!r}: {self.primary_source.kind} sources are streaming; "
+                    "a materialized_view target needs a batch source"
                 )
             if self.is_streaming:
                 raise ValueError(
                     f"dataset {name!r}: materialized_view targets need batch sources — "
                     "drop source.as_stream"
                 )
-        if isinstance(t, DeltaSinkTarget) and not self.is_streaming:
+        if isinstance(t, (DeltaSinkTarget, KafkaSinkTarget)) and not self.is_streaming:
             raise ValueError(
-                f"dataset {name!r}: delta_sink appends from a stream; the source must be streaming"
+                f"dataset {name!r}: {t.kind} appends from a stream; the source must be streaming"
             )
         if isinstance(t, TemporaryViewTarget) and self.quality:
             if (self.quality.quarantine and self.quality.quarantine.enabled) or (
