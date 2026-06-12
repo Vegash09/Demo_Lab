@@ -1,0 +1,7 @@
+# Code owners — review routing for pull requests.
+#
+# Every PR automatically requests a review from DataLab-Approvers; this is
+# what makes their approval REQUIRED once "Require review from Code Owners"
+# branch protection is enabled on main (needs GitHub Team plan while this
+# repo is private). Code-owner teams must keep write (or higher) access.
+*   @dediggibyte/datalab-approvers
