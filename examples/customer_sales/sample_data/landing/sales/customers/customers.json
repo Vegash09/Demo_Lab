@@ -1,0 +1,5 @@
+{"customer_id": "C001", "customer_name": "Asha", "age": "34", "city": "Bengaluru", "signup_date": "2025-01-15", "email": "  Asha@Example.COM "}
+{"customer_id": "C002", "customer_name": "Bjorn", "age": "41", "city": "Stockholm", "signup_date": "2025-03-02", "email": "bjorn@example.com"}
+{"customer_id": null, "customer_name": "Ghost", "age": "x", "city": "Chennai", "signup_date": "2025-02-20", "email": "not-an-email"}
+{"customer_id": "C003", "customer_name": "Carla", "age": "29", "city": "Lisbon", "signup_date": "2025-04-11", "email": "carla@invalid"}
+{"customer_id": "C001", "customer_name": "Asha Rao", "age": "35", "city": "Bengaluru", "signup_date": "2025-01-15", "email": "asha.rao@example.com"}

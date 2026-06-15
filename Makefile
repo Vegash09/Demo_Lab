@@ -12,7 +12,8 @@ TARGET ?= dev
 
 .DEFAULT_GOAL := help
 .PHONY: help install lock lint fmt test validate-configs schema validate \
-        deploy run destroy bootstrap-uc enable-githooks commit-protected clean
+        deploy run destroy bootstrap-uc enable-githooks commit-protected clean \
+        spec-local dry-run-local run-local validate-connect
 
 help:  ## Show available targets
 	@printf "\ndatalab · make targets (TARGET=$(TARGET))\n\n"
@@ -61,6 +62,49 @@ run:  ## Trigger a refresh of the customer_sales_etl pipeline on $(TARGET)
 
 destroy:  ## Tear down everything the bundle deployed to $(TARGET) (asks first)
 	databricks bundle destroy -t $(TARGET)
+
+# ---- local OSS run (spark-pipelines, no Databricks) -------------------------
+# The `local` profile (datalab.framework.local) downgrades the medallion to a
+# batch materialized-view graph the OSS `spark-pipelines` CLI can run on sample
+# data. Fidelity caveat: CDC is approximated (SCD1 dedup), Auto Loader/sinks are
+# skipped — engine-owned semantics are still verified by `make deploy run`.
+LOCAL_DOMAIN_CONFIG ?= examples/customer_sales/config/customer_sales
+LOCAL_TRANSFORMS    ?= examples/customer_sales/src/customer_sales_etl/transformations
+LOCAL_LANDING       ?= $(CURDIR)/examples/customer_sales/sample_data/landing/sales/customers
+# The OSS CLI globs libraries relative to the spec dir, so the spec lives at the
+# repo root (an ancestor of the transformations dir).
+LOCAL_SPEC          ?= spark-pipeline.local.yml
+
+spec-local: install  ## Generate the OSS spark-pipeline.yml for a local run
+	$(UV) run python -m datalab.framework.local \
+		--config-dir $(LOCAL_DOMAIN_CONFIG) \
+		--transformations $(LOCAL_TRANSFORMS) \
+		--out $(LOCAL_SPEC) \
+		--storage $(CURDIR)/.build/local-storage \
+		--conf datalab.sales_landing_path=file://$(LOCAL_LANDING)
+
+dry-run-local: spec-local  ## Validate the pipeline graph locally (no data) — spark-pipelines dry-run
+	$(UV) run spark-pipelines dry-run --spec $(LOCAL_SPEC)
+
+run-local: spec-local  ## Materialize the medallion locally on sample data — spark-pipelines run
+	$(UV) run spark-pipelines run --spec $(LOCAL_SPEC)
+
+# ---- Databricks Connect validation (isolated, out-of-lock) ------------------
+# databricks-connect conflicts with the dev `pyspark` (both own the `pyspark`
+# namespace), so it NEVER enters .venv/uv.lock. This overlay installs it +
+# this project (whose [project].dependencies have no pyspark) into a throwaway
+# env. Pin DBCONNECT to your workspace's DBR/serverless version. Auth via the
+# Databricks SDK env (DATABRICKS_HOST + token/profile, DATABRICKS_CLUSTER_ID or
+# serverless). See docs/FRAMEWORK.md "Validate via Databricks Connect".
+DBCONNECT      ?= databricks-connect
+CONNECT_CONFIG ?= examples/customer_sales/config/customer_sales
+LAYER          ?= silver
+TABLE          ?= customers
+
+validate-connect:  ## Validate one dataset on a LIVE cluster via isolated Databricks Connect
+	$(UV) run --no-project --with-editable . --with "$(DBCONNECT)" \
+		python scripts/validate_connect.py \
+		--config-dir $(CONNECT_CONFIG) --layer $(LAYER) --table $(TABLE) $(CONNECT_ARGS)
 
 # One-time per target, BEFORE the first deploy. Out-of-band of the bundle so
 # `bundle destroy` never touches catalogs/schemas/volumes/grants. Dry run by
