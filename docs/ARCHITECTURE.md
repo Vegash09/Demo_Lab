@@ -158,18 +158,21 @@ Three layers, each with one home:
 
 ```mermaid
 flowchart TD
-    L1["1 · Workspace-resource RBAC<br/>permissions: on every bundle resource<br/>(reader_group / engineer_group variables)"]
+    L1["1 · Workspace-resource RBAC<br/>permissions: on every bundle resource<br/>(rbac.yml: group + permission-level variables)"]
     L2["2 · Unity Catalog RBAC<br/>grants-as-code: scripts/bootstrap_uc.py<br/>(out-of-band — bundle destroy never touches it)"]
     L3["3 · ABAC — row/column level<br/>sql/abac/ masks + row filters<br/>(display-only; admin reviews and applies)"]
     L1 --> L2 --> L3
 ```
 
 - **Layer 1** controls who can run/manage pipelines and jobs: `permissions:`
-  on every resource, driven by the `reader_group` / `engineer_group` string
-  variables in `databricks.yml`. They diverge per target (dev uses demo
-  groups; stage/prod use the `dl_sales_*` persona groups) and per GitHub
-  Environment (`DATALAB_READER_GROUP` / `DATALAB_ENGINEER_GROUP` repo
-  variables → `deploy-dab` `--var`).
+  on every resource, driven by the group (`reader_group` / `engineer_group` /
+  `admin_group`) and permission-level (`*_pipeline_level` / `*_job_level`)
+  string variables in `rbac.yml` (include'd by `databricks.yml`, which keeps
+  only the medallion variables). Both the groups AND their levels diverge per
+  target (dev uses demo groups with broad levels; stage/prod use the
+  `dl_sales_*` persona groups; prod tightens readers to `CAN_VIEW` and adds an
+  `admin_group`) and per GitHub Environment (`DATALAB_READER_GROUP` /
+  `DATALAB_ENGINEER_GROUP` repo variables → `deploy-dab` `--var`).
 - **Layer 2** controls who can read/write the data: grants-as-code in
   `scripts/bootstrap_uc.py` — idempotent catalog/schema/volume DDL + GRANTs,
   applied once per target with `make bootstrap-uc`. Deliberately out-of-band

@@ -68,7 +68,9 @@ landing volume ─▶ │ bronze.customers_raw ─▶ silver.customers (AUTO CDC
 ## Codebase layout
 
 ```
-databricks.yml            Bundle: variables (catalog/schemas/paths/permissions), targets dev/stage/prod
+databricks.yml            Bundle: variables (catalog/schemas/paths), targets dev/stage/prod
+rbac.yml                  Workspace-resource RBAC: group + permission-level string vars + complex
+                          pipeline_permissions/job_permissions + per-target overrides (include'd by databricks.yml)
 src/
   datalab/                THE FRAMEWORK — the only package under src/; reusable, zero domain code
     config.py             pipeline_conf() (read pipeline configuration), fqn()
@@ -385,11 +387,18 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   export entry point fails fast if `/Volumes/<catalog>/exports/sales/` is
   missing rather than silently creating dev-shaped paths elsewhere.
   `make bootstrap-uc TARGET=<t>` creates them (plus schemas and grants).
-- **Permission groups are string variables on purpose.** Complex variables
-  (`pipeline_permissions`) cannot be overridden with `--var`; the
-  `reader_group`/`engineer_group` strings can, which is what lets CI override
-  groups per GitHub Environment. Don't inline group names back into the
-  complex defaults.
+- **Permission groups are string variables on purpose — and so are the
+  levels.** All access control lives in `rbac.yml` (include'd by
+  `databricks.yml`, which keeps only catalog/schemas/paths). Complex variables
+  (`pipeline_permissions`, `job_permissions`) cannot be overridden with
+  `--var`, so the WHO (`reader_group`/`engineer_group`/`admin_group`) and the
+  WHAT (`*_pipeline_level`/`*_job_level`) are plain strings the complex
+  defaults only reference — that's what lets CI override them per GitHub
+  Environment and lets a target change one group/level in a single line.
+  Per-env divergence goes in `rbac.yml`'s `targets:`: same shape → override a
+  string (prod readers drop to `CAN_VIEW`); a different shape (an extra group)
+  → restate the complex var (prod adds `admin_group`). Never inline a group
+  name or level back into the complex defaults.
 - **ABAC SQL is display-only.** Nothing in this repo (CI, agents, scripts)
   executes the `sql/abac/*.sql` files (in this repo:
   `examples/customer_sales/sql/abac/`); an admin reviews and applies them manually.
@@ -416,7 +425,7 @@ change:
 
 | Path (regex) | Why it's protected |
 |---|---|
-| `^databricks\.yml$`, `^(resources\|examples/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle (deploy surface) |
+| `^databricks\.yml$`, `^rbac\.yml$`, `^(resources\|examples/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle + RBAC (deploy surface) |
 | `^pyproject\.toml$`, `^uv\.lock$` | dependency manifests (uv-managed, CI `--frozen`) |
 | `^\.databricksignore$` | controls what ships to the workspace |
 | `^src/datalab/(config|params)\.py$` | parameterization contracts used by every pipeline and job lane |
@@ -490,11 +499,12 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
 - **Change deploy config**: edit `databricks.yml` / the domain's
   `resources/*.yml`, then `make validate` before pushing; update `docs/` if
   targets or variables moved.
-- **Change access (RBAC/ABAC)**: workspace-resource permissions → the
-  `reader_group`/`engineer_group` variables (per-target overrides in
-  `databricks.yml`, per-environment via `DATALAB_*_GROUP` repo variables);
-  data grants → `scripts/bootstrap_uc.py` (keep its CATALOGS/GROUPS dicts in
-  sync with `databricks.yml`), re-run `make bootstrap-uc`; row/column
+- **Change access (RBAC/ABAC)**: workspace-resource permissions → `rbac.yml`
+  (group + permission-level string vars; per-target overrides in its own
+  `targets:` block, per-environment via `DATALAB_*_GROUP` repo variables → the
+  `deploy-dab` `--var`); data grants → `scripts/bootstrap_uc.py` (keep its
+  CATALOGS/GROUPS dicts in sync with the group names in `rbac.yml`), re-run
+  `make bootstrap-uc`; row/column
   policies → add display-only SQL under the domain's `sql/abac/` following
   the conventions in `docs/ARCHITECTURE.md` — never execute them from CI or
   an agent session.
@@ -529,4 +539,5 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   commit them; `.gitignore` + the guards back this up.
 - CI/CD uses GitHub OIDC — there is no long-lived Databricks secret in GitHub.
 - Production data access is governed by Unity Catalog grants plus the bundle
-  `permissions` variables (`pipeline_permissions`, `job_permissions`).
+  `permissions` variables (`pipeline_permissions`, `job_permissions`) defined
+  in `rbac.yml`.

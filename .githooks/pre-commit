@@ -39,6 +39,7 @@ fi
 
 PATTERNS=(
   '^databricks\.yml$'
+  '^rbac\.yml$'
   '^(resources|examples/[^/]+/resources)/.*\.yml$'
   '^pyproject\.toml$'
   '^uv\.lock$'

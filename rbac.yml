@@ -1,0 +1,107 @@
+# rbac.yml — all workspace-resource access control for the bundle, in one place.
+#
+# Pulled in by databricks.yml's `include:` (variables + targets deep-merge
+# across bundle files). Kept OUT of databricks.yml so the manifest stays about
+# the medallion (catalog/schemas/paths) while access control — the thing that
+# legitimately diverges per environment — lives here.
+#
+# Two kinds of pivot point, both PLAIN STRING variables so they can be
+# overridden per GitHub Environment with `--var` (complex variables cannot —
+# see AGENTS.md "Permission groups are string variables on purpose"):
+#   • WHO   — reader_group / engineer_group / admin_group   (group names)
+#   • WHAT  — *_pipeline_level / *_job_level                (permission levels)
+# The complex `pipeline_permissions` / `job_permissions` (consumed by every
+# resource as `permissions: ${var.*}`) only reference these strings, so a target
+# tweaks one level or group name with a single line below.
+#
+# Per-environment divergence lives in `targets:` at the bottom:
+#   • same SHAPE, different value  → override the string var (stage, prod reads)
+#   • different SHAPE (extra group) → restate the complex var (prod admin group)
+#
+# Groups must already exist in the workspace (account-level for UC) before a
+# deploy — `databricks groups create` or the account console. UC DATA grants
+# that complement these workspace-resource permissions live in
+# scripts/bootstrap_uc.py (keep its GROUPS dict in sync with the group names
+# here). admin_group is workspace-resource manage only; give it UC grants there
+# too only if it must also query the data.
+
+variables:
+  # --- WHO: group names (overridable per target + per GitHub Environment) -----
+  reader_group:
+    description: Workspace group granted read/run access to deployed resources.
+    default: demo_analyst
+  engineer_group:
+    description: Workspace group granted manage access to deployed resources.
+    default: Data Science group
+  admin_group:
+    description: Platform-admin group — full manage on prod pipelines/jobs.
+    default: dl_platform_admins
+
+  # --- WHAT: permission levels (so "permissions vary per env" is a 1-line edit)
+  reader_pipeline_level:
+    description: Permission level the reader group gets on pipelines.
+    default: CAN_RUN
+  reader_job_level:
+    description: Permission level the reader group gets on jobs.
+    default: CAN_MANAGE_RUN
+  engineer_pipeline_level:
+    description: Permission level the engineer group gets on pipelines.
+    default: CAN_MANAGE
+  engineer_job_level:
+    description: Permission level the engineer group gets on jobs.
+    default: CAN_MANAGE
+
+  # --- The grants every resource references. Complex → reference strings only;
+  #     never inline a group name or level here (that would break --var). -------
+  pipeline_permissions:
+    description: Grants applied to every pipeline resource.
+    type: complex
+    default:
+      - group_name: ${var.reader_group}
+        level: ${var.reader_pipeline_level}
+      - group_name: ${var.engineer_group}
+        level: ${var.engineer_pipeline_level}
+  job_permissions:
+    description: Grants applied to every job resource.
+    type: complex
+    default:
+      - group_name: ${var.reader_group}
+        level: ${var.reader_job_level}
+      - group_name: ${var.engineer_group}
+        level: ${var.engineer_job_level}
+
+# Per-environment RBAC. dev inherits the defaults above (demo groups, broad
+# levels — mode: development resources are throwaway). stage/prod move to the
+# persona groups; prod additionally tightens reads and adds a platform-admin
+# group. These deep-merge onto the matching target in databricks.yml.
+targets:
+  stage:
+    variables:
+      reader_group: dl_sales_readers
+      engineer_group: dl_sales_engineers
+
+  prod:
+    variables:
+      reader_group: dl_sales_readers
+      engineer_group: dl_sales_engineers
+      # prod readers are view-only (a one-line level change — no restatement
+      # needed because the default complex vars reference these strings).
+      reader_pipeline_level: CAN_VIEW
+      reader_job_level: CAN_VIEW
+      # prod also has a DIFFERENT SHAPE — a platform-admin group readers/
+      # engineers don't get — so the complex vars are restated. References still
+      # honour any --var override of the group-name / level strings.
+      pipeline_permissions:
+        - group_name: ${var.reader_group}
+          level: ${var.reader_pipeline_level}
+        - group_name: ${var.engineer_group}
+          level: ${var.engineer_pipeline_level}
+        - group_name: ${var.admin_group}
+          level: CAN_MANAGE
+      job_permissions:
+        - group_name: ${var.reader_group}
+          level: ${var.reader_job_level}
+        - group_name: ${var.engineer_group}
+          level: ${var.engineer_job_level}
+        - group_name: ${var.admin_group}
+          level: CAN_MANAGE
