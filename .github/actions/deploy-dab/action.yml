@@ -10,10 +10,11 @@ inputs:
     required: false
     default: "DEFAULT"
 
-  # Per-target overrides. Empty defaults mean 'use whatever databricks.yml says'.
-  # Only string variables can be overridden with --var (complex variables like
-  # pipeline_permissions cannot) — which is why the permission GROUP NAMES are
-  # plain string variables in databricks.yml that the complex defaults reference.
+  # Per-target overrides. Empty defaults mean 'use whatever the bundle
+  # (databricks.yml + rbac.yml) says'. Only string variables can be overridden
+  # with --var (complex variables like pipeline_permissions cannot) — which is
+  # why the permission GROUP NAMES are plain string variables in rbac.yml that
+  # the complex defaults reference.
   catalog:
     description: "Unity Catalog catalog override for this target."
     required: false

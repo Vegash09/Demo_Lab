@@ -105,9 +105,10 @@ For each target (`dev`, `stage`, `prod`):
 3. **GitHub Environment** named exactly `<target>`
    (repo Settings → Environments):
    - secrets: `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` (the SP application ID)
-   - optional variables: `DATALAB_CATALOG`, `DATALAB_SALES_LANDING_PATH`,
-     `DATALAB_READER_GROUP`, `DATALAB_ENGINEER_GROUP`
-     (forwarded as `--var` overrides; empty → `databricks.yml` defaults)
+   - optional variables: `DATALAB_CATALOG`, `DATALAB_SALES_LANDING_PATH`
+     (from `databricks.yml`), `DATALAB_READER_GROUP`, `DATALAB_ENGINEER_GROUP`
+     (the group names from `rbac.yml`) — forwarded as `--var` overrides; empty
+     → the committed `databricks.yml` / `rbac.yml` defaults
    - for `prod`: add required reviewers so deploys need approval.
    - Environments without secrets are skipped gracefully by the deploy gate
      (the merge stays green until stage/prod are provisioned).

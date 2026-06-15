@@ -33,7 +33,7 @@ under `examples/` (this repo's example:
 | notebook widgets (`get_widget_value`) | `pipeline_conf(spark, key)` (SDP) / `datalab.params.*` (job lanes) |
 | notebook business logic + test mirror | pure functions in `src/<domain>_etl/transforms/` + pytest; integration = dev refresh |
 | `pipelines/*.job.yml` (job clusters) | `resources/*.pipeline.yml` (serverless SDP) + `resources/*.job.yml` (pipeline_task) |
-| `permissions/<env>/permission_variables.yml` | `pipeline_permissions` / `job_permissions` variables in `databricks.yml` |
+| `permissions/<env>/permission_variables.yml` | `pipeline_permissions` / `job_permissions` (+ group/level string vars) in `rbac.yml` (include'd by `databricks.yml`) |
 | poetry + wheel build | uv (`uv.lock`); pipeline env installs the repo `--editable` — no wheel step |
 | `dbconnect` CI integration tests | unit tests (local Spark) + `validate-configs` + `bundle validate`; integration via dev deploys |
 | Azure SP secret-based CI auth | GitHub OIDC federation ([CICD.md](CICD.md)) |

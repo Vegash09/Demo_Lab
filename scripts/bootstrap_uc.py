@@ -26,7 +26,7 @@ CATALOGS = {
     "prod": "customer_sales_prod",
 }
 
-# Persona groups per target — keep in sync with databricks.yml
+# Persona groups per target — keep in sync with rbac.yml
 # reader_group / engineer_group variables.
 GROUPS = {
     "dev": {"reader": "demo_analyst", "engineer": "Data Science group"},
