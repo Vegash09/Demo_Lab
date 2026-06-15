@@ -33,10 +33,19 @@ class ResolveContext:
     params: Mapping[str, str] | None = None
     inputs: Mapping[str, DataFrame] = field(default_factory=dict)
     force_batch: bool = False
+    # local=True is the OSS local profile (datalab.framework.local): source
+    # tables/views are referenced by their SHORT name so OSS SDP resolves them
+    # to the in-graph datasets (registered short), rather than by 3-part FQN.
+    local: bool = False
 
     @classmethod
-    def from_spark(cls, spark: SparkSession) -> ResolveContext:
-        return cls(spark=spark)
+    def from_spark(
+        cls, spark: SparkSession, *, force_batch: bool = False, local: bool = False
+    ) -> ResolveContext:
+        # force_batch=True flips every streaming read (cloud_files, as_stream
+        # tables) to a batch read so the OSS spark-pipelines runner can
+        # materialize the graph.
+        return cls(spark=spark, force_batch=force_batch, local=local)
 
     @classmethod
     def from_dict(
@@ -60,6 +69,10 @@ class ResolveContext:
         return pipeline_conf(self.spark, conf_key)
 
     def source_fqn(self, src: TableSource | ReferenceSource, layer: LayerConfig) -> str:
+        if self.local:
+            # OSS SDP qualifies in-graph datasets with the pipeline's default
+            # catalog/database, so reference them by their short name.
+            return src.name
         catalog = self.resolve(src.catalog_conf or layer.defaults.catalog_conf)
         schema = self.resolve(src.schema_conf or layer.defaults.schema_conf)
         return fqn(catalog, schema, src.name)

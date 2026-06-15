@@ -29,6 +29,33 @@ The bundle is the only thing that touches the workspace. CI validates it on
 every PR; CD deploys it on merge (dev) and tags (stage/prod) — details in
 [CICD.md](CICD.md).
 
+## Execution profiles (run anywhere)
+
+One config-driven codebase runs three ways; `datalab.profile` (a pipeline
+`configuration` value, default `databricks`) selects the graph. Only the
+Databricks profile is the deploy/production path — the other two are local
+development aids. Details + fidelity caveats: [FRAMEWORK.md](FRAMEWORK.md)
+"Run anywhere".
+
+```mermaid
+flowchart TD
+    CFG["config/*.yml + @transform fns<br/>(one codebase)"] --> GEN["datalab.framework.generate(spark, cfg)"]
+    GEN -->|"profile=databricks (default)"| DBX["writers.register_dataset<br/>streaming tables · AUTO CDC · cloud_files · dqx · sinks"]
+    GEN -->|"profile=local"| LOC["local.register_dataset_local<br/>batch materialized views (mapping + transforms)"]
+    DBX --> RUNDBX["Databricks: bundle deploy + refresh (production)"]
+    LOC --> RUNLOC["local OSS: spark-pipelines run / dry-run<br/>(make run-local / dry-run-local)"]
+    CFG --> RD["run_dataset (batch, no writes)"]
+    RD -->|"isolated overlay"| CONN["Databricks Connect: live-cluster validation<br/>(make validate-connect)"]
+```
+
+- **Databricks** — the bundle deploys the full Lakeflow graph; the only profile
+  that runs AUTO CDC, Auto Loader, dqx quarantine and sinks for real.
+- **Local OSS** (`datalab.framework.local`) — downgrades to a batch
+  materialized-view graph the `spark-pipelines` CLI runs on sample data; no
+  AUTO CDC dedup / dqx / Auto Loader (OSS SDP can't express them).
+- **Databricks Connect** — runs one dataset's mapping/transforms/dqx via
+  `run_dataset` on a live cluster from an isolated, out-of-lock overlay.
+
 ## Three authoring lanes
 
 The SDP pipeline owns **all medallion tables** (single-writer invariant).

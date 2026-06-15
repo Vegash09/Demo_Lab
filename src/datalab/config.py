@@ -19,9 +19,18 @@ def pipeline_conf(spark: SparkSession, key: str, default: str | None = None) -> 
         # <your domain>.pipeline.yml (see examples/customer_sales/resources/)
         configuration:
           datalab.catalog: ${var.catalog}
+
+    Databricks exposes these keys verbatim. The OSS ``spark-pipelines`` CLI
+    launches via ``spark-submit``, which keeps only ``spark.``-prefixed confs,
+    so the local profile (``datalab.framework.local``) prefixes them and this
+    lookup falls back to the prefixed form before failing.
     """
-    value = spark.conf.get(key, default)
+    value = spark.conf.get(key, None)
     if value is None:
+        value = spark.conf.get(f"spark.{key}", None)
+    if value is None:
+        if default is not None:
+            return default
         raise ValueError(
             f"Missing pipeline configuration {key!r}. Declare it under the "
             "'configuration' mapping of the pipeline resource in resources/."

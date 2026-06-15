@@ -416,7 +416,10 @@ The local OSS `pyspark.pipelines` lacks the AUTO CDC functions and some
 Databricks-only knobs (`once`, `cluster_by_auto`, `refresh_policy`);
 `datalab.framework.compat` guards them — graph capture drops them locally
 (shape only), the Databricks runtime gets them all, and anything else raises
-an actionable error instead of an AttributeError.
+an actionable error instead of an AttributeError. To actually RUN the medallion
+off-Databricks, use the **local profile** (`make run-local`) — a batch
+materialized-view downgrade of the same configs (no AUTO CDC dedup, no dqx, no
+Auto Loader/sinks); see "Run anywhere — three execution profiles".
 
 ## Add a table — one artifact
 
@@ -477,7 +480,63 @@ example to copy from:
 | 2 | `make test` | unit tests on a local SparkSession |
 | 3 | `notebooks/framework/verify_dataset.py` | ONE dataset through the real framework path on sample or live data, no deploy — plan, valid rows, quarantine evidence, warnings. The same `run_dataset` API backs the unit tests, so notebook and pytest are literally the same code path; `run_dataset(..., flow="hist_2024")` previews a specific fan-in source or backfill entry |
 | 4 | `datalab.framework.capture_graph(spark, config_dir)` | the full generated dataset/flow graph, locally (no Databricks) |
-| 5 | `make deploy run` | the engine-owned parts via a dev refresh — CDC caveat: the SCD merge itself is engine-owned; `run_dataset` verifies everything up to the valid/quarantine frames and prints the CDC plan |
+| 5 | `make run-local` / `make dry-run-local` | the whole medallion materialized (or just graph-validated) on sample data by the OSS `spark-pipelines` CLI — see "Run anywhere" below |
+| 6 | `make validate-connect` | a dataset's mapping/transforms/dqx run on a LIVE cluster via isolated Databricks Connect (no deploy) |
+| 7 | `make deploy run` | the engine-owned parts via a dev refresh — CDC caveat: the SCD merge itself is engine-owned; `run_dataset` verifies everything up to the valid/quarantine frames and prints the CDC plan |
+
+## Run anywhere — three execution profiles
+
+The same config-driven domain runs three ways. `datalab.profile` (a pipeline
+`configuration` value, default `databricks`) selects the graph; the Databricks
+deploy path is unchanged.
+
+```mermaid
+flowchart TD
+  CFG["config/*.yml + transforms (one codebase)"] --> GEN["datalab.framework.generate(spark, cfg)"]
+  GEN -->|"datalab.profile=databricks (default)"| DBX["writers.register_dataset<br/>streaming tables + AUTO CDC + cloud_files + dqx + sinks"]
+  GEN -->|"datalab.profile=local"| LOC["local.register_dataset_local<br/>batch materialized views (mapping + transforms)"]
+  DBX --> RUNDBX["Databricks: bundle deploy + refresh"]
+  LOC --> SPEC["spark-pipeline.yml (generated)"] --> RUNLOC["local: uv run spark-pipelines run / dry-run"]
+  CFG --> RD["run_dataset (batch, no writes)"]
+  RD -->|".venv-connect (isolated overlay)"| CONN["DatabricksSession (databricks-connect)<br/>validate transforms/dqx on a live cluster"]
+```
+
+### 1. Local OSS run (`spark-pipelines`)
+
+`make run-local` generates a `spark-pipeline.yml` (via
+`python -m datalab.framework.local`) and runs it on local OSS Spark. The local
+profile ([`src/datalab/framework/local.py`](../src/datalab/framework/local.py))
+emits a **batch materialized-view** graph because OSS `pyspark.pipelines` lacks
+the Databricks-only features. Fidelity caveats (all verified instead by `make
+deploy run` / `make test`):
+
+- **No AUTO CDC dedup.** OSS SDP eagerly analyzes window functions over an
+  in-graph dataset and fails graph registration, and the SCD merge is
+  engine-owned regardless — so a CDC target materializes the mapped/transformed
+  rows **as-is** (expect duplicate keys locally).
+- **No dqx gate.** dqx inspects `df.columns`/`df.isStreaming` while building
+  checks, which OSS SDP forbids inside a query function — so no valid/quarantine
+  split locally. Validate quality with `make test` / `verify_dataset.py` /
+  `make validate-connect`.
+- **No Auto Loader / sinks.** `cloud_files` reads collapse to batch file reads;
+  delta/kafka sinks are skipped.
+- Datasets register under their **short name** (OSS SDP resolves cross-dataset
+  reads via the pipeline's default catalog/database); generated artifacts
+  (`spark-pipeline.local.yml`, `.build/`, `spark-warehouse/`) are git-ignored.
+
+`make dry-run-local` runs `spark-pipelines dry-run` (syntax/analysis/graph
+validation, no data) — the same step CI runs to guard the profile.
+
+### 2. Databricks Connect validation (isolated)
+
+`make validate-connect LAYER=<l> TABLE=<t>` runs `scripts/validate_connect.py`
+against a **live cluster**: it builds a `DatabricksSession` and calls
+`run_dataset` (mapping → transforms → dqx → valid/quarantine) on real UC data,
+no deploy. databricks-connect conflicts with the dev `pyspark`, so it is
+installed into a throwaway overlay (`uv run --no-project --with-editable . --with
+databricks-connect`) and **never enters `uv.lock`**; pin `DBCONNECT` to your
+workspace's DBR/serverless version. Pass the conf keys the dataset resolves via
+`CONNECT_ARGS="--param datalab.catalog=… --param datalab.bronze_schema=…"`.
 
 ## Gotchas
 

@@ -57,10 +57,13 @@ dev = [
     "pytest>=8.4",
     "ruff>=0.14",
     # Local Spark for fast unit tests of the pure functions in src/datalab.
-    # pyspark 4.1+ also provides `pyspark.pipelines` so SDP imports resolve
-    # locally. Do NOT add databricks-connect to this venv — it conflicts with
-    # pyspark (both own the `pyspark` namespace).
-    "pyspark>=4.1.0",
+    # The [pipelines] extra adds the `spark-pipelines` CLI + Spark Connect deps,
+    # so the OSS local-run profile (datalab.framework.local, `make run-local`)
+    # executes the whole medallion locally — see docs/FRAMEWORK.md "Run locally".
+    # Do NOT add databricks-connect to THIS venv — it conflicts with pyspark
+    # (both own the `pyspark` namespace); the Connect validation path uses an
+    # isolated, out-of-lock overlay instead (`make validate-connect`).
+    "pyspark[pipelines]>=4.1.0",
     # dqx's check_funcs imports pandas but doesn't declare it; serverless
     # preinstalls pandas, locally we need it for the dqx unit tests.
     "pandas>=2.0",

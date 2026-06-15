@@ -74,20 +74,23 @@ src/
     config.py             pipeline_conf() (read pipeline configuration), fqn()
     params.py             notebook_params() / cli_params() — job-lane parameter contract
     framework/            flowspec: models, loader, registry, readers, writers,
-                          dq (DQX adapter), generator, devtools, compat, context, errors
+                          dq (DQX adapter), generator, devtools, compat, context, errors,
+                          local (OSS spark-pipelines run profile + spark-pipeline.yml generator)
 examples/                 REFERENCE domains — each named after its base UC catalog and mirroring
                           an adopter repo root (examples/README.md, docs/NAMING.md)
   customer_sales/
     README.md             File-by-file tour of the complete worked example
     config/customer_sales/  domain.yml + ONE <schema>/<table>.yml artifact per target table
                           (path mirrors <catalog>.<schema>.<table>)
-    src/customer_sales_etl/ Domain package (<catalog>_etl): 3-line pipeline entrypoint, @transform fns, custom dqx checks
+    src/customer_sales_etl/ Domain package (<catalog>_etl): pipeline entrypoint, @transform fns, custom dqx checks
     src/jobs/customer_sales/ Python-file lane: spark_python_task entry points (side effects live here)
     notebooks/customer_sales/ Notebook lane: human-gated triage (source-format .py)
+    sample_data/          Local sample landing files for `make run-local` (OSS spark-pipelines)
     resources/            This domain's bundle resources (pipeline + 3 jobs; relative paths move as is)
     tests/                The domain's own unit + contract tests (run with make test)
     sql/abac/             Display-only column-mask/row-filter SQL — admin-applied, never run by CI/agents
 notebooks/framework/      verify_dataset.py — framework devtool notebook (+ sample data)
+scripts/validate_connect.py  Databricks Connect validation entry (make validate-connect; out-of-lock)
 schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml
                           (make schema regenerates from the Pydantic models)
 tests/                    FRAMEWORK unit tests (local Spark, example-free) — no workspace needed
@@ -118,11 +121,21 @@ make validate-configs # validate every domain's artifacts (pydantic + dqx)
 make validate         # databricks bundle validate -t dev
 make deploy           # validate + bundle deploy -t dev
 make run              # databricks bundle run customer_sales_etl -t dev (dev refresh)
+make run-local        # materialize the medallion on sample data via OSS spark-pipelines
+make dry-run-local    # spark-pipelines dry-run (graph validation, no data)
+make validate-connect # run one dataset on a LIVE cluster via isolated Databricks Connect
 ```
 
 Python: 3.12+ (serverless environment v4 ships 3.12). Java 17+ locally for the
-unit-test Spark. Databricks CLI ≥ v0.294.0 (pipeline `environment_version`
-support).
+unit-test Spark and the OSS `spark-pipelines` local run. Databricks CLI ≥
+v0.294.0 (pipeline `environment_version` support).
+
+**Three execution profiles** (same configs, one codebase; `datalab.profile`
+selects the graph — default `databricks`): the Databricks deploy path; a
+**local** OSS `spark-pipelines` run (`make run-local`, a batch
+materialized-view downgrade — no AUTO CDC dedup, no dqx, no Auto Loader/sinks);
+and **Databricks Connect** validation from local (`make validate-connect`, an
+isolated out-of-lock overlay). Full reference: docs/FRAMEWORK.md "Run anywhere".
 
 ## Authoring rules
 
@@ -203,7 +216,10 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   pipeline resource `configuration:` mapping and read with
   `datalab.config.pipeline_conf(spark, "datalab.<key>")`.
 - `spark` is injected by the SDP runtime at module scope in pipeline files
-  (ruff is configured to allow it there, see `per-file-ignores`).
+  (ruff allows it there, see `per-file-ignores`). The example entrypoint
+  instead binds `spark = SparkSession.getActiveSession() or
+  SparkSession.builder.getOrCreate()` so the SAME file works on Databricks AND
+  under the OSS `spark-pipelines` CLI (which does not inject `spark`).
 
 ### Python-file lane (`src/jobs/<domain>/`)
 
@@ -293,9 +309,16 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   runtime libs go in `[project].dependencies` (picked up by the editable
   install) — but pipeline environments cache dependencies during development;
   trigger a full restart if a new dep doesn't show up.
-- **Never install `databricks-connect` into this venv.** It conflicts with the
-  `pyspark` dev dependency (both own the `pyspark` namespace). Integration
-  testing = deploy + `make run` against dev, not databricks-connect.
+- **Never install `databricks-connect` into the dev venv / `uv.lock`.** It
+  conflicts with the `pyspark` dev dependency (both own the `pyspark`
+  namespace). The sanctioned way to drive a live cluster from local is
+  `make validate-connect`, which installs it into a THROWAWAY overlay (`uv run
+  --no-project --with-editable . --with databricks-connect`, mirroring the
+  `--with databricks-sdk` bootstrap pattern) — never the project venv. This
+  works because `[project].dependencies` has no `pyspark`, so the overlay has no
+  conflict; and `datalab.framework.__init__` imports `generate` lazily so
+  `run_dataset` loads without `pyspark.pipelines` (which databricks-connect may
+  lack). Full integration still = deploy + `make run` against dev.
 - **Dev target uses `mode: development`**: resources get a `[dev <user>]`
   prefix and the daily trigger is paused. Stage/prod use `mode: production`
   with explicit `root_path`s.
@@ -326,6 +349,20 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `datalab.framework.compat` guards them: graph capture drops the knobs
   locally (shape-only inspection), anything else raises an actionable error.
   Tests/capture run fine locally; CDC/once semantics verify via dev refresh.
+- **`make run-local` runs the medallion off-Databricks (local profile).**
+  `datalab.framework.local` emits a `spark-pipeline.yml` + a batch
+  materialized-view graph for the OSS `spark-pipelines` CLI (selected by
+  `datalab.profile: local`; the Databricks path is untouched). Deliberate
+  fidelity gaps, each because OSS SDP can't express the Databricks feature:
+  **no AUTO CDC dedup** (a window over an in-graph dataset triggers eager
+  analysis and fails graph registration — and the SCD merge is engine-owned),
+  **no dqx gate** (dqx reads `df.columns`/`df.isStreaming`, which OSS SDP
+  forbids inside a query function), **no Auto Loader/sinks**. Datasets register
+  under their SHORT name so OSS SDP resolves cross-dataset reads via the
+  pipeline default catalog/db. Validate CDC/quality via `make test` /
+  `verify_dataset.py` / `make validate-connect` / dev refresh. The dev dep is
+  `pyspark[pipelines]` (the extra ships the `spark-pipelines` CLI + Connect
+  deps). CI runs `make dry-run-local` (advisory).
 - **The "no writes" rule is scoped to SDP dataset functions.** The notebook
   and python-file lanes own their writes — that is the point of those lanes —
   constrained by the single-writer invariant (never write SDP-owned tables).
@@ -441,6 +478,13 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   Source-format `.py` under `notebooks/<domain>/`, widgets named after the job
   parameters, resolved via `datalab.params.notebook_params`; copy the
   `customer_sales_quarantine_report` job shape (no trigger). `make lint test validate`.
+- **Run / validate locally without Databricks**: `make run-local` materializes
+  the medallion on sample data via OSS `spark-pipelines` (local profile —
+  mind the fidelity gaps: no AUTO CDC dedup / dqx / Auto Loader); `make
+  dry-run-local` just validates the graph. To check mapping/transforms/dqx on a
+  LIVE cluster, `make validate-connect LAYER=<l> TABLE=<t> CONNECT_ARGS="--param
+  datalab.catalog=… --param datalab.bronze_schema=…"` (isolated Databricks
+  Connect overlay). Reference: docs/FRAMEWORK.md "Run anywhere".
 - **Add a dependency**: edit `pyproject.toml`, `make lock`, commit both files.
   For pipeline-runtime deps, remember the environment caching gotcha above.
 - **Change deploy config**: edit `databricks.yml` / the domain's

@@ -55,6 +55,16 @@ jobs:
       - name: Unit tests (local Spark)
         run: uv run pytest
 
+      - name: Local SDP graph dry-run (OSS spark-pipelines)
+        # Guards the local-run profile (datalab.framework.local): generates the
+        # spark-pipeline.yml and runs `spark-pipelines dry-run` (syntax/analysis/
+        # graph validation, no data) on the same Java as the unit tests. Advisory
+        # (continue-on-error) — the blocking regression guard is the capture test
+        # in tests/unit/framework/test_local.py; this exercises the OSS CLI end to
+        # end while the SDP + dqx + Spark Connect path stabilizes upstream.
+        run: make dry-run-local
+        continue-on-error: true
+
   validate-bundle:
     name: "bundle validate (${{ inputs.target }})"
     needs: test
