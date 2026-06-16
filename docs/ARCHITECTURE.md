@@ -200,15 +200,19 @@ nothing in this repo creates principals.
 
 ## Editing the design diagrams
 
-The editable architecture diagrams live in `design/` as diagrams.net
-(draw.io) sources. The committed `.drawio` XML **is** the source of truth — we
-do not keep a separate binary export that could drift. `design/` is listed in
-`.databricksignore`, so the diagrams never ship with the bundle.
+The `design/` folder is the living picture of the architecture plus a
+customer-facing overview. The committed **`.drawio` XML is the source of
+truth**; the PNGs under `design/images/` are *generated* from it by
+`make design`, and the markdown/HTML overviews embed those PNGs. `design/` is
+listed in `.databricksignore`, so none of it ships with the bundle.
 
-| File | Kind | Update when |
+| Path | Kind | Update when |
 |---|---|---|
 | `design/01_design_config_driven_medallion.drawio` | Multi-page **design spec** (Context → Author → Generate → Run → Ship) | the *design intent* changes — a new principle, authoring lane, or conceptual flow |
 | `design/02_implementation_end_to_end.drawio` | Single-page **living implementation** map (config / framework / domain / pipeline / edge bands + a CI-CD · profiles · bundle · bootstrap · docs column) | the *implemented architecture* changes — a new table artifact, framework module, edge job/notebook, execution profile, or bundle resource |
+| `design/images/*.png` | **Generated** PNG exports of the diagrams above | never by hand — run `make design` after editing a `.drawio` source |
+| `design/OVERVIEW.md` | Customer-facing tour that embeds the images | the customer narrative changes (a new capability, layer behaviour, or value point) |
+| `design/datalab-customer-overview.html` | Standalone self-contained share (built out-of-band) | `OVERVIEW.md` changes materially — regenerate the snapshot separately; never hand-edit |
 
 ### Open and edit
 
@@ -224,16 +228,19 @@ your setup:
 - **Desktop:** the [draw.io Desktop](https://github.com/jgraph/drawio-desktop)
   app opens the file directly.
 
-### Keep `02_*` in sync with the code
+### Re-export the images
 
-The implementation diagram is part of the maintenance contract: when a change
-moves the architecture, update `design/02_implementation_end_to_end.drawio` in
-the **same PR** (see AGENTS.md "Coding-agent maintenance protocol", step 2).
-The `maintain-design-diagram` agent skill
-(`.claude/skills/maintain-design-diagram/SKILL.md`) is the recipe — it maps
-each kind of change to the band, box, or edge to touch, lists the fill/stroke
-and edge-colour conventions, and ends with a geometry checklist. Edit `01_*`
-only when the design intent itself changes.
+```bash
+make design
+```
+
+This regenerates every `design/images/*.png` from the `.drawio` sources via the
+draw.io Desktop CLI (`scripts/export_design.py` splits the multi-page `01_*`
+file page by page, working around draw.io's unreliable `--page-index`). The CLI
+is **not** available in CI, so this is a developer/agent step: run it after
+editing a source and **commit the regenerated PNGs in the same change** (set
+`DRAWIO=/path/to/draw.io` if it isn't on `PATH` or at the default macOS
+location).
 
 ### Validate before committing
 
@@ -264,14 +271,18 @@ PY
 (Boxes nested inside a band container overlap it by design — compare siblings,
 not children against their band. The skill's done-check spells this out.)
 
-### Embedding a rendered view (optional)
+### Keep the design in sync with the code
 
-GitHub does not render `.drawio` inline. If a document needs an actual picture,
-export one from the editor (*File → Export as → PNG/SVG*) or via the CLI —
-`drawio -x -f svg -o docs/images/architecture.svg design/02_implementation_end_to_end.drawio`
-— and reference that image from the doc. Keep the `.drawio` file as the thing
-you edit and review; any exported PNG/SVG is a generated artifact, so re-export
-it whenever the source changes.
+Updating the design is part of the maintenance contract (AGENTS.md "Coding-agent
+maintenance protocol", step 2): when a change moves the architecture, in the
+**same PR** edit `design/02_implementation_end_to_end.drawio`, run `make design`,
+and refresh `design/OVERVIEW.md` if the customer story changed. The
+`maintain-design-diagram` skill (`.claude/skills/maintain-design-diagram/SKILL.md`)
+is the step-by-step recipe — band/box/edge conventions, the geometry check, the
+re-export, and the overview refresh. Edit `01_*` only when the design intent
+itself changes. `design/datalab-customer-overview.html` is a standalone share
+built out-of-band; regenerate it separately when `OVERVIEW.md` changes
+materially.
 
 ---
 

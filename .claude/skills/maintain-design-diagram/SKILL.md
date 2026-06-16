@@ -1,21 +1,32 @@
 ---
 name: maintain-design-diagram
-description: Keep design/02_implementation_end_to_end.drawio in sync with the implemented datalab architecture. Invoke whenever a code change adds/removes/renames a config artifact (a target table), a framework module under src/datalab/framework/, a domain @transform/@check_function/@snapshot_source, a medallion table (bronze/silver/gold/quarantine), an edge-lane job or notebook, an execution profile, a CI/CD workflow, or a bundle resource the diagram already references. Also invoke when AGENTS.md's "Architecture" or "Codebase layout" sections change. Skip for pure refactors that don't move boxes or arrows.
+description: Keep the design/ package in sync with the implemented datalab architecture — the draw.io diagrams (design/*.drawio), their exported images (design/images/*.png via `make design`), and the customer-facing design/OVERVIEW.md. Invoke whenever a code change adds/removes/renames a config artifact (a target table), a framework module under src/datalab/framework/, a domain @transform/@check_function/@snapshot_source, a medallion table (bronze/silver/gold/quarantine), an edge-lane job or notebook, an execution profile, a CI/CD workflow, or a bundle resource the diagrams reference; also when AGENTS.md's "Architecture" or "Codebase layout" changes. After editing a diagram, ALWAYS re-export images with `make design`, and refresh OVERVIEW.md when the customer narrative changes. Skip only for pure refactors that move no boxes/arrows and change no narrative.
 ---
 
-# Maintain the end-to-end design diagram
+# Maintain the design package
 
-`design/02_implementation_end_to_end.drawio` is the single living picture of
-what datalab actually builds. `design/01_design_config_driven_medallion.drawio`
-is the multi-page conceptual spec (Context → Author → Generate → Run → Ship);
-touch it only when the *design intent* changes, not on every code edit. If you
-change the architecture, the implementation diagram must follow — otherwise
-future contributors (human or agent) will trust a stale map and make wrong
-decisions.
+`design/` is the single living picture of what datalab actually builds. When the
+architecture moves and the design is left stale, future contributors (human or
+agent) trust a wrong map and make wrong decisions — so the design travels with
+the code, in the same PR.
 
-This skill walks you through detecting the change, deciding what shape it takes
-in the diagram, and editing the drawio XML in place. Layout details matter —
-apply them carefully so the diagram stays legible.
+The package has four parts, with one source of truth:
+
+| Part | File(s) | Role |
+|---|---|---|
+| **Living implementation map** | `design/02_implementation_end_to_end.drawio` | The single-page banded picture of the running system. **Edit this on most code changes.** |
+| **Conceptual design spec** | `design/01_design_config_driven_medallion.drawio` | Multi-page Context → Author → Generate → Run → Ship. Edit only when the *design intent* changes. |
+| **Exported images** | `design/images/*.png` | Generated from the `.drawio` sources by `make design`. Never hand-edit; re-export. The README, `docs/` and `OVERVIEW.md` embed these. |
+| **Customer overview** | `design/OVERVIEW.md` | Customer-facing narrative that embeds the images. Refresh when a change alters the story (a new capability, layer behaviour, or value point). |
+
+> `design/datalab-customer-overview.html` is a **published standalone snapshot**
+> built out-of-band (not by this skill or by `make design`). If your change
+> materially alters `OVERVIEW.md`, flag in the PR that the HTML snapshot needs
+> regenerating — do not hand-edit it.
+
+The `.drawio` XML is the source of truth. The PNGs are derived; `make design`
+regenerates them (it uses the draw.io Desktop CLI and is dev/agent-only — the
+CLI is not in CI).
 
 ## When to invoke
 
@@ -35,6 +46,9 @@ YES — any of these in the same PR/work session:
   `.github/actions/`.
 - A new Databricks resource the bundle manages (pipeline, job), a new UC
   schema/volume, or a bootstrap grant the diagram references.
+
+In each case: edit the diagram, **re-export images (`make design`)**, and
+refresh `OVERVIEW.md` if the change alters the customer narrative.
 
 NO — skip if:
 
@@ -124,9 +138,9 @@ Escape XML: `<` → `&lt;`, `>` → `&gt;`, `&` → `&amp;`, literal newline →
 Don't put raw double-quotes inside a `value="..."` — use single quotes in any
 inline HTML style.
 
-### 4. Validate
+### 4. Validate the XML and geometry
 
-Always parse the XML and check geometry before saving:
+Always parse the XML and check geometry before re-exporting:
 
 ```bash
 python3 - <<'PY'
@@ -145,75 +159,106 @@ print("oob",[k for k,(x,y,w,h) in V.items() if x<0 or y<0 or x+w>pw or y+h>ph] o
 PY
 ```
 
-Check that the new box's `x + width` doesn't exceed the region:
+- Left region boxes:  `x + width ≤ 1300`; right region: `1340 ≤ x` and
+  `x + width ≤ 2180`.
+- No two boxes in the same band overlap; every new edge's `source`/`target`
+  points to an existing id.
+- Band wrappers legitimately *contain* their children — compare siblings, not a
+  child against its band.
 
-- Left region boxes:  `x + width ≤ 1300`
-- Right region boxes: `1340 ≤ x` and `x + width ≤ 2180`
+### 5. Re-export the images
 
-Check that no two boxes in the same band have overlapping rectangles, and that
-every new edge's `source`/`target` points to an existing id.
+```
+make design
+```
 
-### 5. Cross-check with AGENTS.md
+This regenerates every `design/images/*.png` from the `.drawio` sources (it
+splits the multi-page `01_*` file page by page, working around draw.io's
+unreliable `--page-index`). Open the changed PNG to confirm it rendered, and
+**commit the regenerated images alongside the `.drawio` edit** — a diagram edit
+without its re-export leaves the embedded images stale. If `make design` reports
+the CLI is missing, install draw.io Desktop or set `DRAWIO=/path/to/draw.io`.
 
-After updating the diagram, scan AGENTS.md's "Architecture" and "Codebase
-layout" sections (and the relevant `docs/`). If the change you made also
-affects those — e.g. a new framework module that should appear in the tree, or
-a new lane/profile — update them in the same PR. The diagram, AGENTS.md, and
-docs/ are the human-and-agent-facing descriptions of the system; they must stay
-aligned. Per the maintenance protocol, framework changes also update
-`docs/FRAMEWORK.md`.
+### 6. Refresh the customer overview
 
-### 6. Don't touch
+If the change alters the *story* the customer reads — a new medallion capability,
+a changed layer behaviour, a new execution profile, a new value point — update
+the matching prose in `design/OVERVIEW.md` (it embeds `images/01_*` and
+`images/02_*`, so the re-exported images flow through automatically). When
+`OVERVIEW.md` changes materially, note in the PR that
+`design/datalab-customer-overview.html` (the standalone share) needs
+regenerating out-of-band. A purely structural diagram tweak that doesn't change
+the narrative needs no `OVERVIEW.md` edit.
+
+### 7. Cross-check AGENTS.md and docs
+
+Scan AGENTS.md's "Architecture" and "Codebase layout" sections (and the relevant
+`docs/`). If the change also affects those — a new framework module in the tree,
+a new lane/profile — update them in the same PR. The diagram, images, OVERVIEW,
+AGENTS.md and docs/ are the human-and-agent-facing descriptions of the system;
+they must stay aligned. Per the maintenance protocol, framework changes also
+update `docs/FRAMEWORK.md`.
+
+### 8. Don't touch
 
 - The TITLE / subtitle text — version it via diagram updates, not text edits.
 - The legend — only change it if you introduce a new flow tier / edge color.
 - The band wrapper rectangles (`config_band`, `framework_band`, etc.) — resize
   only if a row genuinely needs more vertical space.
+- The exported PNGs by hand, or the standalone HTML — regenerate, don't edit.
 
-## Common change → diagram action recipes
+## Common change → action recipes
 
-**"Added a new table artifact"** → New box in `config_band` (the config row),
-plus the corresponding medallion table box in `pipeline_band` and a green
-data-flow edge from its upstream. Edit `cfg_*` text to match the columns/target.
+**"Added a new table artifact"** → New box in `config_band`, plus the medallion
+table box in `pipeline_band` and a green data-flow edge from its upstream. Edit
+`cfg_*` text to match. `make design`. If it adds a customer-visible capability,
+add a line to OVERVIEW.md's medallion section.
 
 **"Added a new @transform / @check_function"** → Usually no new box — it lives
-inside `dom_transforms` / `dom_checks`. Edit that box's text if it changes the
-surface; add a purple registry edge only if a new module appears.
+inside `dom_transforms` / `dom_checks`. Edit that box's text if the surface
+changes; add a purple registry edge only if a new module appears. `make design`.
 
 **"Added a new framework module under src/datalab/framework/"** → Add or edit a
-box in `framework_band`; wire purple generate edges from/to it. Update
+box in `framework_band`; wire purple generate edges. `make design`. Update
 AGENTS.md "Codebase layout" and `docs/FRAMEWORK.md`.
 
 **"Added an edge-lane job / notebook"** → New box in `edge_band`; add a teal
 read-only edge from the SDP table it consumes (never a write edge — single-
-writer invariant).
+writer invariant). `make design`.
 
 **"Added / changed an execution profile"** → Edit the `profiles` box (right
-column) and the `fw_generate` text; adjust the dashed purple
-`e_profiles_gen` edge label if routing changed.
+column) and the `fw_generate` text; adjust the dashed purple `e_profiles_gen`
+edge label if routing changed. `make design`. Update OVERVIEW.md's "Run
+anywhere" table.
 
 **"New GitHub Action / workflow / bundle resource"** → Edit the `github` or
-`bundle` box text; add a deploy (orange) edge if it changes the deploy path.
+`bundle` box text; add a deploy (orange) edge if the deploy path changed.
+`make design`.
 
 ## Anti-patterns
 
-- Adding a box outside the bands (floating in whitespace) — it'll look
-  disconnected from the architecture.
+- Editing a `.drawio` source but forgetting `make design` — the README/docs
+  embed stale images.
+- Hand-editing a PNG or the standalone HTML instead of regenerating.
+- Adding a box outside the bands (floating in whitespace).
 - A write-edge from a job/notebook INTO an SDP-owned table — violates the
   single-writer invariant; edge lanes are read-only (teal).
 - Drawing `import dlt` / hand-MERGE flows — this repo is `pyspark.pipelines` +
   AUTO CDC; the diagram must not imply otherwise.
-- Stacking new boxes on top of existing ones because you didn't check geometry.
-  Always grep current x/y/w/h before placing.
+- Stacking new boxes on existing ones because you didn't check geometry.
 - Editing the legend without a corresponding edge-color change in the body.
 
 ## Done check
 
-Before declaring the diagram updated, verify:
+Before declaring the design updated, verify:
 
-1. `xml.etree.ElementTree.parse` succeeds (no syntax errors).
-2. Every new box has a unique `id`.
-3. Every new edge has both `source` and `target` pointing to existing ids.
-4. No two boxes overlap by more than a few px; all boxes are in-bounds.
-5. The change is described in AGENTS.md (and `docs/FRAMEWORK.md` for framework
+1. `xml.etree.ElementTree.parse` succeeds on every edited `.drawio` (no syntax
+   errors).
+2. Every new box has a unique `id`; every new edge's `source`/`target` exists.
+3. No sibling boxes overlap by more than a few px; all boxes are in-bounds.
+4. `make design` ran and the regenerated `design/images/*.png` are staged with
+   the `.drawio` edit.
+5. `design/OVERVIEW.md` still reads true (updated if the narrative changed); the
+   standalone HTML is flagged in the PR if it needs regenerating.
+6. The change is described in AGENTS.md (and `docs/FRAMEWORK.md` for framework
    changes) in the same PR.

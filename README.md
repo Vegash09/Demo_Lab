@@ -59,6 +59,7 @@ flowchart TD
     README --> FWK["docs/FRAMEWORK.md<br/>flowspec reference: artifact anatomy ·<br/>target kinds · dqx semantics · capability matrix"]
     README --> NAM["docs/NAMING.md<br/>folder structure mirrors the UC namespace:<br/>catalog · schema · table"]
     README --> EX["examples/customer_sales/<br/>complete worked domain to copy"]
+    README --> OVR["design/OVERVIEW.md<br/>customer-facing tour:<br/>driving medallion transformations"]
     README --> ARCH["docs/ARCHITECTURE.md<br/>system view · lanes · code layout · governance"]
     README --> CICD["docs/CICD.md<br/>workflows · OIDC setup · release flow"]
     README --> MIG["docs/MIGRATION.md<br/>legacy DLT → hand-written SDP → flowspec"]
@@ -71,6 +72,7 @@ flowchart TD
 | [docs/FRAMEWORK.md](docs/FRAMEWORK.md) | you are adding a table or domain: artifact schema, generated graph, target kinds, data-quality semantics, the SDP capability matrix |
 | [docs/NAMING.md](docs/NAMING.md) | you are naming anything: folder paths mirror the UC namespace (catalog → schema → table), package/resource naming rules |
 | [examples/customer_sales/](examples/customer_sales/README.md) | you want a finished example to copy — complete worked domain, mirrors an adopter repo |
+| [design/OVERVIEW.md](design/OVERVIEW.md) | you want the customer-facing tour — how datalab drives transformations across bronze → silver → gold, with the architecture diagrams (shareable standalone: `design/datalab-customer-overview.html`) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | you need the system picture: CI/CD → workspace resources, the three authoring lanes, code organization, environments, RBAC/ABAC |
 | [docs/CICD.md](docs/CICD.md) | you are wiring a target or debugging a deploy: workflows, federation policies, GitHub Environments, release flow |
 | [docs/MIGRATION.md](docs/MIGRATION.md) | you knew the legacy/intermediate codebase and need the old → current concept map |
@@ -90,7 +92,7 @@ flowchart TD
 | CI/CD | `.github/` | ruff + pytest + config validation + `bundle validate` on PRs; OIDC deploys on merge/tags |
 | Agent harness | `.claude/`, `.cursor/`, `.githooks/` | rules, skills, PR-template + protected-file guards |
 | Docs | `docs/` | the child docs mapped above |
-| Design diagrams | `design/` | editable diagrams.net (draw.io) sources — `01_*` design spec, `02_*` living implementation map; updated via the `maintain-design-diagram` skill ([how to edit](docs/ARCHITECTURE.md#editing-the-design-diagrams)) |
+| Design | `design/` | customer-facing [`OVERVIEW.md`](design/OVERVIEW.md) + draw.io sources (`01_*` spec, `02_*` living map), `images/` PNG exports (`make design`) and a standalone share HTML; kept in sync via the `maintain-design-diagram` skill ([how to edit](docs/ARCHITECTURE.md#editing-the-design-diagrams)) |
 
 ## Quick start
 

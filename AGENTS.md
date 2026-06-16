@@ -106,9 +106,11 @@ Makefile                  Developer + CI entrypoints (run `make help`)
 .githooks/pre-commit      Human-side protected-files guard (enable: make enable-githooks)
 docs/                     GETTING_STARTED, FRAMEWORK (reference), NAMING (folder↔UC convention),
                           ARCHITECTURE, CICD, MIGRATION
-design/                   Architecture diagrams (drawio): 01_*=multi-page design spec,
-                          02_*=living end-to-end implementation (kept in sync via the
-                          maintain-design-diagram skill; excluded from deploy by .databricksignore)
+design/                   Customer-facing OVERVIEW.md + architecture diagrams (drawio):
+                          01_*=multi-page design spec, 02_*=living end-to-end implementation,
+                          images/=PNG exports (make design), datalab-customer-overview.html
+                          (standalone share). Kept in sync via the maintain-design-diagram
+                          skill; excluded from deploy by .databricksignore
 ```
 
 Adopter repos use the same shape with the domain at the ROOT instead of under
@@ -129,6 +131,7 @@ make run              # databricks bundle run customer_sales_etl -t dev (dev ref
 make run-local        # materialize the medallion on sample data via OSS spark-pipelines
 make dry-run-local    # spark-pipelines dry-run (graph validation, no data)
 make validate-connect # run one dataset on a LIVE cluster via isolated Databricks Connect
+make design           # re-export design/*.drawio diagrams to design/images/*.png (needs draw.io Desktop)
 ```
 
 Python: 3.12+ (serverless environment v4 ships 3.12). Java 17+ locally for the
@@ -414,9 +417,12 @@ When you change anything in the **protected file surface** below, in the same
 change:
 
 1. Capture the *why* in this file (Common tasks or Critical knowledge).
-2. If the architecture moved, update `docs/ARCHITECTURE.md` **and**
-   `design/02_implementation_end_to_end.drawio` (the living diagram — follow the
-   `maintain-design-diagram` skill; `design/01_*` only when the design intent changes).
+2. If the architecture moved, update `docs/ARCHITECTURE.md` **and** the `design/`
+   package: edit `design/02_implementation_end_to_end.drawio` (the living
+   diagram), run `make design` to re-export `design/images/`, and refresh
+   `design/OVERVIEW.md` if the customer narrative changed — all in the same PR.
+   Follow the `maintain-design-diagram` skill (`design/01_*` only when the design
+   intent changes).
 3. **Any change under `src/datalab/framework/` updates `docs/FRAMEWORK.md`
    in the same commit** — the framework is the shared baseline for every
    customer project; undocumented behavior changes break downstream adopters.
@@ -513,14 +519,16 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   policies → add display-only SQL under the domain's `sql/abac/` following
   the conventions in `docs/ARCHITECTURE.md` — never execute them from CI or
   an agent session.
-- **Update an architecture diagram**: edit the diagrams.net (draw.io) source in
-  `design/` — `02_implementation_end_to_end.drawio` when the implemented
-  architecture moves (do it in the same PR), `01_design_config_driven_medallion.drawio`
-  only when the design intent changes. Follow the `maintain-design-diagram`
-  skill for band/colour conventions + the geometry check; full how-to (editors,
-  validation, optional image export) in
-  `docs/ARCHITECTURE.md` ("Editing the design diagrams"). `design/` is excluded
-  from the bundle via `.databricksignore`.
+- **Update the design (diagrams, images, overview)**: edit the diagrams.net
+  (draw.io) source in `design/` — `02_implementation_end_to_end.drawio` when the
+  implemented architecture moves (same PR), `01_design_config_driven_medallion.drawio`
+  only when the design intent changes — then `make design` to re-export
+  `design/images/*.png`, and refresh the customer-facing `design/OVERVIEW.md` if
+  the narrative changed (flag `datalab-customer-overview.html` for out-of-band
+  regeneration). Follow the `maintain-design-diagram` skill for band/colour
+  conventions + the geometry check; full how-to in `docs/ARCHITECTURE.md`
+  ("Editing the design diagrams"). `design/` is excluded from the bundle via
+  `.databricksignore`.
 - **Open a pull request**: fill `.github/pull_request_template.md` into a body
   file and `gh pr create --body-file <file>` (or `--web`). Keep the
   `datalab-pr-template` marker and the `##` section headings — the hook + CI
