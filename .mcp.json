@@ -6,11 +6,13 @@
       "args": [
         "uc-mcp-proxy",
         "--url",
-        "${DATABRICKS_MCP_HOST:-https://dbc-425be768-f138.cloud.databricks.com}/api/2.0/mcp/sql?warehouse_id=${DATABRICKS_SQL_WAREHOUSE_ID:-c1cdbe2406e5cf04}",
+        "/api/2.0/mcp/sql",
         "--auth-type",
         "databricks-cli",
         "--profile",
-        "${DATABRICKS_CONFIG_PROFILE:-diggi_dev_aws}"
+        "${DATABRICKS_CONFIG_PROFILE:-diggi_dev_aws}",
+        "--meta",
+        "warehouse_id=${DATABRICKS_SQL_WAREHOUSE_ID:-c1cdbe2406e5cf04}"
       ]
     }
   }

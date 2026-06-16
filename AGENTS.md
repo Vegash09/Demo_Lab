@@ -426,7 +426,9 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   single-writer invariant still holds (the agent may SELECT/DESCRIBE SDP-owned
   tables, never write them — repaired data re-enters via the landing volume or a
   `backfill:` flow). The proxy runs via `uvx` (ephemeral) and is NEVER added to
-  `pyproject.toml` / `uv.lock` (same rule as omnigent). A profile name + host +
+  `pyproject.toml` / `uv.lock` (same rule as omnigent). The proxy resolves the
+  workspace host from the CLI profile (`--url` is the relative `/api/2.0/mcp/sql`)
+  and takes the warehouse via `--meta warehouse_id=<id>`. A profile name +
   warehouse id are config, not secrets — never put a token in the committed JSON.
   Managed MCP may be Beta/region-gated; the fallback (a local SQL MCP server) and
   the full setup live in `docs/AGENT_MCP.md`; the `query-databricks` skill governs

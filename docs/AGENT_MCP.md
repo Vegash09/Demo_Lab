@@ -40,7 +40,7 @@ the deployed bundle via `.databricksignore`, and the proxy never enters
 
 ```
 Claude Code / Cursor ──stdio──▶ uvx uc-mcp-proxy ──HTTPS (CLI-profile auth)──▶
-   https://<host>/api/2.0/mcp/sql?warehouse_id=<id>   (Databricks managed MCP)
+   <profile host>/api/2.0/mcp/sql   (Databricks managed MCP; warehouse via --meta)
         │
         ▼  Unity Catalog grants enforced on every read
    read-only SQL · DESCRIBE · SHOW TABLES over your UC tables
@@ -49,8 +49,11 @@ Claude Code / Cursor ──stdio──▶ uvx uc-mcp-proxy ──HTTPS (CLI-prof
 - **Managed server, hosted by Databricks** — there is no server code in this
   repo. The endpoint lives on your workspace host.
 - **Auth = your CLI profile.** `uc-mcp-proxy --auth-type databricks-cli --profile
-  <name>` reuses `~/.databrickscfg`. Databricks does **not** support Dynamic
-  Client Registration, so the naive remote-OAuth path fails in most IDEs; the
+  <name>` reuses `~/.databrickscfg` — and resolves the workspace **host from that
+  profile** (the `--url` is the workspace-relative `/api/2.0/mcp/sql`), so the
+  host is never duplicated. The SQL warehouse is passed with `--meta
+  warehouse_id=<id>`. Databricks does **not** support Dynamic Client
+  Registration, so the naive remote-OAuth path fails in most IDEs; the
   CLI-profile proxy is Databricks' documented answer and keeps **no secret in the
   repo**.
 - **Unity Catalog governs access** — you only see what your identity is granted.
@@ -63,9 +66,11 @@ Claude Code / Cursor ──stdio──▶ uvx uc-mcp-proxy ──HTTPS (CLI-prof
 | Genie (NL Q&A) | `https://<host>/api/2.0/mcp/genie/{genie_space_id}` | No — optional; needs a curated Genie space |
 | UC functions | `https://<host>/api/2.0/mcp/functions/{catalog}/{schema}` | No — optional; exposes registered UC functions as tools |
 
-To add Genie/functions, copy the `databricks-sql` block in `.mcp.json`, rename
-it, and swap the `--url`. Find your servers + exact URLs at **Workspace → Agents
-→ MCP Servers**.
+The proxy takes the workspace-relative form (`--url /api/2.0/mcp/sql`) and fills
+the host from your profile. To add Genie/functions, copy the `databricks-sql`
+block in `.mcp.json`, rename it, and swap the `--url` (e.g.
+`/api/2.0/mcp/genie/{genie_space_id}`). Find your servers + exact URLs at
+**Workspace → Agents → MCP Servers**.
 
 ## Use it
 
@@ -107,14 +112,15 @@ env overrides the defaults already reference:
 
 | Value | This repo's default | Where it lives | Your source |
 |---|---|---|---|
-| Workspace host (`DATABRICKS_MCP_HOST`) | `https://dbc-425be768-f138.cloud.databricks.com` | `databricks.yml` `targets.<t>.workspace.host` | your target host |
+| CLI profile (`DATABRICKS_CONFIG_PROFILE`) | `diggi_dev_aws` | `~/.databrickscfg` (carries the workspace host + auth) | your `databricks auth login` profile |
 | SQL warehouse id (`DATABRICKS_SQL_WAREHOUSE_ID`) | `c1cdbe2406e5cf04` | a dev SQL warehouse | `databricks warehouses list` |
-| CLI profile (`DATABRICKS_CONFIG_PROFILE`) | `diggi_dev_aws` | `~/.databrickscfg` | your `databricks auth login` profile |
 
-`.cursor/mcp.json` carries literal values (most robust across Cursor versions) —
-edit them directly. `.mcp.json` uses `${VAR:-default}`, so
-`export DATABRICKS_MCP_HOST=… DATABRICKS_SQL_WAREHOUSE_ID=… DATABRICKS_CONFIG_PROFILE=…`
-repoints Claude Code without touching the protected file.
+The **workspace host comes from your CLI profile** (the `--url` is
+workspace-relative), so there is no host to set separately. `.cursor/mcp.json`
+carries literal values (most robust across Cursor versions) — edit them directly.
+`.mcp.json` uses `${VAR:-default}`, so
+`export DATABRICKS_CONFIG_PROFILE=… DATABRICKS_SQL_WAREHOUSE_ID=…` repoints Claude
+Code without touching the protected file.
 
 > Note: the repo `.env` currently sets `DATABRICKS_PROFILE` (wrong name) — the
 > CLI/SDK variable is `DATABRICKS_CONFIG_PROFILE`. The `.mcp.json` default
