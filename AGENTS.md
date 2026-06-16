@@ -114,6 +114,11 @@ design/                   Customer-facing OVERVIEW.md + architecture diagrams (d
 omnigent/                 Opt-in, dev-time pilot: an Omnigent agent spec (datalab-author.yaml,
                           instructions: ../AGENTS.md) to run the authoring workflow on any
                           harness; no policies ported, excluded from deploy (omnigent/README.md)
+.mcp.json                 Opt-in, dev-time MCP (with .cursor/mcp.json): a uvx stdio proxy
+                          (uc-mcp-proxy) to the workspace's MANAGED Databricks SQL MCP endpoint
+                          so Claude Code/Cursor run READ-ONLY UC queries that ground authoring.
+                          CLI-profile auth (no token), not in uv.lock, excluded from deploy.
+                          See docs/AGENT_MCP.md + the query-databricks skill.
 ```
 
 Adopter repos use the same shape with the domain at the ROOT instead of under
@@ -413,6 +418,19 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `examples/customer_sales/sql/abac/`); an admin reviews and applies them manually.
   Keep it that way — auto-applying access policies from a code repo is the
   failure mode the convention exists to prevent.
+- **Databricks MCP is read-only grounding, never a write path.** The opt-in
+  `.mcp.json` / `.cursor/mcp.json` wire Claude Code / Cursor to the workspace's
+  MANAGED Databricks SQL MCP endpoint (`/api/2.0/mcp/sql`) through a `uvx` stdio
+  proxy (`uc-mcp-proxy`) that authenticates with the `diggi_dev_aws` CLI profile
+  (OAuth U2M — no token in the repo). UC grants govern every read; the
+  single-writer invariant still holds (the agent may SELECT/DESCRIBE SDP-owned
+  tables, never write them — repaired data re-enters via the landing volume or a
+  `backfill:` flow). The proxy runs via `uvx` (ephemeral) and is NEVER added to
+  `pyproject.toml` / `uv.lock` (same rule as omnigent). A profile name + host +
+  warehouse id are config, not secrets — never put a token in the committed JSON.
+  Managed MCP may be Beta/region-gated; the fallback (a local SQL MCP server) and
+  the full setup live in `docs/AGENT_MCP.md`; the `query-databricks` skill governs
+  when/how the agent reaches for it.
 
 ## Coding-agent maintenance protocol
 
@@ -449,6 +467,7 @@ change:
 | `^\.github/pull_request_template\.md$` | unified PR template |
 | `^\.claude/(settings\.json\|hooks/.*\|skills/.*)` | Claude agent harness |
 | `^\.cursor/(rules\|hooks\|skills)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks + skills |
+| `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) |
 | `^\.githooks/.*` | git pre-commit guard |
 | `^Makefile$` | developer + CI entrypoints |
 | `^\.env(\..*)?$` | secrets — never commit |
@@ -532,6 +551,14 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   conventions + the geometry check; full how-to in `docs/ARCHITECTURE.md`
   ("Editing the design diagrams"). `design/` is excluded from the bundle via
   `.databricksignore`.
+- **Query Databricks from the agent (MCP)**: opt-in, dev-time. Authenticate the
+  CLI (`databricks auth login --host <host>` → profile `diggi_dev_aws`), then in
+  Claude Code approve the `databricks-sql` server from `.mcp.json` (Cursor:
+  enable it under Settings → MCP). Ask the agent to preview a UC table before
+  authoring its downstream artifact — the `query-databricks` skill governs
+  when/how (READ-ONLY only; UC grants govern; single-writer invariant holds).
+  Don't `uv add` the proxy (uvx-ephemeral). Full setup + adopter swaps +
+  verification + fallback: `docs/AGENT_MCP.md`.
 - **Open a pull request**: fill `.github/pull_request_template.md` into a body
   file and `gh pr create --body-file <file>` (or `--web`). Keep the
   `datalab-pr-template` marker and the `##` section headings — the hook + CI

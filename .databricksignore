@@ -17,6 +17,7 @@ design/
 .cursor/
 .githooks/
 omnigent/
+.mcp.json
 
 # Local tooling
 Makefile
