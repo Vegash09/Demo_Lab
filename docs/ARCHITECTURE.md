@@ -6,6 +6,12 @@ How datalab hangs together: from a GitHub push to running Lakeflow resources,
 the three authoring lanes, the medallion data view, code organization, and
 governance.
 
+> Editable diagrams (diagrams.net / draw.io) live in `design/`:
+> `design/01_design_config_driven_medallion.drawio` is the multi-page design
+> spec (Context → Author → Generate → Run → Ship) and
+> `design/02_implementation_end_to_end.drawio` is the living end-to-end
+> implementation map. Keep `02_*` current via the `maintain-design-diagram` skill.
+
 ## System view
 
 ```mermaid
