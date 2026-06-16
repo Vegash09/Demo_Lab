@@ -43,6 +43,8 @@ PROTECTED: list[tuple[str, str]] = [
      "coding-agent harness config (hooks, skills, settings)"),
     (r"^\.cursor/(rules|hooks|skills)/.*|^\.cursor/hooks\.json$",
      "Cursor rules + agent hooks + skills (incl. the gh-pr-create template guard)"),
+    (r"^\.mcp\.json$|^\.cursor/mcp\.json$",
+     "opt-in MCP server config (agent↔Databricks read-only query connection)"),
     (r"^\.githooks/.*",
      "git pre-commit guard (human-side counterpart to this hook)"),
     (r"^Makefile$",

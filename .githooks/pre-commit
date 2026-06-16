@@ -52,6 +52,8 @@ PATTERNS=(
   '^\.claude/(settings\.json|hooks/.*|skills/.*)'
   '^\.cursor/(rules|hooks|skills)/.*'
   '^\.cursor/hooks\.json$'
+  '^\.mcp\.json$'
+  '^\.cursor/mcp\.json$'
   '^\.githooks/.*'
   '^Makefile$'
   '^\.env(\..*)?$'

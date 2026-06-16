@@ -78,6 +78,7 @@ flowchart TD
 | [docs/MIGRATION.md](docs/MIGRATION.md) | you knew the legacy/intermediate codebase and need the old → current concept map |
 | [AGENTS.md](AGENTS.md) | always, before editing — routing rules, protected files, PR conventions |
 | [omnigent/README.md](omnigent/README.md) | you want to run datalab's authoring agent on [Omnigent](https://github.com/omnigent-ai/omnigent) (Claude Code / Codex / Cursor / Pi) — opt-in dev-time pilot, grounded in `AGENTS.md` |
+| [docs/AGENT_MCP.md](docs/AGENT_MCP.md) | you want the agent (Claude Code / Cursor) to query live Unity Catalog tables while authoring — opt-in dev-time Databricks MCP, read-only, grounded by the `query-databricks` skill |
 
 ## Repository map
 
@@ -91,7 +92,7 @@ flowchart TD
 | Deploy | `databricks.yml` + `examples/*/resources/` (adopters: `resources/`) | bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
 | Tests | `tests/` (framework, example-free) + `examples/customer_sales/tests/` | unit tests on a local SparkSession — no workspace needed |
 | CI/CD | `.github/` | ruff + pytest + config validation + `bundle validate` on PRs; OIDC deploys on merge/tags |
-| Agent harness | `.claude/`, `.cursor/`, `.githooks/` | rules, skills, PR-template + protected-file guards |
+| Agent harness | `.claude/`, `.cursor/`, `.githooks/`, `.mcp.json` | rules, skills, PR-template + protected-file guards, opt-in Databricks MCP config (read-only UC queries — [docs/AGENT_MCP.md](docs/AGENT_MCP.md)) |
 | Docs | `docs/` | the child docs mapped above |
 | Design | `design/` | customer-facing [`OVERVIEW.md`](design/OVERVIEW.md) + draw.io sources (`01_*` spec, `02_*` living map), `images/` PNG exports (`make design`) and a standalone share HTML; kept in sync via the `maintain-design-diagram` skill ([how to edit](docs/ARCHITECTURE.md#editing-the-design-diagrams)) |
 

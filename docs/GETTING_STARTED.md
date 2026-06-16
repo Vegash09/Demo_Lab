@@ -28,6 +28,9 @@ make lint test          # prove the toolchain works before you write anything
 databricks auth login --host <your-workspace-url>
 ```
 
+Optional: let the agent query your workspace's UC tables read-only while you
+author (Databricks MCP, opt-in) — see [AGENT_MCP.md](AGENT_MCP.md).
+
 ## 1. The mental model (60 seconds)
 
 - A **target table = one YAML artifact** at `config/<catalog>/<schema>/<table>.yml`
