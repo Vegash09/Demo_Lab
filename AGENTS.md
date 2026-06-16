@@ -106,6 +106,9 @@ Makefile                  Developer + CI entrypoints (run `make help`)
 .githooks/pre-commit      Human-side protected-files guard (enable: make enable-githooks)
 docs/                     GETTING_STARTED, FRAMEWORK (reference), NAMING (folder↔UC convention),
                           ARCHITECTURE, CICD, MIGRATION
+design/                   Architecture diagrams (drawio): 01_*=multi-page design spec,
+                          02_*=living end-to-end implementation (kept in sync via the
+                          maintain-design-diagram skill; excluded from deploy by .databricksignore)
 ```
 
 Adopter repos use the same shape with the domain at the ROOT instead of under
@@ -411,7 +414,9 @@ When you change anything in the **protected file surface** below, in the same
 change:
 
 1. Capture the *why* in this file (Common tasks or Critical knowledge).
-2. If the architecture moved, update `docs/ARCHITECTURE.md`.
+2. If the architecture moved, update `docs/ARCHITECTURE.md` **and**
+   `design/02_implementation_end_to_end.drawio` (the living diagram — follow the
+   `maintain-design-diagram` skill; `design/01_*` only when the design intent changes).
 3. **Any change under `src/datalab/framework/` updates `docs/FRAMEWORK.md`
    in the same commit** — the framework is the shared baseline for every
    customer project; undocumented behavior changes break downstream adopters.
