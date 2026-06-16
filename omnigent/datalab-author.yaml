@@ -1,0 +1,56 @@
+# datalab pipeline-authoring agent for Omnigent (https://omnigent.ai) — OPT-IN, DEV-TIME ONLY.
+#
+# Runs datalab's existing agent-first authoring workflow on any Omnigent harness
+# (Claude Code / Codex / Cursor / Pi), grounded in the repo's rules of record
+# (AGENTS.md) so there is no second copy of the rules to drift. See omnigent/README.md.
+#
+# Run from the datalab repo ROOT:
+#     omnigent run omnigent/datalab-author.yaml
+#     omnigent run omnigent/datalab-author.yaml --harness codex   # or cursor | pi
+#
+# This pilot does NOT port datalab's branch / protected-file / PR-template guards
+# to Omnigent policies — run it on a feature branch; the .githooks/pre-commit
+# guard and CI remain the enforcement net (see omnigent/README.md "Safety").
+name: datalab-author
+description: >-
+  datalab pipeline-authoring agent: authors/changes medallion tables as YAML
+  artifacts following the repo's rules of record (AGENTS.md), on any harness.
+
+# AGENTS.md is the single source of truth (relative to this file = repo root).
+instructions: ../AGENTS.md
+
+executor:
+  harness: claude-sdk          # override per run with --harness codex | cursor | pi
+  # No model is pinned, so the agent uses your configured provider default
+  # (Anthropic/OpenAI key, a Claude/ChatGPT subscription, or a gateway).
+  #
+  # To route the model through a Databricks workspace instead (in-tenant),
+  # install `omnigent[databricks]` and uncomment:
+  #   model: databricks-claude-sonnet-4-6
+  #   auth:
+  #     type: databricks
+  #     profile: <your-databricks-cli-profile>
+  #
+  # The `cursor` harness talks only to Cursor's backend (no Databricks gateway):
+  # authenticate with CURSOR_API_KEY and use a Cursor model id (e.g. auto, gpt-5).
+
+# Local file + shell access so the agent can author artifacts and run the repo's
+# own gates. Sandbox is omitted -> Omnigent's OS default (seatbelt on macOS,
+# bwrap on Linux).
+os_env:
+  type: caller_process
+  cwd: .                       # run from the datalab repo root
+
+# A bash terminal for the repo's validation gates:
+#   make validate-configs   (pydantic + dqx)   ·   make lint   ·   make test
+terminals:
+  shell:
+    command: bash
+    allow_cwd_override: true
+    os_env:
+      type: caller_process
+      cwd: .
+
+# No `policies:` block in this pilot — guards stay enforced by .githooks/pre-commit
+# + CI (see omnigent/README.md "Safety"). Porting the guards to Omnigent policies
+# (ALLOW/DENY/ASK, per Omnigent's docs/POLICIES.md) is a deliberate follow-up.

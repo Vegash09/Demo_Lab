@@ -111,6 +111,9 @@ design/                   Customer-facing OVERVIEW.md + architecture diagrams (d
                           images/=PNG exports (make design), datalab-customer-overview.html
                           (standalone share). Kept in sync via the maintain-design-diagram
                           skill; excluded from deploy by .databricksignore
+omnigent/                 Opt-in, dev-time pilot: an Omnigent agent spec (datalab-author.yaml,
+                          instructions: ../AGENTS.md) to run the authoring workflow on any
+                          harness; no policies ported, excluded from deploy (omnigent/README.md)
 ```
 
 Adopter repos use the same shape with the domain at the ROOT instead of under
