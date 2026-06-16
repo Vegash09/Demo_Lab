@@ -6,11 +6,9 @@ How datalab hangs together: from a GitHub push to running Lakeflow resources,
 the three authoring lanes, the medallion data view, code organization, and
 governance.
 
-> Editable diagrams (diagrams.net / draw.io) live in `design/`:
-> `design/01_design_config_driven_medallion.drawio` is the multi-page design
-> spec (Context → Author → Generate → Run → Ship) and
-> `design/02_implementation_end_to_end.drawio` is the living end-to-end
-> implementation map. Keep `02_*` current via the `maintain-design-diagram` skill.
+> Editable architecture diagrams (diagrams.net / draw.io) live in `design/` —
+> see [Editing the design diagrams](#editing-the-design-diagrams) for how to
+> open, edit, validate, and keep them in sync with the code.
 
 ## System view
 
@@ -199,6 +197,81 @@ flowchart TD
 
 Group creation stays account/workspace-level (`databricks groups create`) —
 nothing in this repo creates principals.
+
+## Editing the design diagrams
+
+The editable architecture diagrams live in `design/` as diagrams.net
+(draw.io) sources. The committed `.drawio` XML **is** the source of truth — we
+do not keep a separate binary export that could drift. `design/` is listed in
+`.databricksignore`, so the diagrams never ship with the bundle.
+
+| File | Kind | Update when |
+|---|---|---|
+| `design/01_design_config_driven_medallion.drawio` | Multi-page **design spec** (Context → Author → Generate → Run → Ship) | the *design intent* changes — a new principle, authoring lane, or conceptual flow |
+| `design/02_implementation_end_to_end.drawio` | Single-page **living implementation** map (config / framework / domain / pipeline / edge bands + a CI-CD · profiles · bundle · bootstrap · docs column) | the *implemented architecture* changes — a new table artifact, framework module, edge job/notebook, execution profile, or bundle resource |
+
+### Open and edit
+
+All three options read and write the same `.drawio` file — pick whichever fits
+your setup:
+
+- **In the editor (recommended):** install the *Draw.io Integration* extension
+  (`hediet.vscode-drawio`) in VS Code or Cursor and open the `.drawio` file. It
+  renders an embedded editor and saves straight back to the XML, so the git
+  diff stays reviewable.
+- **Web, no install:** open [app.diagrams.net](https://app.diagrams.net),
+  *File → Open from → Device* (or GitHub), edit, then *File → Save*.
+- **Desktop:** the [draw.io Desktop](https://github.com/jgraph/drawio-desktop)
+  app opens the file directly.
+
+### Keep `02_*` in sync with the code
+
+The implementation diagram is part of the maintenance contract: when a change
+moves the architecture, update `design/02_implementation_end_to_end.drawio` in
+the **same PR** (see AGENTS.md "Coding-agent maintenance protocol", step 2).
+The `maintain-design-diagram` agent skill
+(`.claude/skills/maintain-design-diagram/SKILL.md`) is the recipe — it maps
+each kind of change to the band, box, or edge to touch, lists the fill/stroke
+and edge-colour conventions, and ends with a geometry checklist. Edit `01_*`
+only when the design intent itself changes.
+
+### Validate before committing
+
+Diagrams are plain XML, so validate the parse and geometry (no dangling edges,
+no out-of-bounds shapes, no overlapping sibling boxes) before you commit:
+
+```bash
+python3 - <<'PY'
+import xml.etree.ElementTree as ET
+f = "design/02_implementation_end_to_end.drawio"
+root = ET.parse(f).getroot()                       # raises on malformed XML
+for d in root.findall('.//diagram'):
+    m = d.find('.//mxGraphModel')
+    pw, ph = float(m.get('pageWidth')), float(m.get('pageHeight'))
+    V, E = {}, []
+    for c in m.findall('.//mxCell'):
+        if c.get('vertex') == '1':
+            g = c.find('mxGeometry')
+            V[c.get('id')] = tuple(float(g.get(k, 0)) for k in ('x', 'y', 'width', 'height'))
+        if c.get('edge') == '1':
+            E.append((c.get('source'), c.get('target')))
+    dangling = [(s, t) for s, t in E if s not in V or t not in V]
+    oob = [k for k, (x, y, w, h) in V.items() if x < 0 or y < 0 or x + w > pw or y + h > ph]
+    print(d.get('name'), "| dangling:", dangling or "none", "| oob:", oob or "none")
+PY
+```
+
+(Boxes nested inside a band container overlap it by design — compare siblings,
+not children against their band. The skill's done-check spells this out.)
+
+### Embedding a rendered view (optional)
+
+GitHub does not render `.drawio` inline. If a document needs an actual picture,
+export one from the editor (*File → Export as → PNG/SVG*) or via the CLI —
+`drawio -x -f svg -o docs/images/architecture.svg design/02_implementation_end_to_end.drawio`
+— and reference that image from the doc. Keep the `.drawio` file as the thing
+you edit and review; any exported PNG/SVG is a generated artifact, so re-export
+it whenever the source changes.
 
 ---
 

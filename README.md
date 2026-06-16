@@ -33,6 +33,13 @@ flowchart LR
     end
 ```
 
+> Editable, higher-fidelity architecture diagrams (diagrams.net / draw.io) live
+> in [`design/`](design/): a multi-page design spec
+> (`01_design_config_driven_medallion.drawio`) and a single-page living
+> implementation map (`02_implementation_end_to_end.drawio`). See
+> [Editing the design diagrams](docs/ARCHITECTURE.md#editing-the-design-diagrams)
+> for how to open, edit, validate, and keep them in sync.
+
 Three invariants hold everywhere:
 
 - **One artifact per table.** Columns (source→target names + types), dqx
@@ -83,6 +90,7 @@ flowchart TD
 | CI/CD | `.github/` | ruff + pytest + config validation + `bundle validate` on PRs; OIDC deploys on merge/tags |
 | Agent harness | `.claude/`, `.cursor/`, `.githooks/` | rules, skills, PR-template + protected-file guards |
 | Docs | `docs/` | the child docs mapped above |
+| Design diagrams | `design/` | editable diagrams.net (draw.io) sources — `01_*` design spec, `02_*` living implementation map; updated via the `maintain-design-diagram` skill ([how to edit](docs/ARCHITECTURE.md#editing-the-design-diagrams)) |
 
 ## Quick start
 

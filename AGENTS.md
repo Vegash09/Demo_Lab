@@ -513,6 +513,14 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   policies → add display-only SQL under the domain's `sql/abac/` following
   the conventions in `docs/ARCHITECTURE.md` — never execute them from CI or
   an agent session.
+- **Update an architecture diagram**: edit the diagrams.net (draw.io) source in
+  `design/` — `02_implementation_end_to_end.drawio` when the implemented
+  architecture moves (do it in the same PR), `01_design_config_driven_medallion.drawio`
+  only when the design intent changes. Follow the `maintain-design-diagram`
+  skill for band/colour conventions + the geometry check; full how-to (editors,
+  validation, optional image export) in
+  `docs/ARCHITECTURE.md` ("Editing the design diagrams"). `design/` is excluded
+  from the bundle via `.databricksignore`.
 - **Open a pull request**: fill `.github/pull_request_template.md` into a body
   file and `gh pr create --body-file <file>` (or `--web`). Keep the
   `datalab-pr-template` marker and the `##` section headings — the hook + CI
