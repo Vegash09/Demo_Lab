@@ -16,6 +16,7 @@ design/
 .claude/
 .cursor/
 .githooks/
+omnigent/
 
 # Local tooling
 Makefile

@@ -77,6 +77,7 @@ flowchart TD
 | [docs/CICD.md](docs/CICD.md) | you are wiring a target or debugging a deploy: workflows, federation policies, GitHub Environments, release flow |
 | [docs/MIGRATION.md](docs/MIGRATION.md) | you knew the legacy/intermediate codebase and need the old → current concept map |
 | [AGENTS.md](AGENTS.md) | always, before editing — routing rules, protected files, PR conventions |
+| [omnigent/README.md](omnigent/README.md) | you want to run datalab's authoring agent on [Omnigent](https://github.com/omnigent-ai/omnigent) (Claude Code / Codex / Cursor / Pi) — opt-in dev-time pilot, grounded in `AGENTS.md` |
 
 ## Repository map
 
