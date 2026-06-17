@@ -1,8 +1,12 @@
 # Declarative Automation Bundle (formerly Databricks Asset Bundle) for datalab.
 # Docs: https://docs.databricks.com/aws/en/dev-tools/bundles/settings
 #
-# Resources (pipelines, jobs) live in resources/*.yml. Targets share one
-# workspace today; point stage/prod at their own hosts when they exist.
+# This manifest stays intentionally thin — bundle name + includes only.
+# Everything that varies is externalized and deep-merged in via include:
+#   variables/*.yml   variable declarations + defaults (medallion catalog/schemas/paths)
+#   targets/*.yml     one file per environment (dev/stage/prod): mode, host, per-env values
+#   rbac.yml          access-control variables + per-target permission overrides
+#   resources/*.yml + examples/*/resources/*.yml   pipelines & jobs
 #
 # One-time prerequisite per target (catalog, schemas, volumes, UC grants —
 # kept out of the bundle lifecycle so `bundle destroy` never touches
@@ -16,63 +20,12 @@
 bundle:
   name: datalab
 
-# Resource definitions. The framework itself deploys nothing; every pipeline
-# and job in this repo belongs to the reference domain under examples/.
-# Adopter repos keep their resources at the conventional root-level
-# resources/*.yml (the glob below stays harmless while the folder is absent).
+# variables: and targets: deep-merge across includes, so they live in their own
+# files. Declarations (variables/) before per-env values (targets/); rbac.yml
+# contributes both its variables and per-target permission overrides.
 include:
-  # Workspace-resource access control (RBAC variables + per-target group/level
-  # overrides) lives in its own file so this manifest stays about the medallion
-  # (catalog/schemas/paths). Variables + targets deep-merge across includes.
+  - variables/*.yml
+  - targets/*.yml
   - rbac.yml
   - resources/*.yml
   - examples/*/resources/*.yml
-
-variables:
-  catalog:
-    description: Unity Catalog catalog that holds the medallion schemas.
-    default: customer_sales
-  bronze_schema:
-    description: Schema for raw/ingested data.
-    default: bronze
-  silver_schema:
-    description: Schema for cleaned, validated data.
-    default: silver
-  gold_schema:
-    description: Schema for business-level aggregates.
-    default: gold
-  sales_landing_path:
-    description: UC volume path where raw sales customer JSON files land (Auto Loader source).
-    default: /Volumes/${var.catalog}/landing/sales/customers/
-  sales_export_path:
-    description: UC volume path where gold sales extracts are exported (python-file lane).
-    default: /Volumes/${var.catalog}/exports/sales/
-  # Access-control variables (groups, permission levels, the complex
-  # pipeline_permissions/job_permissions) live in rbac.yml.
-
-targets:
-  dev:
-    # Development copies: resources are prefixed with '[dev <user>]' and
-    # schedules/triggers are paused automatically.
-    mode: development
-    default: true
-    workspace:
-      host: https://dbc-425be768-f138.cloud.databricks.com
-    variables:
-      catalog: customer_sales
-
-  stage:
-    mode: production
-    workspace:
-      host: https://dbc-425be768-f138.cloud.databricks.com
-      root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
-    variables:
-      catalog: customer_sales_stage
-
-  prod:
-    mode: production
-    workspace:
-      host: https://dbc-425be768-f138.cloud.databricks.com
-      root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
-    variables:
-      catalog: customer_sales_prod

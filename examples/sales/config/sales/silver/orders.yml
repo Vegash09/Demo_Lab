@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: silver.orders — validated orders, current state per order_id
+# (SCD1, so an order's latest status wins). Source: sales.bronze.orders.
+schema_version: 1
+name: orders
+comment: Validated orders, current state per order_id (SCD1).
+source:
+  kind: table
+  name: orders
+  layer: bronze
+  as_stream: true
+columns:
+  - name: order_id
+    type: long
+    quality:
+      - criticality: error
+        check: { function: is_not_null }
+  - name: customer_id
+    type: long
+    quality:
+      - criticality: error # orphan orders (no customer) never reach silver
+        check: { function: is_not_null }
+  - name: order_date
+    type: date # ISO-8601 strings (…T00:00:00.000Z) → DATE via try_cast
+  - name: order_status
+    type: string
+    quality:
+      - criticality: error # an unknown status is a real upstream defect
+        check:
+          function: is_in_list
+          arguments:
+            allowed: [completed, shipped, processing, pending, cancelled, returned]
+  - name: channel
+    type: string
+    quality:
+      - criticality: warn
+        check:
+          function: is_in_list
+          arguments:
+            allowed: [web, mobile, phone, marketplace, in_store]
+  - name: currency
+    type: string
+    quality:
+      - criticality: warn
+        check:
+          function: is_in_list
+          arguments:
+            allowed: [USD, GBP, CAD, AUD, EUR]
+  - name: total_amount
+    type: double
+    quality:
+      - criticality: warn # negative total is suspect; flag, don't drop
+        check:
+          function: is_not_less_than
+          arguments: { limit: 0 }
+  - name: created_at
+    type: timestamp
+  - name: _ingest_ts
+    type: timestamp
+  - name: _source_file
+    type: string
+quality:
+  quarantine:
+    name: orders_quarantine
+    include_warnings: false
+target:
+  kind: streaming_table
+  cdc:
+    keys: [order_id]
+    sequence_by: _ingest_ts
+    scd_type: 1

@@ -68,7 +68,9 @@ landing volume ─▶ │ bronze.customers_raw ─▶ silver.customers (AUTO CDC
 ## Codebase layout
 
 ```
-databricks.yml            Bundle: variables (catalog/schemas/paths), targets dev/stage/prod
+databricks.yml            Bundle: name + include only (variables/ + targets/ + rbac + resources merged in)
+variables/                Variable declarations + defaults (medallion catalog/schemas/paths); include'd, deep-merged
+targets/                  One file per environment (dev/stage/prod): mode, host, per-env variable values; include'd
 rbac.yml                  Workspace-resource RBAC: group + permission-level string vars + complex
                           pipeline_permissions/job_permissions + per-target overrides (include'd by databricks.yml)
 src/
@@ -418,7 +420,8 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `make bootstrap-uc TARGET=<t>` creates them (plus schemas and grants).
 - **Permission groups are string variables on purpose — and so are the
   levels.** All access control lives in `rbac.yml` (include'd by
-  `databricks.yml`, which keeps only catalog/schemas/paths). Complex variables
+  `databricks.yml` next to `variables/` and `targets/`; `databricks.yml` itself
+  is just bundle name + includes). Complex variables
   (`pipeline_permissions`, `job_permissions`) cannot be overridden with
   `--var`, so the WHO (`reader_group`/`engineer_group`/`admin_group`) and the
   WHAT (`*_pipeline_level`/`*_job_level`) are plain strings the complex
@@ -474,7 +477,7 @@ change:
 
 | Path (regex) | Why it's protected |
 |---|---|
-| `^databricks\.yml$`, `^rbac\.yml$`, `^(resources\|examples/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle + RBAC (deploy surface) |
+| `^databricks\.yml$`, `^rbac\.yml$`, `^(variables\|targets)/.*\.ya?ml$`, `^(resources\|examples/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle + variables/targets + RBAC (deploy surface) |
 | `^pyproject\.toml$`, `^uv\.lock$` | dependency manifests (uv-managed, CI `--frozen`) |
 | `^\.databricksignore$` | controls what ships to the workspace |
 | `^src/datalab/(config|params)\.py$` | parameterization contracts used by every pipeline and job lane |

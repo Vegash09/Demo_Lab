@@ -23,8 +23,8 @@ import re
 import sys
 
 PROTECTED: list[tuple[str, str]] = [
-    (r"^databricks\.yml$|^rbac\.yml$|^(resources|examples/[^/]+/resources)/.*\.yml$",
-     "Declarative Automation Bundle manifest / RBAC (deploy surface)"),
+    (r"^databricks\.yml$|^rbac\.yml$|^(variables|targets)/.*\.ya?ml$|^(resources|examples/[^/]+/resources)/.*\.yml$",
+     "Declarative Automation Bundle manifest / variables / targets / RBAC (deploy surface)"),
     (r"^pyproject\.toml$|^uv\.lock$",
      "dependency manifest (uv-managed; CI runs `uv sync --frozen`)"),
     (r"^\.databricksignore$",

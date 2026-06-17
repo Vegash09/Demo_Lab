@@ -1,0 +1,44 @@
+# Lakeflow Spark Declarative Pipeline for the sales domain (bronze→silver→gold).
+# Source code: examples/sales/src/sales_etl/transformations/*.py
+# (pyspark.pipelines). Paths below are relative to THIS file, so the whole
+# examples/sales/ tree can be copied to an adopter repo root (where resources/
+# sits beside src/) as is.
+#
+# The five bronze tables (sales.bronze.*) are ingested upstream; this pipeline
+# reads them and owns only the silver + gold layers.
+
+resources:
+  pipelines:
+    sales_etl:
+      name: sales_etl
+      catalog: ${var.sales_catalog}
+      schema: ${var.sales_silver_schema}
+      serverless: true
+      channel: CURRENT
+      root_path: "../src/sales_etl"
+
+      libraries:
+        - glob:
+            include: ../src/sales_etl/transformations/**
+
+      environment:
+        # Pins the Python runtime independently of DBR upgrades.
+        environment_version: "4"
+        dependencies:
+          # Installs this repo's pyproject (the shared `datalab` package) into
+          # the pipeline environment from the deployed workspace files.
+          - --editable ${workspace.file_path}
+
+      # Surfaced to pipeline code as Spark conf — read via datalab.config.pipeline_conf.
+      configuration:
+        datalab.env: ${bundle.target}
+        datalab.catalog: ${var.sales_catalog}
+        datalab.bronze_schema: ${var.sales_bronze_schema}
+        datalab.silver_schema: ${var.sales_silver_schema}
+        datalab.gold_schema: ${var.sales_gold_schema}
+        # Where the framework finds this domain's layer YAMLs (config-driven
+        # pipeline — see docs/FRAMEWORK.md). Deployed workspace files; in an
+        # adopter repo this would be ${workspace.file_path}/config/<catalog>.
+        datalab.config_dir: ${workspace.file_path}/examples/sales/config/sales
+
+      permissions: ${var.pipeline_permissions}

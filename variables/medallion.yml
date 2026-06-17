@@ -1,0 +1,40 @@
+# Bundle variable declarations + defaults for the datalab medallion domains.
+#
+# This file holds DECLARATIONS (name + description + default) only. Per-target
+# VALUES live in targets/<env>.yml (under targets.<env>.variables); access-
+# control variables live in rbac.yml. Included and deep-merged by databricks.yml.
+#
+# NB: a bundle `variables:` block is global — there is no per-target `variables:`
+# file. Anything that differs by environment is set in targets/ instead.
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds the medallion schemas.
+    default: customer_sales
+  bronze_schema:
+    description: Schema for raw/ingested data.
+    default: bronze
+  silver_schema:
+    description: Schema for cleaned, validated data.
+    default: silver
+  gold_schema:
+    description: Schema for business-level aggregates.
+    default: gold
+  # --- sales domain (examples/sales) — bronze tables pre-exist; SDP owns silver+gold ---
+  sales_catalog:
+    description: Unity Catalog catalog for the `sales` domain medallion.
+    default: sales
+  sales_bronze_schema:
+    description: Schema holding the pre-existing sales bronze tables.
+    default: bronze
+  sales_silver_schema:
+    description: Schema for the sales domain's cleaned/validated tables.
+    default: silver
+  sales_gold_schema:
+    description: Schema for the sales domain's business aggregates.
+    default: gold
+  sales_landing_path:
+    description: UC volume path where raw sales customer JSON files land (Auto Loader source).
+    default: /Volumes/${var.catalog}/landing/sales/customers/
+  sales_export_path:
+    description: UC volume path where gold sales extracts are exported (python-file lane).
+    default: /Volumes/${var.catalog}/exports/sales/

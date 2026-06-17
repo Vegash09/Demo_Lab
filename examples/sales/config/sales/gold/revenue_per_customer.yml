@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: gold.revenue_per_customer — business aggregate (batch MV):
+# lifetime order count, recognized revenue and order-date span per customer.
+schema_version: 1
+name: revenue_per_customer
+comment: Lifetime order count, recognized revenue and order-date span per customer.
+source:
+  kind: table
+  name: orders
+  layer: silver
+transform:
+  - function: sales.revenue_per_customer
+target:
+  kind: materialized_view

@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../../../../schemas/domain_config.schema.json
+#
+# Domain settings for the `sales` domain — environment-agnostic by
+# construction: catalog/schema values are pipeline-conf KEYS resolved per
+# target (dev/stage/prod) via bundle variables (sales_catalog / sales_*_schema).
+# The five bronze source tables already exist
+# (sales.bronze.{orders,order_items,payments,customers,products}); this domain
+# reads them and builds the silver + gold medallion layers.
+schema_version: 1
+domain: sales
+imports: # python modules registering this domain's @transform fns
+  - sales_etl.transforms.sales
+catalog_conf: datalab.catalog
+layers:
+  bronze:
+    schema_conf: datalab.bronze_schema
+    table_properties:
+      datalab.layer: bronze
+  silver:
+    schema_conf: datalab.silver_schema
+    table_properties:
+      datalab.layer: silver
+  gold:
+    schema_conf: datalab.gold_schema
+    table_properties:
+      datalab.layer: gold
