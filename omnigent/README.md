@@ -15,7 +15,7 @@ CI — `omnigent/` is excluded from the deployed bundle via `.databricksignore`.
 
 | File | Purpose |
 |---|---|
-| [`datalab-author.yaml`](datalab-author.yaml) | Single-file Omnigent agent spec. `instructions: ../AGENTS.md` makes [AGENTS.md](../AGENTS.md) the single source of truth, so the agent follows the same authoring rules — and reads the same `.claude/skills/*` (`author-ldp-artifact`, `author-sdp-pipeline`, `deploy-databricks-bundle`, `maintain-design-diagram`) — as the Cursor/Claude agents. No rules are copied or restated. |
+| [`datalab-author.yaml`](datalab-author.yaml) | Single-file Omnigent agent spec. `instructions: ../AGENTS.md` makes [AGENTS.md](../AGENTS.md) the single source of truth, so the agent follows the same authoring rules — and reads the same `.agents/skills/*` (`author-ldp-artifact`, `author-sdp-pipeline`, `deploy-databricks-bundle`, `maintain-design-diagram`) — as the Cursor/Claude agents. No rules are copied or restated. |
 
 ## Install
 

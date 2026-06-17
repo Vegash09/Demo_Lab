@@ -1,15 +1,18 @@
-"""Mirror the canonical agent-skills tree into the per-harness copies.
+"""Mirror the canonical agent-skills tree into the Claude Code copy.
 
-datalab ships ONE authored skills source — `.claude/skills/` (the canonical
-harness). Cursor and Codex discover skills only at their own conventional
-paths, so byte-identical mirrors live at `.cursor/skills/` and `.agents/skills/`,
-GENERATED from canonical rather than hand-maintained.
+datalab ships ONE authored skills source — `.agents/skills/` (the cross-tool
+`agentskills.io` standard location, read natively by Cursor and Codex). Claude
+Code discovers skills only at `.claude/skills/` and does not reliably follow
+symlinked skills, so a byte-identical copy is GENERATED there from canonical
+rather than hand-maintained. (Databricks Genie loads the same skills from the
+Workspace `.assistant/skills/` — published out-of-band by
+`scripts/publish_genie_skills.py`, not mirrored here.)
 
     make sync-skills    # uv run python scripts/sync_skills.py --write
     make check-skills   # uv run python scripts/sync_skills.py --check  (CI + pre-commit)
 
-`--write` makes each mirror an exact copy of canonical (add/update/delete).
-`--check` is read-only: it asserts every mirror matches canonical byte-for-byte
+`--write` makes the mirror an exact copy of canonical (add/update/delete).
+`--check` is read-only: it asserts the mirror matches canonical byte-for-byte
 and exits non-zero (listing the drift) otherwise. Stdlib only — runs with or
 without the project venv.
 """
@@ -21,8 +24,8 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CANONICAL = REPO_ROOT / ".claude" / "skills"
-MIRRORS = (REPO_ROOT / ".cursor" / "skills", REPO_ROOT / ".agents" / "skills")
+CANONICAL = REPO_ROOT / ".agents" / "skills"
+MIRRORS = (REPO_ROOT / ".claude" / "skills",)
 
 
 def _rel(path: Path) -> str:
@@ -79,12 +82,12 @@ def main(argv: list[str] | None = None) -> int:
 
     problems = check()
     if problems:
-        print("agent-skill mirrors are OUT OF SYNC with .claude/skills/:", file=sys.stderr)
+        print("agent-skill mirrors are OUT OF SYNC with .agents/skills/:", file=sys.stderr)
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         print("\nrun `make sync-skills` to regenerate them.", file=sys.stderr)
         return 1
-    print("agent-skill mirrors are in sync with .claude/skills/")
+    print("agent-skill mirrors are in sync with .agents/skills/")
     return 0
 
 

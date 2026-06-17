@@ -43,10 +43,10 @@ jobs:
         # (domain packages + their tests) and is part of the linted surface.
         run: uv run ruff check src tests scripts examples
 
-      - name: Check agent-skill mirrors are in sync (no drift from .claude/skills)
-        # Mirror of `make check-skills`. The skills are authored once under
-        # .claude/skills/; .cursor/skills + .agents/skills are generated copies
-        # (scripts/sync_skills.py). Fails fast if a mirror drifted.
+      - name: Check agent-skill mirror is in sync (no drift from .agents/skills)
+        # Mirror of `make check-skills`. Skills are authored once under
+        # .agents/skills/ (read natively by Cursor + Codex); .claude/skills is a
+        # generated copy for Claude Code (scripts/sync_skills.py). Fails on drift.
         run: uv run python scripts/sync_skills.py --check
 
       - name: Validate dataset configs (pydantic + static dqx checks)

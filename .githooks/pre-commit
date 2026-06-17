@@ -37,14 +37,14 @@ if [[ "$branch" == "main" || "$branch" == "master" ]]; then
   exit 1
 fi
 
-# ---- agent-skill mirrors must match canonical .claude/skills ----------------
-# Catches "edited .claude/skills but forgot `make sync-skills`". Cheap, stdlib.
+# ---- the .claude/skills copy must match canonical .agents/skills ------------
+# Catches "edited .agents/skills but forgot `make sync-skills`". Cheap, stdlib.
 if [[ -f scripts/sync_skills.py ]] && command -v python3 >/dev/null 2>&1; then
   if ! python3 scripts/sync_skills.py --check >/dev/null 2>&1; then
     {
-      printf '\n  COMMIT BLOCKED — agent-skill mirrors drifted from .claude/skills/.\n\n'
-      printf '  Skills are authored ONCE under .claude/skills/; the .cursor/.agents\n'
-      printf '  copies are generated. Regenerate and re-stage:\n\n'
+      printf '\n  COMMIT BLOCKED — the .claude/skills copy drifted from .agents/skills/.\n\n'
+      printf '  Skills are authored ONCE under .agents/skills/; the .claude/skills\n'
+      printf '  copy is generated. Regenerate and re-stage:\n\n'
       printf '      make sync-skills\n\n'
     } >&2
     exit 1
@@ -65,7 +65,7 @@ PATTERNS=(
   '^\.github/(workflows|actions)/.*'
   '^\.github/pull_request_template\.md$'
   '^\.claude/(settings\.json|hooks/.*|skills/.*)'
-  '^\.cursor/(rules|hooks|skills)/.*'
+  '^\.cursor/(rules|hooks)/.*'
   '^\.cursor/hooks\.json$'
   '^\.codex/hooks\.json$'
   '^\.agents/skills/.*'

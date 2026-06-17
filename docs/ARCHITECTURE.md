@@ -276,7 +276,7 @@ Updating the design is part of the maintenance contract (AGENTS.md "Coding-agent
 maintenance protocol", step 2): when a change moves the architecture, in the
 **same PR** edit `design/02_implementation_end_to_end.drawio`, run `make design`,
 and refresh `design/OVERVIEW.md` if the customer story changed. The
-`maintain-design-diagram` skill (`.claude/skills/maintain-design-diagram/SKILL.md`)
+`maintain-design-diagram` skill (`.agents/skills/maintain-design-diagram/SKILL.md`)
 is the step-by-step recipe — band/box/edge conventions, the geometry check, the
 re-export, and the overview refresh. Edit `01_*` only when the design intent
 itself changes. `design/datalab-customer-overview.html` is a standalone share

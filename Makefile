@@ -13,7 +13,8 @@ TARGET ?= dev
 .DEFAULT_GOAL := help
 .PHONY: help install lock lint fmt test validate-configs schema validate \
         deploy run destroy bootstrap-uc enable-githooks commit-protected clean \
-        sync-skills check-skills spec-local dry-run-local run-local validate-connect design
+        sync-skills check-skills publish-genie-skills spec-local dry-run-local \
+        run-local validate-connect design
 
 help:  ## Show available targets
 	@printf "\ndatalab · make targets (TARGET=$(TARGET))\n\n"
@@ -50,12 +51,26 @@ validate-configs: install  ## Validate every domain's <layer>/<table>.yml artifa
 schema: install  ## Regenerate schemas/{domain,table}_config.schema.json from the Pydantic models
 	$(UV) run python scripts/export_config_schema.py
 
-# ---- agent skills (one canonical source: .claude/skills) --------------------
-sync-skills:  ## Regenerate .cursor/skills + .agents/skills from canonical .claude/skills
+# ---- agent skills (one canonical source: .agents/skills) --------------------
+# Authored ONCE under .agents/skills (read natively by Cursor + Codex); the
+# .claude/skills copy is GENERATED for Claude Code (symlinks are unreliable
+# there). Genie Code is reached separately via `publish-genie-skills`.
+sync-skills:  ## Regenerate the .claude/skills copy from canonical .agents/skills
 	$(UV) run python scripts/sync_skills.py --write
 
-check-skills:  ## Fail if any harness skill mirror drifted from .claude/skills (CI + pre-commit)
+check-skills:  ## Fail if the .claude/skills copy drifted from .agents/skills (CI + pre-commit)
 	$(UV) run python scripts/sync_skills.py --check
+
+# Publish the canonical .agents/skills into Databricks Genie Code, whose skills
+# live in the Workspace .assistant/skills/ (NOT the repo). Dry-run by default;
+# APPLY=1 pushes via `databricks workspace import-dir`. Override the target with
+# GENIE_SKILLS_PATH=<ws path> (default /Users/<you>/.assistant/skills) and the
+# CLI profile with PROFILE=<name>. See AGENTS.md.
+publish-genie-skills:  ## Publish .agents/skills to Genie's Workspace .assistant/skills (dry-run; APPLY=1 to push)
+	$(UV) run python scripts/publish_genie_skills.py \
+		$(if $(APPLY),--apply,) \
+		$(if $(GENIE_SKILLS_PATH),--workspace-dir $(GENIE_SKILLS_PATH),) \
+		$(if $(PROFILE),--profile $(PROFILE),)
 
 # ---- design assets (architecture diagrams -> images) ------------------------
 # Re-export design/*.drawio to design/images/*.png with the draw.io Desktop CLI
