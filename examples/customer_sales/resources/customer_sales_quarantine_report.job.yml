@@ -21,7 +21,10 @@ resources:
           spec:
             environment_version: "4"
             dependencies:
-              - --editable ${workspace.file_path}
+              # Built wheel (datalab_wheel artifact in databricks.yml). Serverless
+              # environments don't honor an --editable install of the synced
+              # workspace files, so the framework ships as a wheel.
+              - ../../../dist/*.whl
 
       tasks:
         - task_key: quarantine_report

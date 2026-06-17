@@ -23,9 +23,11 @@ resources:
         # Pins the Python runtime independently of DBR upgrades.
         environment_version: "4"
         dependencies:
-          # Installs this repo's pyproject (the shared `datalab` package) into
-          # the pipeline environment from the deployed workspace files.
-          - --editable ${workspace.file_path}
+          # Install the datalab wheel built by the `datalab_wheel` artifact
+          # (databricks.yml). Serverless pipeline environments do NOT honor an
+          # `--editable` install of the synced workspace files, so a built wheel
+          # is the delivery path. Path is relative to this resource file.
+          - ../../../dist/*.whl
 
       # Surfaced to pipeline code as Spark conf — read via datalab.config.pipeline_conf.
       configuration:
