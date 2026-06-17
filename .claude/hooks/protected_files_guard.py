@@ -8,7 +8,8 @@ prompted to confirm with a banner explaining which invariants apply.
 Non-protected files pass through with no decision so default permissions take
 over.
 
-Wired into `.claude/settings.json` as a PreToolUse hook.
+Wired into `.claude/settings.json`; also referenced by `.cursor/hooks.json` and
+`.codex/hooks.json` (all three harnesses share this one canonical guard).
 
 Keep the PROTECTED list below in sync with:
   * `.githooks/pre-commit`            (the human-commit counterpart)
@@ -43,6 +44,8 @@ PROTECTED: list[tuple[str, str]] = [
      "coding-agent harness config (hooks, skills, settings)"),
     (r"^\.cursor/(rules|hooks|skills)/.*|^\.cursor/hooks\.json$",
      "Cursor rules + agent hooks + skills (incl. the gh-pr-create template guard)"),
+    (r"^\.codex/hooks\.json$|^\.agents/skills/.*",
+     "Codex agent harness — hooks.json + .agents/skills (third harness; references the canonical guards)"),
     (r"^\.mcp\.json$|^\.cursor/mcp\.json$",
      "opt-in MCP server config (agent↔Databricks read-only query connection)"),
     (r"^\.githooks/.*",

@@ -1,6 +1,6 @@
 # AGENTS.md — datalab
 
-Shared source of truth for AI coding agents (Cursor, Claude Code) and humans.
+Shared source of truth for AI coding agents (Cursor, Claude Code, Codex) and humans.
 Read this before editing. Keep it accurate when you change the system.
 
 ## Overview
@@ -115,7 +115,8 @@ pyproject.toml            PEP 621 + [dependency-groups].dev; hatchling builds sr
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
 .github/                  Workflows (ci-cd-*, common-*, pr-template-check) + composite actions
-.claude/ .cursor/         Agent harness: settings, hooks, skills, rules
+.claude/ .cursor/ .codex/  Agent harness (3 harnesses): settings, hooks, skills, rules — .codex/hooks.json
+.agents/skills/            references the canonical .claude guards; the 5 skills mirror across all three
 .githooks/pre-commit      Human-side protected-files guard (enable: make enable-githooks)
 docs/                     GETTING_STARTED, FRAMEWORK (reference), NAMING (folder↔UC convention),
                           ARCHITECTURE, CICD, MIGRATION
@@ -292,8 +293,8 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   the work. Never edit files, commit, or push while `main` is checked out,
   and never stack new work on a previous feature branch. This is ENFORCED,
   not just convention: `.cursor/hooks/branch_guard.py` denies file edits and
-  `git commit`/`git push`-to-main in BOTH agent harnesses (wired in
-  `.cursor/hooks.json` and `.claude/settings.json`), and
+  `git commit`/`git push`-to-main in all three agent harnesses (wired in
+  `.cursor/hooks.json`, `.claude/settings.json` and `.codex/hooks.json`), and
   `.githooks/pre-commit` blocks human commits on `main`. If a guard blocks
   you mid-task: create the branch (uncommitted edits carry over) and retry.
 - One PR per branch into `main` (unified template, see "Open a pull
@@ -513,6 +514,7 @@ change:
 | `^\.github/pull_request_template\.md$` | unified PR template |
 | `^\.claude/(settings\.json\|hooks/.*\|skills/.*)` | Claude agent harness |
 | `^\.cursor/(rules\|hooks\|skills)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks + skills |
+| `^\.codex/hooks\.json$`, `^\.agents/skills/.*` | Codex agent harness (3rd harness; references the canonical guards) |
 | `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) |
 | `^\.githooks/.*` | git pre-commit guard |
 | `^Makefile$` | developer + CI entrypoints |
@@ -526,7 +528,7 @@ The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
   single commit with `make commit-protected MSG="..."` (`PROTECTED_EDIT_OK=1`).
 
 Separate from the protected-file surface, `.cursor/hooks/branch_guard.py`
-(agents, both harnesses) and the same `.githooks/pre-commit` (humans) enforce
+(agents, all three harnesses) and the same `.githooks/pre-commit` (humans) enforce
 the branch-first policy — no edits/commits/pushes while `main` is checked out
 (see "Branching & releases").
 
