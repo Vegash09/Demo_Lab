@@ -156,6 +156,30 @@ repo recreation with:
 gh repo edit --delete-branch-on-merge
 ```
 
+## Retention & storage
+
+GitHub auto-expires Actions **logs and artifacts** after a configurable
+retention period — the only storage lever worth pulling here. Set it to **30
+days**: repo Settings → Actions → General → "Artifact and log retention"
+(there is no workflow-YAML knob for log retention and no documented repo-level
+REST endpoint; org owners can cap it org-wide). It is forward-looking — logs
+and artifacts already created keep their original expiry, so existing runs age
+out on their old schedule.
+
+Everything else is deliberately **not** auto-deleted: it costs ~nothing or is
+already self-managing (measured June 2026 on the private `dediggibyte/datalab`):
+
+| Item | Observed | Why it is left alone |
+|---|---|---|
+| Git history (commits) | repo ~7.5 MB, `.git` ~14 MB | Source of truth; `v*` / `v*-rc*` tags drive stage/prod and are the audit trail. Deleting commits = force-push history rewrite — destructive, breaks the release tags, and forbidden by the branch/safety rules (AGENTS.md). |
+| Workflow artifacts | 0 (no `upload-artifact` steps) | Artifacts are the main *billable* Actions-storage item — and this repo uploads none. |
+| Actions caches | ~2.73 GB / 6 (the `setup-uv` caches keyed on `uv.lock`) | **Free** — caches are not billable, are capped at 10 GB/repo, and auto-evict after 7 days unused. Self-managing. |
+| Deployment records | metadata (~0) | Created by `environment:` on the CD jobs (one per deploy); pruning them is tidiness, not storage. |
+
+If a hard cache cap is ever needed, add a scheduled (`cron`) workflow with
+`permissions: actions: write` that deletes caches unused > 30 days — but the
+7-day auto-evict usually makes this unnecessary.
+
 ## Local equivalents
 
 CI and the Makefile run the same commands, so green locally ≈ green in CI:

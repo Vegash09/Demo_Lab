@@ -387,6 +387,14 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
 - **GitHub OIDC** auth (no stored client secret). The federation policy
   subject must match `repo:<owner>/<repo>:environment:<target>` because the
   CI/CD jobs declare `environment: <target>`. See `docs/CICD.md`.
+- **CI/CD retention = the log/artifact setting, nothing else.** Actions logs +
+  artifacts auto-expire on the repo retention setting (Settings → Actions →
+  "Artifact and log retention", set to **30 days**) — there is no workflow-YAML
+  or REST knob for log retention. Everything else is deliberately NOT pruned:
+  artifacts (none uploaded), caches (free, 10 GB/repo cap, 7-day auto-evict),
+  deployment records (metadata), and commits (source of truth — deleting them
+  is a forbidden history rewrite that breaks the `v*` release tags). Measured
+  sizes + rationale: `docs/CICD.md` "Retention & storage".
 - **Quarantine pattern (dqx)**: `criticality: error` rows are dropped from
   the target and land in `<dataset>_quarantine` with `_errors` evidence
   structs; `warn` rows flow through flagged. Default
