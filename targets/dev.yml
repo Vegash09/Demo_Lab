@@ -1,0 +1,12 @@
+# dev target — development copies: resources get a '[dev <user>]' prefix and
+# schedules/triggers are paused automatically. Holds this environment's variable
+# VALUES (declarations live in variables/, permission overrides in rbac.yml).
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://dbc-425be768-f138.cloud.databricks.com
+    variables:
+      catalog: customer_sales
+      sales_catalog: sales

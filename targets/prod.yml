@@ -1,0 +1,10 @@
+# prod target — production mode, explicit root_path. Per-env variable values.
+targets:
+  prod:
+    mode: production
+    workspace:
+      host: https://dbc-425be768-f138.cloud.databricks.com
+      root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
+    variables:
+      catalog: customer_sales_prod
+      sales_catalog: sales_prod
