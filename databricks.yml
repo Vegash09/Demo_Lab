@@ -59,6 +59,8 @@ sync:
     - .github
     - .claude
     - .cursor
+    - .codex
+    - .agents
     - .githooks
     - omnigent
     - .mcp.json
