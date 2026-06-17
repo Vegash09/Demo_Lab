@@ -334,7 +334,12 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   works because `[project].dependencies` has no `pyspark`, so the overlay has no
   conflict; and `datalab.framework.__init__` imports `generate` lazily so
   `run_dataset` loads without `pyspark.pipelines` (which databricks-connect may
-  lack). Full integration still = deploy + `make run` against dev.
+  lack). Full integration still = deploy + `make run` against dev. Corollary:
+  the VS Code/Cursor Databricks extension's "set up Python environment for
+  Databricks Connect" step errors against `.venv` (`databricks-connect package
+  is not installed`) — expected and advisory (it powers only interactive cell
+  run/debug, never sync/deploy/run); keep `.venv` as the interpreter and use
+  `make validate-connect` (see docs/FRAMEWORK.md "Run anywhere" §2).
 - **Dev target uses `mode: development`**: resources get a `[dev <user>]`
   prefix and the daily trigger is paused. Stage/prod use `mode: production`
   with explicit `root_path`s.

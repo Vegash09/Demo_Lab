@@ -538,6 +538,19 @@ databricks-connect`) and **never enters `uv.lock`**; pin `DBCONNECT` to your
 workspace's DBR/serverless version. Pass the conf keys the dataset resolves via
 `CONNECT_ARGS="--param datalab.catalog=… --param datalab.bronze_schema=…"`.
 
+> **VS Code / Cursor Databricks extension — the "set up Python environment for
+> Databricks Connect" error is EXPECTED.** The extension's *Python Environment*
+> step installs/validates `databricks-connect` in the selected interpreter;
+> pointed at the project `.venv` it fails with *"databricks-connect package is
+> not installed in the current environment."* That is by design —
+> `databricks-connect` is deliberately kept out of `.venv`/`uv.lock` (it
+> conflicts with the dev `pyspark`, which owns the same namespace). That
+> extension feature only powers interactive cell run/debug; it does **not** gate
+> workspace sync, `bundle deploy`, or `bundle run`, so the error is advisory.
+> Keep `.venv` as your interpreter and use `make validate-connect` (the overlay
+> above) for live validation — do **not** "fix" it by installing
+> `databricks-connect` into the project venv.
+
 ## Gotchas
 
 - Quote YAML-1.1 ambiguous scalars in `options:` (`"true"`, `"no"`, `"1"`).
