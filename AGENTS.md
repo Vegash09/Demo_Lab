@@ -111,7 +111,7 @@ design/                   Customer-facing OVERVIEW.md + architecture diagrams (d
                           01_*=multi-page design spec, 02_*=living end-to-end implementation,
                           images/=PNG exports (make design), datalab-customer-overview.html
                           (standalone share). Kept in sync via the maintain-design-diagram
-                          skill; excluded from deploy by .databricksignore
+                          skill; excluded from the deployed workspace files via databricks.yml sync.exclude
 omnigent/                 Opt-in, dev-time pilot: an Omnigent agent spec (datalab-author.yaml,
                           instructions: ../AGENTS.md) to run the authoring workflow on any
                           harness; no policies ported, excluded from deploy (omnigent/README.md)
@@ -493,7 +493,7 @@ change:
 |---|---|
 | `^databricks\.yml$`, `^rbac\.yml$`, `^(variables\|targets)/.*\.ya?ml$`, `^(resources\|examples/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle + variables/targets + RBAC (deploy surface) |
 | `^pyproject\.toml$`, `^uv\.lock$` | dependency manifests (uv-managed, CI `--frozen`) |
-| `^\.databricksignore$` | controls what ships to the workspace |
+| `^\.databricksignore$` | `databricks sync` / IDE-extension exclusions (bundle deploy excludes via `sync.exclude` in databricks.yml) |
 | `^src/datalab/(config|params)\.py$` | parameterization contracts used by every pipeline and job lane |
 | `^(config\|examples/[^/]+/config)/.*\.ya?ml$` | dataset configs — the deployed pipeline definition |
 | `^src/datalab/framework/(models|loader|generator|dq|writers)\.py$` | framework core: config contract + LDP/dqx generation semantics |
@@ -583,8 +583,8 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   the narrative changed (flag `datalab-customer-overview.html` for out-of-band
   regeneration). Follow the `maintain-design-diagram` skill for band/colour
   conventions + the geometry check; full how-to in `docs/ARCHITECTURE.md`
-  ("Editing the design diagrams"). `design/` is excluded from the bundle via
-  `.databricksignore`.
+  ("Editing the design diagrams"). `design/` is excluded from the deployed
+  workspace files via the `sync.exclude` block in databricks.yml.
 - **Query Databricks from the agent (MCP)**: opt-in, dev-time. Authenticate the
   CLI (`databricks auth login --host <host>` → profile `diggi_dev_aws`), then in
   Claude Code approve the `databricks-sql` server from `.mcp.json` (Cursor:

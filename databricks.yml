@@ -42,3 +42,26 @@ include:
   - rbac.yml
   - resources/*.yml
   - examples/*/resources/*.yml
+
+# Dev-only surfaces kept OUT of the deployed workspace files. A DAB
+# `bundle deploy` does NOT honor `.databricksignore` (that file is only for
+# `databricks sync` / the IDE extension) — `sync.exclude` is the
+# bundle-effective mechanism. Keep this list aligned with `.databricksignore`.
+# (gitignore-style globs, relative to the bundle root. Never exclude src/,
+# examples/*/{src,config,resources}, variables/, targets/, rbac.yml, pyproject —
+# the deploy + the example pipelines need them.)
+sync:
+  exclude:
+    - tests
+    - examples/*/tests
+    - docs
+    - design
+    - .github
+    - .claude
+    - .cursor
+    - .githooks
+    - omnigent
+    - .mcp.json
+    - Makefile
+    - uv.lock
+    - .markdownlint.json
