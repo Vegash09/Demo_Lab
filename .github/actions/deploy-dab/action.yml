@@ -9,6 +9,16 @@ inputs:
     description: "Databricks CLI profile."
     required: false
     default: "DEFAULT"
+  auto-approve:
+    description: >-
+      Pass --auto-approve to `bundle deploy` so a non-interactive CI console can
+      apply DESTRUCTIVE changes (e.g. deleting a renamed/removed pipeline and its
+      streaming tables / materialized views). Enable only for disposable targets
+      (dev, mode: development — a full refresh restores all STs/MVs). Leave
+      "false" for stage/prod so pipeline/table/volume deletions are reviewed by a
+      human before they run.
+    required: false
+    default: "false"
 
   # Per-target overrides. Empty defaults mean 'use whatever the bundle
   # (databricks.yml + rbac.yml) says'. Only string variables can be overridden
@@ -46,6 +56,7 @@ runs:
         IN_LANDING_PATH:   ${{ inputs.sales-landing-path }}
         IN_READER_GROUP:   ${{ inputs.reader-group }}
         IN_ENGINEER_GROUP: ${{ inputs.engineer-group }}
+        AUTO_APPROVE:      ${{ inputs.auto-approve }}
       run: |
         ARGS=(-t "${{ inputs.target }}" -p "${{ inputs.profile }}")
         [ -n "$IN_CATALOG" ]        && ARGS+=(--var "catalog=$IN_CATALOG")
@@ -54,4 +65,11 @@ runs:
         [ -n "$IN_ENGINEER_GROUP" ] && ARGS+=(--var "engineer_group=$IN_ENGINEER_GROUP")
 
         databricks bundle validate "${ARGS[@]}"
-        databricks bundle deploy   "${ARGS[@]}"
+
+        # --auto-approve is a deploy-only flag (validate rejects it). It is added
+        # only for targets that opt in (dev) so CI can apply destructive changes
+        # without a prompt; stage/prod deploy without it and fail loudly on a
+        # destructive plan, leaving the deletion for a human to review.
+        DEPLOY_ARGS=("${ARGS[@]}")
+        [ "$AUTO_APPROVE" = "true" ] && DEPLOY_ARGS+=(--auto-approve)
+        databricks bundle deploy   "${DEPLOY_ARGS[@]}"

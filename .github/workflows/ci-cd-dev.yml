@@ -27,4 +27,8 @@ jobs:
     uses: ./.github/workflows/common-cd-steps.yml
     with:
       target: dev
+      # dev is mode: development (disposable; a full refresh restores STs/MVs),
+      # so CI may apply destructive changes (e.g. deleting a renamed pipeline)
+      # without a prompt. stage/prod intentionally omit this — see docs/CICD.md.
+      auto-approve: true
     secrets: inherit
