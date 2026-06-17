@@ -332,7 +332,10 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   every pipeline/job environment lists `dependencies: [../../../dist/*.whl]`
   (path relative to the resource file). One `uv build --wheel` produces a single
   wheel containing all three hatch packages (datalab + the example domain
-  packages). `environment_version: "4"` pins Python 3.12 + preinstalled libs.
+  packages). **CI/CD must have `uv` on PATH for `bundle deploy`** — the
+  `deploy-dab` action installs it via `astral-sh/setup-uv` (deploy builds the
+  wheel; `bundle validate` does not, so the validate-only CI job doesn't need it).
+  `environment_version: "4"` pins Python 3.12 + preinstalled libs.
   Extra runtime libs go in `[project].dependencies` (folded into the wheel) — but
   environments cache dependencies during development; trigger a full restart if a
   new dep doesn't show up.
