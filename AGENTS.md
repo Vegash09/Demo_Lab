@@ -338,6 +338,16 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
 - **Dev target uses `mode: development`**: resources get a `[dev <user>]`
   prefix and the daily trigger is paused. Stage/prod use `mode: production`
   with explicit `root_path`s.
+- **CI deploy auto-approves destructive changes on DEV only.** A non-interactive
+  `databricks bundle deploy` refuses destructive actions — deleting a
+  renamed/removed pipeline and its STs/MVs — unless given `--auto-approve`. The
+  `deploy-dab` action takes an `auto-approve` input (default `false`);
+  `ci-cd-dev.yml` passes `true` because dev is disposable (`mode: development` —
+  a full refresh restores every ST/MV), while `stage`/`prod` omit it so a human
+  reviews any deletion. That is why a renamed pipeline resource (e.g.
+  `sales_etl` → `customer_sales_etl`) self-heals on the next dev deploy but
+  would block a `stage`/`prod` deploy until reviewed (`--auto-approve` is a
+  deploy-only flag; `bundle validate` rejects it).
 - **`uv.lock` is the contract.** CI runs `uv sync --frozen` and fails on
   drift. After editing `pyproject.toml`, run `make lock` and commit both.
 - **GitHub OIDC** auth (no stored client secret). The federation policy

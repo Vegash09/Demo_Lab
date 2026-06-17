@@ -10,6 +10,11 @@ on:
         description: "Bundle target (dev | stage | prod). Avoid the name 'env' here — it shadows GitHub Actions' env: keyword."
         required: true
         type: string
+      auto-approve:
+        description: "Pass --auto-approve to `bundle deploy` so destructive changes (e.g. deleting a renamed pipeline) apply non-interactively. Enable only for disposable targets (dev); stage/prod review deletions manually."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   id-token: write    # OIDC
@@ -62,6 +67,7 @@ jobs:
         uses: ./.github/actions/deploy-dab
         with:
           target: ${{ inputs.target }}
+          auto-approve: ${{ inputs.auto-approve }}
           # Optional per-environment overrides; empty → databricks.yml defaults.
           catalog:            ${{ vars.DATALAB_CATALOG || '' }}
           sales-landing-path: ${{ vars.DATALAB_SALES_LANDING_PATH || '' }}

@@ -50,7 +50,12 @@ Reusable pieces:
   `pytest` (local Spark, Java 21; runs the framework suite AND the examples'
   suites) → `databricks bundle validate -t <target>` (OIDC).
 - `common-cd-steps.yml` — OIDC setup → `deploy-dab` composite action
-  (validate + deploy with optional `--var` overrides).
+  (validate + deploy with optional `--var` overrides). **dev passes
+  `auto-approve: true`** so CI can apply destructive changes (e.g. deleting a
+  renamed pipeline and its STs/MVs) non-interactively — dev is
+  `mode: development`, so a full refresh restores every ST/MV. `stage`/`prod`
+  omit it (default `false`): a destructive plan there fails the deploy loudly for
+  a human to review before any pipeline/table/volume is deleted.
 - Composite actions: `.github/actions/databricks-setup` (CLI install +
   `~/.databrickscfg` with `auth_type = github-oidc`),
   `.github/actions/deploy-dab`.
