@@ -1,9 +1,13 @@
-# Files NOT to upload on `databricks bundle deploy`. Mirrors .gitignore
-# semantics; .gitignore'd paths (.venv/, caches, .env) are excluded already.
+# Exclusions for `databricks sync` and the Databricks IDE extension.
 #
-# The deploy MUST ship: pyproject.toml + src/** + examples/** (the pipeline
-# environment installs the repo with `--editable ${workspace.file_path}`, and
-# the example pipeline's code/config live under examples/).
+# IMPORTANT: `databricks bundle deploy` does NOT read this file — it honors
+# .gitignore plus the `sync.exclude:` block in databricks.yml. Keep this list
+# ALIGNED with that block (it mirrors these paths) so the sync command and the
+# bundle deploy exclude the same dev-only surfaces.
+#
+# The deploy MUST ship: pyproject.toml + src/** + examples/** (the example
+# pipelines' code/config live under examples/; the framework is delivered as
+# the datalab wheel built by the databricks.yml `datalab_wheel` artifact).
 
 # Dev-only surfaces — not needed at runtime
 tests/
