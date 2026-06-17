@@ -29,7 +29,10 @@ Bundle).
   resources + tests + ABAC SQL) laid out to MIRROR an adopter repo root —
   copy it to start a real domain (`docs/GETTING_STARTED.md`). The bundle
   deploys it, so it doubles as the framework's integration test; nothing in
-  `src/datalab` depends on it.
+  `src/datalab` depends on it. A second domain, `examples/sales/`, is a
+  pipeline-only adoption — silver (AUTO CDC SCD1 + dqx) + gold MVs over
+  pre-existing `sales.bronze.*` tables, no edge jobs/notebooks — and deploys
+  from the same bundle.
 - **Folder names mirror the UC namespace** (`docs/NAMING.md`): the domain
   folder is the BASE CATALOG name (`customer_sales`; stage/prod append
   `_stage`/`_prod` via bundle variables), config subfolders are the SCHEMA
@@ -93,6 +96,8 @@ examples/                 REFERENCE domains — each named after its base UC cat
     resources/            This domain's bundle resources (pipeline + 3 jobs; relative paths move as is)
     tests/                The domain's own unit + contract tests (run with make test)
     sql/abac/             Display-only column-mask/row-filter SQL — admin-applied, never run by CI/agents
+  sales/                  Second reference domain (pipeline-only): config/sales/ + src/sales_etl + resources +
+                          tests; silver (AUTO CDC SCD1 + dqx) → gold MVs over pre-existing sales.bronze.* tables
 scripts/validate_connect.py  Databricks Connect validation entry (make validate-connect; out-of-lock)
 schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml
                           (make schema regenerates from the Pydantic models)
