@@ -11,12 +11,12 @@
 #
 # Use `uv sync` locally; `uv run pytest` for tests; `uv run ruff check` for linting.
 #
-# NOTE on pipeline runtime deps: the Lakeflow Spark Declarative Pipelines runtime
-# installs this project with `--editable ${workspace.file_path}` (see
-# examples/customer_sales/resources/customer_sales_etl.pipeline.yml). Anything you add to [project].dependencies
-# is installed into the pipeline environment on top of the pinned
-# environment_version. Keep it empty unless a transformation truly needs an
-# extra library — pyspark itself is provided by the runtime.
+# NOTE on pipeline runtime deps: the Lakeflow SDP and job runtimes install this
+# project as the BUILT `datalab_wheel` (the databricks.yml `artifacts` build;
+# each resource's environment.dependencies → ../../../dist/*.whl). Serverless
+# does NOT honor an `--editable` install of the synced workspace files. Anything
+# you add to [project].dependencies is folded into that wheel on top of the
+# pinned environment_version. Keep it minimal — pyspark is provided by the runtime.
 
 [build-system]
 requires      = ["hatchling>=1.27"]
@@ -37,13 +37,14 @@ keywords        = ["databricks", "lakeflow", "spark-declarative-pipelines", "med
 
 # Runtime dependencies installed into the pipeline environment (keep minimal —
 # the SDP runtime already provides pyspark, delta, etc.).
-# - pydantic capped <2.11: serverless env v4 preinstalls 2.10.6; the framework
-#   must not use 2.11+ features even though the local venv resolves newer.
+# - pydantic capped <2.11 to MATCH serverless env v4 (ships 2.10.6): the dev venv
+#   then resolves the same 2.10.x, so a 2.11+ feature can't pass tests locally and
+#   then break on the pinned runtime. (dqx allows >=2.10,<3, so the cap is ours.)
 # - databricks-labs-dqx pinned EXACT (Beta, breaking minor releases) and with
 #   NO extras: the [cli] extra pulls databricks-connect, which conflicts with
 #   the local pyspark dev dependency.
 dependencies = [
-    "pydantic>=2.10,<3",
+    "pydantic>=2.10,<2.11",
     "PyYAML>=6.0,<7",
     "databricks-labs-dqx==0.14.0",
 ]
@@ -70,7 +71,7 @@ dev = [
 ]
 
 # ---------------------------------------------------------------------------
-# Hatchling build targets, installed editable into pipeline/job environments:
+# Hatchling packages — built into the datalab_wheel that pipeline/job envs install:
 #   src/datalab — THE framework (the only package under src/; no domain code;
 #                 lift-and-shift)
 #   examples/customer_sales/src/customer_sales_etl — the customer_sales
