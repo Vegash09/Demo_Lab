@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: silver.products — validated product catalog (SCD1, current
+# state per product_id). Source: sales.bronze.products.
+schema_version: 1
+name: products
+comment: Current product catalog per product_id (SCD1), validated.
+source:
+  kind: table
+  name: products
+  layer: bronze
+  as_stream: true
+columns:
+  - name: product_id
+    type: long
+    quality:
+      - criticality: error # no product key → never reaches silver
+        check: { function: is_not_null }
+  - name: product_name
+    type: string
+    quality:
+      - criticality: warn
+        check: { function: is_not_null_and_not_empty }
+  - name: category
+    type: string
+    quality:
+      - criticality: warn
+        check: { function: is_not_null }
+  - name: subcategory
+    type: string
+  - name: brand
+    type: string
+  - name: price
+    type: double
+    quality:
+      - criticality: warn # negative price is suspect; flag, don't drop
+        check:
+          function: is_not_less_than
+          arguments: { limit: 0 }
+  - name: cost
+    type: double
+    quality:
+      - criticality: warn
+        check:
+          function: is_not_less_than
+          arguments: { limit: 0 }
+  - name: weight_kg
+    type: double
+    quality:
+      - criticality: warn
+        check:
+          function: is_not_less_than
+          arguments: { limit: 0 }
+  - name: created_at
+    type: timestamp
+  - name: _ingest_ts
+    type: timestamp
+  - name: _source_file
+    type: string
+quality:
+  quarantine:
+    name: products_quarantine
+    include_warnings: false
+target:
+  kind: streaming_table
+  cdc:
+    keys: [product_id]
+    sequence_by: _ingest_ts
+    scd_type: 1

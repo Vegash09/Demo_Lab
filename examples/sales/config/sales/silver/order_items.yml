@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: silver.order_items — validated order line items, current state
+# per item_id (SCD1). Source: sales.bronze.order_items.
+schema_version: 1
+name: order_items
+comment: Validated order line items, current state per item_id (SCD1).
+source:
+  kind: table
+  name: order_items
+  layer: bronze
+  as_stream: true
+columns:
+  - name: item_id
+    type: long
+    quality:
+      - criticality: error
+        check: { function: is_not_null }
+  - name: order_id
+    type: long
+    quality:
+      - criticality: error # a line with no parent order never reaches silver
+        check: { function: is_not_null }
+  - name: product_id
+    type: long
+    quality:
+      - criticality: error # a line with no product never reaches silver
+        check: { function: is_not_null }
+  - name: quantity
+    type: int
+    quality:
+      - criticality: warn # a line should have at least one unit
+        check:
+          function: is_not_less_than
+          arguments: { limit: 1 }
+  - name: unit_price
+    type: double
+    quality:
+      - criticality: warn
+        check:
+          function: is_not_less_than
+          arguments: { limit: 0 }
+  - name: discount_pct
+    type: double
+    quality:
+      - criticality: warn # percent, 0–100 (observed 0–25)
+        check:
+          function: is_in_range
+          arguments: { min_limit: 0, max_limit: 100 }
+  - name: created_at
+    type: timestamp
+  - name: _ingest_ts
+    type: timestamp
+  - name: _source_file
+    type: string
+quality:
+  quarantine:
+    name: order_items_quarantine
+    include_warnings: false
+target:
+  kind: streaming_table
+  cdc:
+    keys: [item_id]
+    sequence_by: _ingest_ts
+    scd_type: 1

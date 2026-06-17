@@ -80,7 +80,11 @@ dev = [
 # name is the last path component, so imports stay `customer_sales_etl.…`).
 # ---------------------------------------------------------------------------
 [tool.hatch.build.targets.wheel]
-packages = ["src/datalab", "examples/customer_sales/src/customer_sales_etl"]
+packages = [
+    "src/datalab",
+    "examples/customer_sales/src/customer_sales_etl",
+    "examples/sales/src/sales_etl",
+]
 
 # ---------------------------------------------------------------------------
 # Tool configs

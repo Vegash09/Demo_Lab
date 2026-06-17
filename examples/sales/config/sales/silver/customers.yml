@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: silver.customers — validated, deduplicated customer profile
+# (SCD1, current state per customer_id). Source: sales.bronze.customers.
+# columns: source→target mapping with ANSI-safe casts (try_cast: malformed
+# values become NULL, never stream failures) + per-column dqx rules.
+schema_version: 1
+name: customers
+comment: Current customer profile per customer_id (SCD1), validated and deduplicated.
+source:
+  kind: table
+  name: customers
+  layer: bronze # resolved via domain.yml layers (no hardcoded schemas)
+  as_stream: true
+columns:
+  - name: customer_id
+    type: long
+    quality:
+      - criticality: error # rows without an id never reach silver
+        check: { function: is_not_null }
+  - name: first_name
+    type: string
+  - name: last_name
+    type: string
+  - name: email
+    type: string
+    quality:
+      - criticality: warn # flows through flagged; not dropped
+        filter: email IS NOT NULL
+        check:
+          function: regex_match
+          arguments:
+            regex: '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+  - name: phone
+    type: string
+  - name: city
+    type: string
+  - name: state
+    type: string
+  - name: country
+    type: string
+  - name: created_at
+    type: timestamp
+  - name: updated_at
+    type: timestamp
+  - name: _ingest_ts
+    type: timestamp
+  - name: _source_file
+    type: string
+transform:
+  - function: sales.normalize_email # lower/trim — beyond what a cast can do
+quality:
+  quarantine:
+    name: customers_quarantine
+    include_warnings: false # quarantine == exactly the dropped rows
+target:
+  kind: streaming_table
+  cdc:
+    keys: [customer_id]
+    sequence_by: _ingest_ts
+    scd_type: 1
