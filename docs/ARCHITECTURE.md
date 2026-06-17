@@ -88,9 +88,8 @@ flowchart LR
     YML[["examples/customer_sales/config/customer_sales/*.yml<br/>Pydantic-validated artifacts<br/>(datasets + dqx rules)"]] -.->|"datalab.framework.generate"| BR
     LAND[("UC volume<br/>landing/sales/customers")] -->|"Auto Loader cloudFiles"| BR["bronze.customers_raw<br/>streaming_table + lineage cols"]
     BR --> IN["customers__input<br/>temporary view<br/>(rename + try_cast + customer_sales.normalize_email)"]
-    IN --> CHK["customers__checked<br/>dqx apply_checks_by_metadata<br/>(_errors/_warnings)"]
-    CHK -->|get_valid| VAL["customers__valid"]
-    CHK -->|"get_invalid<br/>errors only"| QUAR["silver.customers_quarantine<br/>(dqx evidence structs)"]
+    IN -->|"dqx inline · get_valid"| VAL["customers__valid<br/>apply_checks_by_metadata + get_valid"]
+    IN -->|"dqx inline · get_invalid<br/>errors only"| QUAR["silver.customers_quarantine<br/>(dqx evidence structs)"]
     VAL -->|"AUTO CDC flow<br/>keys=[customer_id] · sequence_by=_ingest_ts · SCD1"| SIL["silver.customers<br/>create_streaming_table"]
     SIL --> GOLD["gold.customers_by_city<br/>materialized_view<br/>(customer_sales.summarize_customers_by_city)"]
 ```

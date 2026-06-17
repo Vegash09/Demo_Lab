@@ -38,7 +38,6 @@ def test_customer_sales_graph_shape(configured_spark):
     # silver: dq chain + CDC target + quarantine
     assert {
         "customers__input",
-        "customers__checked",
         "customers__valid",
         "cat.silver.customers",
         "customers__cdc_flow",
@@ -52,4 +51,4 @@ def test_customer_sales_graph_shape(configured_spark):
     assert kinds["cat.silver.customers"] == "StreamingTable"
     assert kinds["customers__cdc_flow"] == "auto_cdc_flow"
     assert kinds["cat.gold.customers_by_city"] == "MaterializedView"
-    assert kinds["customers__checked"] == "TemporaryView"
+    assert kinds["customers__valid"] == "TemporaryView"

@@ -38,7 +38,6 @@ def test_sales_graph_shape(configured_spark):
     for table in ("customers", "products", "orders", "order_items"):
         assert {
             f"{table}__input",
-            f"{table}__checked",
             f"{table}__valid",
             f"cat.silver.{table}",
             f"{table}__cdc_flow",
@@ -60,4 +59,4 @@ def test_sales_graph_shape(configured_spark):
     assert kinds["orders__cdc_flow"] == "auto_cdc_flow"
     assert kinds["cat.gold.daily_sales"] == "MaterializedView"
     assert kinds["cat.gold.sales_by_category"] == "MaterializedView"
-    assert kinds["orders__checked"] == "TemporaryView"
+    assert kinds["orders__valid"] == "TemporaryView"
