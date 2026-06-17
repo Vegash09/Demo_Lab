@@ -19,7 +19,7 @@ the deployed bundle via `.databricksignore`, and the proxy never enters
 |---|---|
 | [`.mcp.json`](../.mcp.json) | Claude Code project-scoped MCP config — a `uvx` stdio proxy (`uc-mcp-proxy`) to the workspace's managed Databricks **SQL** MCP endpoint. Uses `${VAR:-default}` so env vars can repoint it without editing the file. |
 | [`.cursor/mcp.json`](../.cursor/mcp.json) | Cursor counterpart (same server; literal values — edit them, or set env, for your workspace). |
-| `.claude/skills/query-databricks/SKILL.md` (+ `.cursor/` mirror) | The `query-databricks` skill — teaches the agent *when* to query and the **read-only / single-writer** guardrail. |
+| `.claude/skills/query-databricks/SKILL.md` (generated mirrors in `.cursor/`/`.agents/` via `make sync-skills`) | The `query-databricks` skill — teaches the agent *when* to query and the **read-only / single-writer** guardrail. |
 
 ## Prerequisites
 

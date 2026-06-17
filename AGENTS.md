@@ -115,8 +115,9 @@ pyproject.toml            PEP 621 + [dependency-groups].dev; hatchling builds sr
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
 .github/                  Workflows (ci-cd-*, common-*, pr-template-check) + composite actions
-.claude/ .cursor/ .codex/  Agent harness (3 harnesses): settings, hooks, skills, rules — .codex/hooks.json
-.agents/skills/            references the canonical .claude guards; the 5 skills mirror across all three
+.claude/ .cursor/ .codex/  Agent harness (3): hooks, skills, rules. Skills authored ONCE in .claude/skills/;
+.agents/skills/            .cursor/.agents are generated mirrors (make sync-skills; check-skills guards drift).
+                           .codex/hooks.json references the canonical .claude guards
 .githooks/pre-commit      Human-side protected-files guard (enable: make enable-githooks)
 docs/                     GETTING_STARTED, FRAMEWORK (reference), NAMING (folder↔UC convention),
                           ARCHITECTURE, CICD, MIGRATION
@@ -499,6 +500,10 @@ change:
 4. If you change the protected set itself, update **all three** in one commit:
    `.claude/hooks/protected_files_guard.py`, `.githooks/pre-commit`, and the
    table below.
+5. **Editing an agent skill?** Author it ONCE under `.claude/skills/<name>/SKILL.md`,
+   then run `make sync-skills` to regenerate the `.cursor/skills` + `.agents/skills`
+   mirrors — never hand-edit a mirror. The `check-skills` CI step + pre-commit
+   reject drift (`scripts/sync_skills.py`).
 
 ### Protected file surface
 
@@ -515,6 +520,7 @@ change:
 | `^\.claude/(settings\.json\|hooks/.*\|skills/.*)` | Claude agent harness |
 | `^\.cursor/(rules\|hooks\|skills)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks + skills |
 | `^\.codex/hooks\.json$`, `^\.agents/skills/.*` | Codex agent harness (3rd harness; references the canonical guards) |
+| `^scripts/sync_skills\.py$` | agent-skills sync generator (canonical `.claude/skills` → `.cursor`/`.agents` mirrors) |
 | `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) |
 | `^\.githooks/.*` | git pre-commit guard |
 | `^Makefile$` | developer + CI entrypoints |
@@ -568,6 +574,13 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   Source-format `.py` under `notebooks/<domain>/`, widgets named after the job
   parameters, resolved via `datalab.params.notebook_params`; copy the
   `customer_sales_quarantine_report` job shape (no trigger). `make lint test validate`.
+- **Add or change an agent skill**: edit the canonical copy under
+  `.claude/skills/<name>/SKILL.md` (create the dir for a new skill), then run
+  `make sync-skills` to regenerate the `.cursor/skills` + `.agents/skills`
+  mirrors — never hand-edit a mirror. `make check-skills lint` (CI runs
+  `check-skills` and fails on drift). Each harness (Claude Code, Cursor, Codex)
+  discovers skills only at its own path, so the mirror is how one authored
+  source reaches all three.
 - **Run / validate locally without Databricks**: `make run-local` materializes
   the medallion on sample data via OSS `spark-pipelines` (local profile —
   mind the fidelity gaps: no AUTO CDC dedup / dqx / Auto Loader); `make

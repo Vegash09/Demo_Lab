@@ -13,7 +13,7 @@ TARGET ?= dev
 .DEFAULT_GOAL := help
 .PHONY: help install lock lint fmt test validate-configs schema validate \
         deploy run destroy bootstrap-uc enable-githooks commit-protected clean \
-        spec-local dry-run-local run-local validate-connect design
+        sync-skills check-skills spec-local dry-run-local run-local validate-connect design
 
 help:  ## Show available targets
 	@printf "\ndatalab · make targets (TARGET=$(TARGET))\n\n"
@@ -49,6 +49,13 @@ validate-configs: install  ## Validate every domain's <layer>/<table>.yml artifa
 
 schema: install  ## Regenerate schemas/{domain,table}_config.schema.json from the Pydantic models
 	$(UV) run python scripts/export_config_schema.py
+
+# ---- agent skills (one canonical source: .claude/skills) --------------------
+sync-skills:  ## Regenerate .cursor/skills + .agents/skills from canonical .claude/skills
+	$(UV) run python scripts/sync_skills.py --write
+
+check-skills:  ## Fail if any harness skill mirror drifted from .claude/skills (CI + pre-commit)
+	$(UV) run python scripts/sync_skills.py --check
 
 # ---- design assets (architecture diagrams -> images) ------------------------
 # Re-export design/*.drawio to design/images/*.png with the draw.io Desktop CLI

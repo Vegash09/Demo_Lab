@@ -100,7 +100,7 @@ flowchart TD
 | Deploy | `databricks.yml` + `examples/*/resources/` (adopters: `resources/`) | bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
 | Tests | `tests/` (framework, example-free) + `examples/customer_sales/tests/` | unit tests on a local SparkSession — no workspace needed |
 | CI/CD | `.github/` | ruff + pytest + config validation + `bundle validate` on PRs; OIDC deploys on merge/tags |
-| Agent harness | `.claude/`, `.cursor/`, `.codex/` + `.agents/skills/`, `.githooks/`, `.mcp.json` | rules, skills, PR-template + protected-file guards across three harnesses (`.codex` references the canonical guards), opt-in Databricks MCP config (read-only UC queries — [docs/AGENT_MCP.md](docs/AGENT_MCP.md)) |
+| Agent harness | `.claude/`, `.cursor/`, `.codex/` + `.agents/skills/`, `.githooks/`, `.mcp.json` | rules + skills + PR-template/protected-file guards across three harnesses (`.codex` references the canonical guards; the 5 skills are authored once in `.claude/skills/` and mirrored to `.cursor`/`.agents` via `make sync-skills`), opt-in Databricks MCP config (read-only UC queries — [docs/AGENT_MCP.md](docs/AGENT_MCP.md)) |
 | Docs | `docs/` | the child docs mapped above |
 | Design | `design/` | customer-facing [`OVERVIEW.md`](design/OVERVIEW.md) + draw.io sources (`01_*` spec, `02_*` living map), `images/` PNG exports (`make design`) and a standalone share HTML; kept in sync via the `maintain-design-diagram` skill ([how to edit](docs/ARCHITECTURE.md#editing-the-design-diagrams)) |
 

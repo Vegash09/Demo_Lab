@@ -46,6 +46,8 @@ PROTECTED: list[tuple[str, str]] = [
      "Cursor rules + agent hooks + skills (incl. the gh-pr-create template guard)"),
     (r"^\.codex/hooks\.json$|^\.agents/skills/.*",
      "Codex agent harness — hooks.json + .agents/skills (third harness; references the canonical guards)"),
+    (r"^scripts/sync_skills\.py$",
+     "agent-skills sync generator — canonical (.claude/skills) → .cursor/.agents mirror contract"),
     (r"^\.mcp\.json$|^\.cursor/mcp\.json$",
      "opt-in MCP server config (agent↔Databricks read-only query connection)"),
     (r"^\.githooks/.*",
