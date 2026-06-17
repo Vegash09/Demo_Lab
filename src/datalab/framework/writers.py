@@ -5,11 +5,20 @@ pattern — one read fans out to every sink, which is what lets DQX compose
 with AUTO CDC):
 
     <name>__input                     source + transforms        (per flow)
-    <name>__checked   (if quality)    + dqx _errors/_warnings    (per flow)
-    <name>__valid     (if quality)    error rows dropped, result cols stripped
+    <name>__valid     (if quality)    dqx applied INLINE, error rows dropped,
+                                      result cols stripped (per flow)
     target writer                     streaming table / CDC / snapshot CDC /
                                       MV / view / delta+kafka sink
-    <quarantine>      (if configured) rows the target rejected (all flows)
+    <quarantine>      (if configured) dqx applied INLINE, rows the target
+                                      rejected (all flows)
+    <name>__checked   (annotate-only) dqx-annotated frame, only for a
+                                      temporary_view target carrying quality
+
+dqx result columns (_errors/_warnings) must be produced and consumed in the
+SAME DataFrame scope: re-reading a checked view by name
+(spark.read[Stream].table) drops them on Databricks SDP, so the valid /
+quarantine split is built by applying dqx INLINE on __input — never across a
+temporary-view boundary.
     <metrics> MV      (if enabled)    per-rule violation counts
 
 Flow naming (SDP uses the FLOW NAME as the streaming-checkpoint identity —
@@ -121,23 +130,30 @@ def register_dataset(
         upstream = input_view
         if ds.has_checks:
             assert dq is not None
-            checked_view = f"{prefix}__checked"
+            if annotate_only:
+                # temporary_view target carrying quality: the dqx-annotated
+                # frame (with _errors/_warnings) IS the published output.
+                checked_view = f"{prefix}__checked"
 
-            def _checked(
-                spark=spark, ds=ds, dq=dq, src=input_view, streaming=streaming
-            ) -> DataFrame:
-                return dq.apply(spark, _read_view(spark, src, streaming=streaming), ds)
+                def _checked(
+                    spark=spark, ds=ds, dq=dq, src=input_view, streaming=streaming
+                ) -> DataFrame:
+                    return dq.apply(spark, _read_view(spark, src, streaming=streaming), ds)
 
-            dp.temporary_view(_checked, name=checked_view)
-            upstream = checked_view
-
-            if not annotate_only:
+                dp.temporary_view(_checked, name=checked_view)
+                upstream = checked_view
+            else:
+                # Apply dqx INLINE and split in the same scope. The dqx result
+                # columns must not cross a temporary-view boundary: re-reading a
+                # checked view by name drops _errors/_warnings on Databricks SDP,
+                # failing the split with UNRESOLVED_COLUMN `_errors`.
                 valid_view = f"{prefix}__valid"
 
                 def _valid(
-                    spark=spark, dq=dq, src=checked_view, streaming=streaming
+                    spark=spark, ds=ds, dq=dq, src=input_view, streaming=streaming
                 ) -> DataFrame:
-                    return dq.valid(_read_view(spark, src, streaming=streaming))
+                    checked = dq.apply(spark, _read_view(spark, src, streaming=streaming), ds)
+                    return dq.valid(checked)
 
                 dp.temporary_view(_valid, name=valid_view)
                 upstream = valid_view
@@ -402,14 +418,13 @@ def _register_quarantine(
     comment = f"Rows of {ds.name!r} that violated quality rules, kept for triage."
 
     if not ds.is_streaming:
-        checked_view = f"{flow_views[0][0].prefix(ds.name)}__checked"
+        input_view = f"{flow_views[0][0].prefix(ds.name)}__input"
 
         def _quarantine_mv(
-            spark=spark, dq=dq, src=checked_view, include_warnings=q.include_warnings
+            spark=spark, ds=ds, dq=dq, src=input_view, include_warnings=q.include_warnings
         ) -> DataFrame:
-            return dq.invalid(
-                _read_view(spark, src, streaming=False), include_warnings=include_warnings
-            )
+            checked = dq.apply(spark, _read_view(spark, src, streaming=False), ds)
+            return dq.invalid(checked, include_warnings=include_warnings)
 
         dp.materialized_view(
             _quarantine_mv, name=q_fqn, comment=comment, table_properties=properties
@@ -419,18 +434,18 @@ def _register_quarantine(
 
     only = flow_views[0]
     if len(flow_views) == 1 and only[0].suffix is None and not only[0].once:
-        checked_view = f"{ds.name}__checked"
+        input_view = f"{ds.name}__input"
 
         def _quarantine(
             spark=spark,
+            ds=ds,
             dq=dq,
-            src=checked_view,
+            src=input_view,
             streaming=True,
             include_warnings=q.include_warnings,
         ) -> DataFrame:
-            return dq.invalid(
-                _read_view(spark, src, streaming=streaming), include_warnings=include_warnings
-            )
+            checked = dq.apply(spark, _read_view(spark, src, streaming=streaming), ds)
+            return dq.invalid(checked, include_warnings=include_warnings)
 
         compat.table(_quarantine, name=q_fqn, comment=comment, table_properties=properties)
         _register_metrics(spark, ds, layer, ctx, dq, q_fqn)
@@ -440,20 +455,20 @@ def _register_quarantine(
     # so EVERY flow's rejected rows land in the same triage table.
     compat.create_streaming_table(name=q_fqn, comment=comment, table_properties=properties)
     for flow, _ in flow_views:
-        checked_view = f"{flow.prefix(ds.name)}__checked"
+        input_view = f"{flow.prefix(ds.name)}__input"
         streaming = flow.streaming()
         flow_name = f"{q_name}__{flow.suffix or 'primary'}" + ("__backfill" if flow.once else "__flow")
 
         def _invalid(
             spark=spark,
+            ds=ds,
             dq=dq,
-            src=checked_view,
+            src=input_view,
             streaming=streaming,
             include_warnings=q.include_warnings,
         ) -> DataFrame:
-            return dq.invalid(
-                _read_view(spark, src, streaming=streaming), include_warnings=include_warnings
-            )
+            checked = dq.apply(spark, _read_view(spark, src, streaming=streaming), ds)
+            return dq.invalid(checked, include_warnings=include_warnings)
 
         flow_kwargs: dict = dict(target=q_fqn, name=flow_name)
         if flow.once:

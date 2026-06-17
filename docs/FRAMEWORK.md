@@ -31,9 +31,17 @@ Generated dataset graph per artifact:
 
 ```mermaid
 flowchart LR
-    IN["&lt;name&gt;__input"] --> CHK["&lt;name&gt;__checked"] --> VAL["&lt;name&gt;__valid"] --> TGT["target"]
-    CHK -->|"error rows"| QUAR["&lt;name&gt;_quarantine<br/>(+ optional metrics MV)"]
+    IN["&lt;name&gt;__input"] -->|"dqx applied inline"| VAL["&lt;name&gt;__valid"] --> TGT["target"]
+    IN -->|"dqx inline · error rows"| QUAR["&lt;name&gt;_quarantine<br/>(+ optional metrics MV)"]
 ```
+
+dqx is applied **inline** when building `__valid` and the quarantine — not in a
+separate `__checked` view they re-read. The `_errors`/`_warnings` result columns
+must be produced and consumed in the same DataFrame scope: re-reading a checked
+view by name (`spark.read[Stream].table`) drops them on Databricks SDP, failing
+the split with `UNRESOLVED_COLUMN _errors`. (A `temporary_view` target carrying
+quality is the one exception — it emits `__checked`, the annotated frame, as its
+published output.)
 
 **No hardcoded catalogs — ever.** Every location in an artifact is a
 pipeline-conf KEY (`datalab.catalog`, `datalab.silver_schema`, …) resolved per

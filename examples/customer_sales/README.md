@@ -22,11 +22,11 @@ bronze.customers_raw            streaming table — raw + _ingest_ts/_source_fil
 customers__input                framework view — 8 mapped columns (rename/cast)
    │                              + pure fn customer_sales.normalize_email
    ▼
-customers__checked              framework view — dqx checks (_errors/_warnings)
+customers__valid                framework view — dqx applied INLINE, then get_valid
    │                              error → dropped   (customer_id_is_not_null)
    │                              warn  → flagged   (email_regex_match)
    ├──────────────▶ silver.customers_quarantine   dropped rows + dqx evidence
-   ▼  customers__valid
+   ▼
 silver.customers                streaming table + AUTO CDC flow
    │                              (upsert by customer_id, ordered by _ingest_ts, SCD1)
    ▼

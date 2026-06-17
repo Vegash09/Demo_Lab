@@ -350,7 +350,7 @@ target:
     names = [name for _, name in captured]
     # per-flow view chains
     assert "orders__eu__input" in names and "orders__us__input" in names
-    assert "orders__eu__checked" in names and "orders__us__valid" in names
+    assert "orders__eu__valid" in names and "orders__us__valid" in names
     # explicit target + one named append flow per source
     assert "cat.silver.orders" in names
     assert "orders__eu__flow" in names and "orders__us__flow" in names
