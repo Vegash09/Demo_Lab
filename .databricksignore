@@ -10,6 +10,9 @@ tests/
 examples/*/tests/
 docs/
 design/
+# Framework devtool notebooks (verify_dataset). Root-anchored so it does NOT
+# match the deployed domain notebooks under examples/*/notebooks/.
+/notebooks/
 
 # CI/CD + agent harness
 .github/
