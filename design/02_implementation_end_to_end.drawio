@@ -202,6 +202,24 @@
         <mxCell id="e_profiles_gen" edge="1" parent="1" source="profiles" target="fw_generate" style="endArrow=classic;html=1;dashed=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="selects generator path">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
+        <mxCell id="sales_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef4ff;strokeColor=#3366bb;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;fontSize=12;fontStyle=1;arcSize=2;" value="Second domain — Lakeflow SDP pipeline: sales_etl  (pipeline-only · over pre-existing sales.bronze.* · var.sales_catalog)" vertex="1">
+          <mxGeometry x="40" y="1335" width="1260" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="s_bronze" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde9d9;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="sales.bronze.* (pre-existing)&#xa;orders · order_items&#xa;customers · products" vertex="1">
+          <mxGeometry x="70" y="1380" width="290" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcdcf0;strokeColor=#3366bb;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="silver.{customers, products,&#xa;orders, order_items}&#xa;AUTO CDC SCD1 + dqx&#xa;(per-table _quarantine)" vertex="1">
+          <mxGeometry x="430" y="1380" width="300" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="gold MVs&#xa;daily_sales · revenue_per_customer&#xa;sales_by_category (joins products)" vertex="1">
+          <mxGeometry x="800" y="1380" width="340" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s_bronze_silver" edge="1" parent="1" source="s_bronze" target="s_silver" style="endArrow=classic;html=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="AUTO CDC">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s_silver_gold" edge="1" parent="1" source="s_silver" target="s_gold" style="endArrow=classic;html=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="MV">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
