@@ -20,6 +20,19 @@
 bundle:
   name: datalab
 
+# The datalab framework + example domain packages ship to the serverless
+# pipeline environments as a BUILT WHEEL (referenced from each pipeline's
+# environment.dependencies as ../../../dist/*.whl). Serverless pipeline
+# environments do NOT honor `--editable` installs of the synced workspace files
+# (the package never lands on the runtime path → ModuleNotFoundError), so the
+# wheel is the delivery path. `uv build --wheel` produces one wheel containing
+# all three hatch packages (datalab + the example domain packages).
+artifacts:
+  datalab_wheel:
+    type: whl
+    build: uv build --wheel
+    path: .
+
 # variables: and targets: deep-merge across includes, so they live in their own
 # files. Declarations (variables/) before per-env values (targets/); rbac.yml
 # contributes both its variables and per-target permission overrides.

@@ -3,7 +3,7 @@
 # invariant) — see AGENTS.md "Authoring rules".
 #
 # Reuses the pipeline's exact dependency mechanism: a serverless environment
-# installing this repo with `--editable ${workspace.file_path}` — one delivery
+# installing the built `datalab_wheel` (../../../dist/*.whl) — one delivery
 # path, same caching gotcha (see AGENTS.md Critical knowledge).
 
 resources:
@@ -31,7 +31,10 @@ resources:
           spec:
             environment_version: "4"
             dependencies:
-              - --editable ${workspace.file_path}
+              # Built wheel (datalab_wheel artifact in databricks.yml). Serverless
+              # environments don't honor an --editable install of the synced
+              # workspace files, so the framework ships as a wheel.
+              - ../../../dist/*.whl
 
       tasks:
         - task_key: export_customer_summary

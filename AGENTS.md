@@ -249,9 +249,10 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
 - Wire as `spark_python_task` in a `*.job.yml` resource with job
   `parameters:` defaulted from bundle variables; the task `parameters:` list
   maps them to flags via `{{job.parameters.<name>}}`.
-- Serverless `environments:` block installs the repo with
-  `--editable ${workspace.file_path}` — the same mechanism as the pipeline,
-  one dependency-delivery path.
+- Serverless `environments:` block installs the built `datalab_wheel`
+  (`../../../dist/*.whl`) — the same mechanism as the pipeline, one
+  dependency-delivery path (serverless does not honor `--editable`; see the
+  Critical-knowledge gotcha).
 - Any valid/invalid split belongs upstream in the SDP lane (dqx rules in the
   table's artifact — quarantine evidence included); jobs consume the already
   gated tables. If you find yourself wanting upsert semantics, the target
@@ -320,13 +321,21 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   idles in the graph and re-runs automatically when the pipeline/table is
   fully refreshed — leave it in the config (it's the recreation path and the
   audit trail).
-- **Pipeline deps are NOT `[project].dependencies` at dev time.** The pipeline
-  environment installs this repo with `--editable ${workspace.file_path}`
-  (see `examples/customer_sales/resources/customer_sales_etl.pipeline.yml`);
-  `environment_version: "4"` pins Python 3.12 + preinstalled libs. Extra
-  runtime libs go in `[project].dependencies` (picked up by the editable
-  install) — but pipeline environments cache dependencies during development;
-  trigger a full restart if a new dep doesn't show up.
+- **Pipeline deps are NOT `[project].dependencies` at dev time, and the
+  framework ships as a BUILT WHEEL — never `--editable`.** Serverless pipeline
+  (and job) environments do **not** honor an `--editable` install of the synced
+  workspace files: the package never lands on the runtime path and the pipeline
+  fails at import with `ModuleNotFoundError: No module named 'datalab'` (verified
+  June 2026 — the editable form the DAB templates suggest silently installs
+  nothing here). Delivery is the `datalab_wheel` bundle artifact (`databricks.yml`:
+  `artifacts: {datalab_wheel: {type: whl, build: uv build --wheel, path: .}}`);
+  every pipeline/job environment lists `dependencies: [../../../dist/*.whl]`
+  (path relative to the resource file). One `uv build --wheel` produces a single
+  wheel containing all three hatch packages (datalab + the example domain
+  packages). `environment_version: "4"` pins Python 3.12 + preinstalled libs.
+  Extra runtime libs go in `[project].dependencies` (folded into the wheel) — but
+  environments cache dependencies during development; trigger a full restart if a
+  new dep doesn't show up.
 - **Never install `databricks-connect` into the dev venv / `uv.lock`.** It
   conflicts with the `pyspark` dev dependency (both own the `pyspark`
   namespace). The sanctioned way to drive a live cluster from local is
@@ -402,18 +411,21 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   Don't block legitimate `.write` calls there in review.
 - **Job environments share the pipeline's dependency mechanism and gotcha.**
   The edge-job resources (`examples/customer_sales/resources/customer_sales_*.job.yml`) install
-  the repo with `--editable ${workspace.file_path}` into serverless job
-  environments; like pipeline environments they cache dependencies, so a
-  changed `datalab` package may not appear until the environment rebuilds.
+  the built `datalab_wheel` (`../../../dist/*.whl`) into serverless job
+  environments — same as pipelines, and for the same reason (serverless does not
+  honor `--editable` of synced workspace files); like pipeline environments they
+  cache dependencies, so a changed `datalab` package may not appear until the
+  environment rebuilds.
 - **Spark 4 ANSI mode**: serverless/SDP runs with ANSI SQL on, so a plain
   `.cast()` on malformed data **fails the stream** instead of yielding NULL.
   The framework's `columns:` mapping always casts with `try_cast` so bad
   values become NULLs that the quality rules then catch.
-- **`python_wheel_task` is opt-in only.** When a target genuinely demands an
-  immutable artifact: `artifacts: {type: whl, build: uv build --wheel}` +
-  `[project.scripts]` entry + environment dependency `../dist/*.whl` instead
-  of `--editable`. Until then `spark_python_task` is the default — one
-  delivery path, zero build steps. Never poetry.
+- **`python_wheel_task` is opt-in only.** The framework already ships to every
+  environment as the `datalab_wheel`; `python_wheel_task` is only for a target
+  that additionally needs an immutable, versioned CLI entrypoint
+  (`[project.scripts]` console script invoked by the wheel-task). Until then
+  `spark_python_task` running a `.py` file is the default — zero extra build
+  steps. Never poetry.
 - **Export/landing volumes are out-of-band UC setup per environment.** The
   export entry point fails fast if `/Volumes/<catalog>/exports/sales/` is
   missing rather than silently creating dev-shaped paths elsewhere.
