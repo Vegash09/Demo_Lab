@@ -1,0 +1,19 @@
+# GitHub Linguist overrides — keep the repository "Languages" bar reflecting the
+# Python framework. Linguist ranks languages by committed byte count, so the
+# single ~0.5 MB standalone HTML share under design/ was being counted as ~70%
+# of the repo even though src/datalab is 100% Python.
+#
+# The design/ package is customer-facing DOCUMENTATION (draw.io diagram sources,
+# their PNG exports, OVERVIEW.md, and the generated datalab-customer-overview.html
+# share) — not framework source — so it is excluded from language statistics.
+# The framework code, tests, jobs, notebooks and scripts (all Python) are
+# unaffected and continue to drive the bar.
+#
+# Reference: https://github.com/github-linguist/linguist/blob/main/docs/overrides.md
+# (GitHub recomputes the bar on push; it can take a few minutes / a cache cycle.)
+
+design/**                               linguist-documentation
+
+# The standalone share is GENERATED (regenerated out-of-band, see AGENTS.md /
+# the maintain-design-diagram skill) — also collapse it in diffs.
+design/datalab-customer-overview.html   linguist-generated
