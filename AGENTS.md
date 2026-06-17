@@ -64,6 +64,13 @@ landing volume ─▶ │ bronze.customers_raw ─▶ silver.customers (AUTO CDC
                   └───────────────────────────────────────────────────────────────┘
                   refreshed daily by job customer_sales_etl_refresh (pipeline_task)
 
+                  ┌──────────── Lakeflow SDP pipeline: sales_etl (pipeline-only) ─────┐
+sales.bronze.*  ─▶│ orders · order_items · customers · products                       │
+(pre-existing)    │   ─▶ silver (AUTO CDC SCD1 + dqx, per-table _quarantine)          │
+                  │   ─▶ gold MVs: daily_sales · revenue_per_customer · sales_by_category │
+                  └───────────────────────────────────────────────────────────────────┘
+                  on-demand (no scheduled refresh job yet)
+
   edge jobs (read-only on pipeline tables): customer_sales_export ─▶ exports volume (weekly CSV)
                                             customer_sales_quarantine_report (on-demand triage notebook)
 ```
@@ -102,7 +109,7 @@ scripts/validate_connect.py  Databricks Connect validation entry (make validate-
 schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml
                           (make schema regenerates from the Pydantic models)
 tests/                    FRAMEWORK unit tests (local Spark, example-free) — no workspace needed
-scripts/bootstrap_uc.py   One-time UC bootstrap per target: schemas/volumes/GRANTs (make bootstrap-uc)
+scripts/bootstrap_uc.py   One-time UC bootstrap per target: catalogs (customer_sales + sales) + schemas/volumes/GRANTs (make bootstrap-uc)
 scripts/export_config_schema.py  make schema implementation
 pyproject.toml            PEP 621 + [dependency-groups].dev; hatchling builds src/datalab + the example pkg
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
@@ -574,8 +581,9 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
 - **Change access (RBAC/ABAC)**: workspace-resource permissions → `rbac.yml`
   (group + permission-level string vars; per-target overrides in its own
   `targets:` block, per-environment via `DATALAB_*_GROUP` repo variables → the
-  `deploy-dab` `--var`); data grants → `scripts/bootstrap_uc.py` (keep its
-  CATALOGS/GROUPS dicts in sync with the group names in `rbac.yml`), re-run
+  `deploy-dab` `--var`); data grants → `scripts/bootstrap_uc.py` (provisions both
+  the customer_sales and sales catalogs; keep its CATALOGS/GROUPS dicts in sync
+  with the group names in `rbac.yml`), re-run
   `make bootstrap-uc`; row/column
   policies → add display-only SQL under the domain's `sql/abac/` following
   the conventions in `docs/ARCHITECTURE.md` — never execute them from CI or

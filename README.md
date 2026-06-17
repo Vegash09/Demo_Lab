@@ -93,7 +93,7 @@ flowchart TD
 | Surface | Where | What |
 |---|---|---|
 | Framework | `src/datalab/` | the ONLY package under `src/` — REUSABLE, zero domain code: Pydantic models, LDP generator, dqx engine, devtools, param helpers |
-| Reference domains | `examples/` (currently `customer_sales/`) | complete worked adoptions, each named after its base UC catalog and mirroring an adopter repo root — copy one to start your own domain |
+| Reference domains | `examples/customer_sales/` + `examples/sales/` | complete worked adoptions, each named after its base UC catalog and mirroring an adopter repo root — copy one to start your own domain. `customer_sales` is the full reference (all 3 lanes: pipeline + jobs + notebook); `sales` is pipeline-only (silver + gold over pre-existing `sales.bronze.*`) |
 | Dataset configs | `examples/customer_sales/config/customer_sales/` (adopters: `config/<catalog>/`) | ONE artifact per target table: column mappings + types, dqx rules, target kind — path mirrors `<catalog>.<schema>.<table>` |
 | Domain code | `examples/customer_sales/src/customer_sales_etl/` (adopters: `src/<catalog>_etl/`) | pure `@transform` functions, custom dqx checks, 3-line pipeline entrypoint |
 | Edge lanes | `examples/customer_sales/src/jobs/customer_sales/` + `examples/customer_sales/notebooks/customer_sales/` | python-file lane (headless exports) + notebook lane (human-gated triage) |

@@ -19,11 +19,14 @@ from __future__ import annotations
 import argparse
 import sys
 
-# Catalog per target — keep in sync with databricks.yml `targets.*.variables`.
+# Domain catalogs to provision per target, each as (catalog, with_volumes).
+# customer_sales backs the Auto Loader landing + export volumes; the pipeline-only
+# `sales` domain (silver+gold over pre-existing bronze) needs no volumes. Keep in
+# sync with databricks.yml targets.*.variables (catalog, sales_catalog).
 CATALOGS = {
-    "dev": "customer_sales",
-    "stage": "customer_sales_stage",
-    "prod": "customer_sales_prod",
+    "dev":   [("customer_sales",       True), ("sales",       False)],
+    "stage": [("customer_sales_stage", True), ("sales_stage", False)],
+    "prod":  [("customer_sales_prod",  True), ("sales_prod",  False)],
 }
 
 # Persona groups per target — keep in sync with rbac.yml
@@ -34,47 +37,61 @@ GROUPS = {
     "prod": {"reader": "dl_sales_readers", "engineer": "dl_sales_engineers"},
 }
 
-SCHEMAS = ["bronze", "silver", "gold", "landing", "exports"]
+BASE_SCHEMAS = ["bronze", "silver", "gold"]
+VOLUME_SCHEMAS = ["landing", "exports"]  # only for catalogs with edge-lane volumes
 
 # The CI/CD deploy service principal (GitHub OIDC) — needs full rights on the
 # catalog it deploys pipelines/tables into. Keep in sync with docs/CICD.md.
 DEPLOY_SP = "437346a1-0b53-418a-80d4-abaf2586ed97"
 
 
-def bootstrap_sql(target: str, managed_location: str = "") -> list[str]:
-    """Idempotent DDL + grants for one target. Readers see gold (and silver
-    for engineers); bronze/landing stay engineer-only; volumes back the
-    Auto Loader source and the export job.
-
-    ``managed_location`` is required on metastores without a storage root
-    (e.g. Default Storage accounts) — use the same path as the workspace's
-    existing catalogs."""
-    catalog = CATALOGS[target]
-    reader = GROUPS[target]["reader"]
-    engineer = GROUPS[target]["engineer"]
-    location = f" MANAGED LOCATION '{managed_location}'" if managed_location else ""
+def _catalog_sql(
+    catalog: str, reader: str, engineer: str, location: str, with_volumes: bool
+) -> list[str]:
+    """Idempotent DDL + grants for ONE catalog. Engineers get build rights across
+    the medallion; readers get silver+gold reads; bronze stays engineer-only.
+    Volume catalogs (customer_sales) additionally get the Auto Loader landing +
+    export volumes and their grants."""
+    schemas = BASE_SCHEMAS + (VOLUME_SCHEMAS if with_volumes else [])
     stmts = [
         f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location}",
         # The deploy SP owns everything the bundle creates in this catalog.
         f"GRANT ALL PRIVILEGES ON CATALOG `{catalog}` TO `{DEPLOY_SP}`",
     ]
-    stmts += [f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{s}`" for s in SCHEMAS]
+    stmts += [f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{s}`" for s in schemas]
     stmts += [
-        f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`sales`",
-        f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`exports`.`sales`",
-        # Engineers: full build rights on the medallion + both volumes.
         f"GRANT USE CATALOG, USE SCHEMA, CREATE SCHEMA ON CATALOG `{catalog}` TO `{engineer}`",
         f"GRANT CREATE TABLE, SELECT, MODIFY ON SCHEMA `{catalog}`.`bronze` TO `{engineer}`",
         f"GRANT CREATE TABLE, SELECT, MODIFY ON SCHEMA `{catalog}`.`silver` TO `{engineer}`",
         f"GRANT CREATE TABLE, SELECT, MODIFY ON SCHEMA `{catalog}`.`gold` TO `{engineer}`",
-        f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`landing`.`sales` TO `{engineer}`",
-        f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`exports`.`sales` TO `{engineer}`",
-        # Readers: consumption only — gold + silver reads, export pickup.
         f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{reader}`",
         f"GRANT USE SCHEMA, SELECT ON SCHEMA `{catalog}`.`silver` TO `{reader}`",
         f"GRANT USE SCHEMA, SELECT ON SCHEMA `{catalog}`.`gold` TO `{reader}`",
-        f"GRANT READ VOLUME ON VOLUME `{catalog}`.`exports`.`sales` TO `{reader}`",
     ]
+    if with_volumes:
+        stmts += [
+            f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`sales`",
+            f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`exports`.`sales`",
+            f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`landing`.`sales` TO `{engineer}`",
+            f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`exports`.`sales` TO `{engineer}`",
+            f"GRANT READ VOLUME ON VOLUME `{catalog}`.`exports`.`sales` TO `{reader}`",
+        ]
+    return stmts
+
+
+def bootstrap_sql(target: str, managed_location: str = "") -> list[str]:
+    """Idempotent DDL + grants for EVERY domain catalog in ``target`` (the
+    customer_sales medallion + the pipeline-only ``sales`` catalog).
+
+    ``managed_location`` is required on metastores without a storage root
+    (e.g. Default Storage accounts) — use the same path as the workspace's
+    existing catalogs."""
+    reader = GROUPS[target]["reader"]
+    engineer = GROUPS[target]["engineer"]
+    location = f" MANAGED LOCATION '{managed_location}'" if managed_location else ""
+    stmts: list[str] = []
+    for catalog, with_volumes in CATALOGS[target]:
+        stmts += _catalog_sql(catalog, reader, engineer, location, with_volumes)
     return stmts
 
 
