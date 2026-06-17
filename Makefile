@@ -28,9 +28,9 @@ lock:  ## Re-resolve dependencies and refresh uv.lock (run after editing pyproje
 	$(UV) lock
 
 # ---- quality gates (same commands CI runs) ----------------------------------
-LINT_PATHS := src tests notebooks scripts examples
+LINT_PATHS := src tests scripts examples
 
-lint: install  ## Ruff lint over src/, tests/, notebooks/, scripts/ and examples/
+lint: install  ## Ruff lint over src/, tests/, scripts/ and examples/
 	$(UV) run ruff check $(LINT_PATHS)
 
 fmt: install  ## Ruff auto-format + fix imports

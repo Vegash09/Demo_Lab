@@ -1,7 +1,7 @@
 """End-to-end contract of the customer_sales example via run_dataset.
 
-The notebook dev loop (verify_dataset.py) and pytest share this exact code
-path — this is the test an adopter copies for their own domain.
+run_dataset backs both this pytest contract and make validate-connect (same
+code path) — this is the test an adopter copies for their own domain.
 """
 
 from pathlib import Path
