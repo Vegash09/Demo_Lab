@@ -1,5 +1,13 @@
 # datalab
 
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Databricks](https://img.shields.io/badge/Databricks-Lakeflow%20SDP-FF3621.svg?logo=databricks&logoColor=white)](https://docs.databricks.com/aws/en/dlt/)
+[![DQX](https://img.shields.io/badge/DQX-Data%20Quality-green.svg)](https://databrickslabs.github.io/dqx/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![CI/CD Dev](https://github.com/dediggibyte/datalab/actions/workflows/ci-cd-dev.yml/badge.svg?branch=main)](https://github.com/dediggibyte/datalab/actions/workflows/ci-cd-dev.yml)
+[![Docs](https://img.shields.io/badge/docs-getting%20started-blue.svg)](docs/GETTING_STARTED.md)
+
 **Config-driven Lakeflow framework for the medallion lakehouse.** Every
 target table is ONE YAML artifact — authored by a human or a coding agent,
 validated by Pydantic, generated into **Lakeflow Spark Declarative Pipelines**
