@@ -118,7 +118,6 @@ known-first-party = ["datalab", "customer_sales_etl"]
 # Only the SDP-interpreted entrypoint gets the ambient-`spark` allowance;
 # domain transforms/checks are ordinary python and keep full linting.
 "examples/*/src/*/transformations/**" = ["F821"]
-"notebooks/**" = ["F821", "E402"]
 "examples/*/notebooks/**" = ["F821", "E402"]
 
 [tool.uv]

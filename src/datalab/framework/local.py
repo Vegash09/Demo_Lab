@@ -19,9 +19,8 @@ checks — both trigger Spark *analysis*, which OSS SDP forbids inside a pipelin
 query function (``ATTEMPT_ANALYSIS_IN_PIPELINE_QUERY_FUNCTION``), and the
 upstream tables do not exist at graph-registration time anyway. So the local run
 materializes the mapping/transform/CDC shape only; validate the dqx
-valid/quarantine split with ``run_dataset`` (``make test``,
-``notebooks/framework/verify_dataset.py``) or against a live cluster
-(``make validate-connect``).
+valid/quarantine split with ``run_dataset`` (``make test``) or against a live
+cluster (``make validate-connect``).
 
 It is a development/validation aid: identical loader/column-mapping/transform
 code as production, exercised end to end on sample data. SCD merge,

@@ -1,6 +1,6 @@
 """End-to-end contract of the sales example via run_dataset (silver.customers).
 
-The notebook dev loop (verify_dataset.py) and pytest share this exact code path.
+run_dataset backs both this pytest contract and make validate-connect (same code path).
 Covers the column mapping (ANSI-safe casts), the post-mapping transform
 (normalize_email), the dqx error gate (customer_id not null) and the
 valid/quarantine split — the same shape an adopter copies for their domain.

@@ -93,7 +93,6 @@ examples/                 REFERENCE domains — each named after its base UC cat
     resources/            This domain's bundle resources (pipeline + 3 jobs; relative paths move as is)
     tests/                The domain's own unit + contract tests (run with make test)
     sql/abac/             Display-only column-mask/row-filter SQL — admin-applied, never run by CI/agents
-notebooks/framework/      verify_dataset.py — framework devtool notebook (+ sample data)
 scripts/validate_connect.py  Databricks Connect validation entry (make validate-connect; out-of-lock)
 schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml
                           (make schema regenerates from the Pydantic models)
@@ -209,8 +208,8 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `@snapshot_source`. `domain.yml`'s `imports:` list names these modules —
   the framework hardcodes none.
 - Validate early: `make validate-configs` (same loader as CI, pytest and the
-  pipeline); verify interactively with `notebooks/framework/verify_dataset.py`
-  (`datalab.framework.run_dataset` — no deploy needed).
+  pipeline); verify behavior with `datalab.framework.run_dataset` (call it from
+  a test or a notebook/REPL) or `make validate-connect` — no deploy needed.
 - Hand-written `dp.*` wiring in transformation files is reserved for cases the
   framework genuinely cannot express (see the capability matrix in
   `docs/FRAMEWORK.md` for what's deliberately out) — extend the framework
@@ -402,7 +401,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   forbids inside a query function), **no Auto Loader/sinks**. Datasets register
   under their SHORT name so OSS SDP resolves cross-dataset reads via the
   pipeline default catalog/db. Validate CDC/quality via `make test` /
-  `verify_dataset.py` / `make validate-connect` / dev refresh. The dev dep is
+  `run_dataset` / `make validate-connect` / dev refresh. The dev dep is
   `pyspark[pipelines]` (the extra ships the `spark-pipelines` CLI + Connect
   deps). CI runs `make dry-run-local` (advisory).
 - **The "no writes" rule is scoped to SDP dataset functions.** The notebook
@@ -540,8 +539,8 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   pick the most specific function — `sql_expression` is a last resort;
   conventions follow the `databricks_dqx_agent` rule generator). Target
   filtering and quarantine stay in sync automatically. `make validate-configs`
-  catches invalid rules statically; verify behavior with `run_dataset` or the
-  verify notebook.
+  catches invalid rules statically; verify behavior with `run_dataset` or
+  `make validate-connect`.
 - **Add a python-file task**: run the 3-question router first. Entry point in
   `src/jobs/<domain>/` (argparse via `datalab.params.cli_params`, pure logic
   in `src/datalab` with a unit test), copy the `customer_sales_export` job shape from

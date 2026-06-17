@@ -179,8 +179,8 @@ make lint test           # ruff + pytest (local Spark)
 ```
 
 Run a single dataset through the REAL framework path — no workspace needed —
-in a test (copy `examples/customer_sales/tests/test_run_dataset_contract.py`) or in
-the `notebooks/framework/verify_dataset.py` notebook on Databricks:
+in a test (copy `examples/customer_sales/tests/test_run_dataset_contract.py`), a
+notebook/REPL, or against a live cluster via `make validate-connect`:
 
 ```python
 from datalab.framework import run_dataset

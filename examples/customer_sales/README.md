@@ -70,6 +70,7 @@ databricks bundle run customer_sales_export -t dev              # python-file la
 databricks bundle run customer_sales_quarantine_report -t dev   # notebook lane
 ```
 
-To verify a single dataset without deploying, use the
-`notebooks/framework/verify_dataset.py` notebook with
-`config_dir = <workspace files>/examples/customer_sales/config/customer_sales`.
+To verify a single dataset without deploying, call
+`datalab.framework.run_dataset(...)` in a test or notebook/REPL (or
+`make validate-connect` against a live cluster) with
+`config_dir = examples/customer_sales/config/customer_sales`.

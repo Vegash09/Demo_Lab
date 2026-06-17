@@ -439,7 +439,7 @@ name). Worked example with quality + CDC:
 make validate-configs   # pydantic + static dqx validation; fix what it names
 make test               # unit tests (local Spark)
 # behavior, without deploying:
-#   notebooks/framework/verify_dataset.py  (or run_dataset in a test)
+#   run_dataset in a test or notebook/REPL, or make validate-connect
 make deploy run         # dev refresh — verifies the engine-owned parts (CDC)
 ```
 
@@ -486,7 +486,7 @@ example to copy from:
 |---|---|---|
 | 1 | `make validate-configs` | Pydantic + static dqx validation of every domain |
 | 2 | `make test` | unit tests on a local SparkSession |
-| 3 | `notebooks/framework/verify_dataset.py` | ONE dataset through the real framework path on sample or live data, no deploy — plan, valid rows, quarantine evidence, warnings. The same `run_dataset` API backs the unit tests, so notebook and pytest are literally the same code path; `run_dataset(..., flow="hist_2024")` previews a specific fan-in source or backfill entry |
+| 3 | `datalab.framework.run_dataset(...)` (a test or notebook/REPL) | ONE dataset through the real framework path on sample or live data, no deploy — plan, valid rows, quarantine evidence, warnings. The same `run_dataset` API backs the unit tests, so it's literally the same code path; `run_dataset(..., flow="hist_2024")` previews a specific fan-in source or backfill entry |
 | 4 | `datalab.framework.capture_graph(spark, config_dir)` | the full generated dataset/flow graph, locally (no Databricks) |
 | 5 | `make run-local` / `make dry-run-local` | the whole medallion materialized (or just graph-validated) on sample data by the OSS `spark-pipelines` CLI — see "Run anywhere" below |
 | 6 | `make validate-connect` | a dataset's mapping/transforms/dqx run on a LIVE cluster via isolated Databricks Connect (no deploy) |
@@ -524,7 +524,7 @@ deploy run` / `make test`):
   rows **as-is** (expect duplicate keys locally).
 - **No dqx gate.** dqx inspects `df.columns`/`df.isStreaming` while building
   checks, which OSS SDP forbids inside a query function — so no valid/quarantine
-  split locally. Validate quality with `make test` / `verify_dataset.py` /
+  split locally. Validate quality with `make test` / `run_dataset` /
   `make validate-connect`.
 - **No Auto Loader / sinks.** `cloud_files` reads collapse to batch file reads;
   delta/kafka sinks are skipped.

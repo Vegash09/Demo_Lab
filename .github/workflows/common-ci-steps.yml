@@ -41,7 +41,7 @@ jobs:
       - name: Ruff lint
         # Same paths as `make lint` — examples/ holds the reference domains
         # (domain packages + their tests) and is part of the linted surface.
-        run: uv run ruff check src tests notebooks scripts examples
+        run: uv run ruff check src tests scripts examples
 
       - name: Validate dataset configs (pydantic + static dqx checks)
         # Same loader as `make validate-configs`, the pipeline import, and the

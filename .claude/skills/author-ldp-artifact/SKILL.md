@@ -151,8 +151,8 @@ Pure function in `src/<domain>_etl/transforms/` with
    names.
 2. `make lint test`.
 3. Behavior: `datalab.framework.run_dataset(spark, "config/<domain>",
-   "<layer>", "<table>", params=..., inputs=...)` in a test or the
-   `notebooks/framework/verify_dataset.py` notebook — check valid rows,
+   "<layer>", "<table>", params=..., inputs=...)` in a test or a notebook/REPL
+   (or `make validate-connect` against a live cluster) — check valid rows,
    quarantine evidence, casts.
 4. `make validate` (bundle), then deploy/run from a dev refresh.
 
