@@ -45,6 +45,16 @@ inputs:
 runs:
   using: "composite"
   steps:
+    # `bundle deploy` builds the datalab_wheel artifact (`uv build --wheel`, see
+    # databricks.yml) — so uv must be on PATH here. (`bundle validate` does NOT
+    # build artifacts, which is why the validate-only CI job doesn't need it.)
+    # Mirrors the CI test job's uv setup.
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
+
     # Validate and deploy in one step so the quoted --var argument array
     # (group names may contain spaces) doesn't have to cross a step boundary.
     - name: bundle validate + deploy
