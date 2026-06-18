@@ -5,6 +5,8 @@ transform that reads silver.products and a pure ``category_rollup`` helper; the
 helper is tested here with two in-memory DataFrames (no live table needed)."""
 
 from pyspark.sql import Row
+
+from datalab.framework.registry import TRANSFORMS, import_modules
 from sales_etl.transforms.sales import (
     category_rollup,
     daily_sales,
@@ -12,8 +14,6 @@ from sales_etl.transforms.sales import (
     revenue_per_customer,
     sales_by_category,
 )
-
-from datalab.framework.registry import TRANSFORMS, import_modules
 
 
 def test_normalize_email(spark):

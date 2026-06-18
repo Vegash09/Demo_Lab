@@ -11,12 +11,13 @@
 #
 # Use `uv sync` locally; `uv run pytest` for tests; `uv run ruff check` for linting.
 #
-# NOTE on pipeline runtime deps: the Lakeflow SDP and job runtimes install this
-# project as the BUILT `datalab_wheel` (the databricks.yml `artifacts` build;
-# each resource's environment.dependencies → ../../../dist/*.whl). Serverless
+# NOTE on pipeline runtime deps: the Lakeflow SDP and job runtimes install the
+# FRAMEWORK as a versioned wheel published to a UC Volume (datalab-<ver>-py3-none-any.whl,
+# see `make publish-wheel`); each resource's environment.dependencies points at
+# that Volume path PLUS the example domain wheel built by the bundle. Serverless
 # does NOT honor an `--editable` install of the synced workspace files. Anything
-# you add to [project].dependencies is folded into that wheel on top of the
-# pinned environment_version. Keep it minimal — pyspark is provided by the runtime.
+# you add to [project].dependencies is folded into the framework wheel on top of
+# the pinned environment_version. Keep it minimal — pyspark is provided by the runtime.
 
 [build-system]
 requires      = ["hatchling>=1.27"]
@@ -27,7 +28,7 @@ build-backend = "hatchling.build"
 # ---------------------------------------------------------------------------
 [project]
 name            = "datalab"
-version         = "0.2.0"
+version         = "0.3.0"
 description     = "Medallion (bronze→silver→gold) lakehouse framework on Lakeflow Spark Declarative Pipelines, shipped as a Declarative Automation Bundle."
 readme          = "README.md"
 license         = { text = "MIT" }
@@ -68,24 +69,26 @@ dev = [
     # dqx's check_funcs imports pandas but doesn't declare it; serverless
     # preinstalls pandas, locally we need it for the dqx unit tests.
     "pandas>=2.0",
+    # The reference domains are uv-workspace members (examples/<catalog>/), installed
+    # EDITABLE into the dev venv so the framework's test / lint / validate-configs
+    # gates exercise them locally. They are NOT framework runtime deps — at deploy
+    # each ships as its own bundle-built wheel (see [tool.uv.workspace] below).
+    "customer_sales_etl",
+    "sales_etl",
 ]
 
 # ---------------------------------------------------------------------------
-# Hatchling packages — built into the datalab_wheel that pipeline/job envs install:
-#   src/datalab — THE framework (the only package under src/; no domain code;
-#                 lift-and-shift)
-#   examples/customer_sales/src/customer_sales_etl — the customer_sales
-#                 REFERENCE domain adopting it (kept under examples/, still
-#                 packaged so the demo pipeline can import it)
-# A new domain = add its <...>/src/<catalog>_etl package dir here (the package
-# name is the last path component, so imports stay `customer_sales_etl.…`).
+# Hatchling package — the root project builds the FRAMEWORK-ONLY wheel
+# (`datalab-<ver>-py3-none-any.whl`), published to a UC Volume by
+# `make publish-wheel` and installed by every pipeline/job environment from that
+# Volume path. The example domain packages are SEPARATE wheels: each example is a
+# uv-workspace MEMBER with its own pyproject.toml (examples/<catalog>/pyproject.toml)
+# building `<catalog>_etl`, built by the bundle's `artifacts:` and referenced
+# locally. A new domain in an adopter repo is its OWN project pinning datalab —
+# never added here. See docs/FRAMEWORK.md "Distribution" + AGENTS.md.
 # ---------------------------------------------------------------------------
 [tool.hatch.build.targets.wheel]
-packages = [
-    "src/datalab",
-    "examples/customer_sales/src/customer_sales_etl",
-    "examples/sales/src/sales_etl",
-]
+packages = ["src/datalab"]
 
 # ---------------------------------------------------------------------------
 # Tool configs
@@ -106,9 +109,9 @@ select = ["E", "F", "I", "W", "UP", "B"]
 ignore = ["E501"]   # line length — handled by line-length above
 
 [tool.ruff.lint.isort]
-# customer_sales_etl lives under examples/ (outside ruff's src-root detection)
-# but is first-party — it's this repo's reference domain package.
-known-first-party = ["datalab", "customer_sales_etl"]
+# The reference domain packages live under examples/ (outside ruff's src-root
+# detection) but are first-party — they're this repo's worked-example packages.
+known-first-party = ["datalab", "customer_sales_etl", "sales_etl"]
 
 # `spark` is injected by the SDP runtime in pipeline source files; ruff would
 # otherwise flag it as undefined. Notebooks additionally get `dbutils`/`display`
@@ -123,3 +126,16 @@ known-first-party = ["datalab", "customer_sales_etl"]
 
 [tool.uv]
 managed = true
+
+# uv workspace: the root project is the FRAMEWORK (datalab); each reference domain
+# under examples/ is a workspace MEMBER with its own pyproject.toml, building a
+# separate `<catalog>_etl` wheel. Members are installed editable into the dev venv
+# (via the dev group above) so `make test`/`make lint`/`make validate-configs` see
+# them, while `uv build --package <name>` builds each domain wheel independently
+# and `uv build` (root) builds the framework wheel published to the UC Volume.
+[tool.uv.workspace]
+members = ["examples/customer_sales", "examples/sales"]
+
+[tool.uv.sources]
+customer_sales_etl = { workspace = true }
+sales_etl = { workspace = true }

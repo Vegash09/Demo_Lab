@@ -1,0 +1,26 @@
+# customer_sales_etl — the customer_sales REFERENCE domain package.
+#
+# A uv-workspace MEMBER of the root datalab project (see the root pyproject.toml
+# [tool.uv.workspace]). Built as its OWN wheel — separate from the framework
+# wheel — by the bundle's `artifacts:` (`uv build --package customer_sales_etl`)
+# and installed into the pipeline/job serverless environments alongside the
+# framework wheel that comes from the UC Volume.
+#
+# `datalab` is NOT declared as a runtime dependency: serverless has no package
+# index to resolve it from, so the framework is ENVIRONMENT-PROVIDED — each
+# resource lists the datalab Volume wheel next to this one. In local dev datalab
+# resolves from the uv workspace (the root project, installed in the shared venv).
+
+[build-system]
+requires      = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name            = "customer_sales_etl"
+version         = "0.3.0"
+description     = "datalab reference domain: the customer_sales medallion (bronze→silver→gold) adoption."
+requires-python = ">=3.12,<3.14"
+dependencies    = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/customer_sales_etl"]
