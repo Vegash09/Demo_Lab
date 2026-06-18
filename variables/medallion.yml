@@ -38,3 +38,19 @@ variables:
   sales_export_path:
     description: UC volume path where gold sales extracts are exported (python-file lane).
     default: /Volumes/${var.catalog}/exports/sales/
+  # --- framework wheel distribution (Phase 0) -------------------------------
+  # The datalab FRAMEWORK ships as a versioned wheel published to a PER-DOMAIN
+  # `artifacts.wheels` UC Volume (make publish-wheel) and installed by every
+  # pipeline/job environment from the Volume path below. `datalab_version` is the
+  # single knob: bump it (in lockstep with pyproject.toml + src/datalab/__init__.py)
+  # and re-publish to roll the framework; the versioned filename lets versions
+  # coexist on the Volume. The example domain wheels are still bundle-built (local).
+  datalab_version:
+    description: Version of the datalab framework wheel installed from the artifacts Volume.
+    default: "0.3.0"
+  datalab_wheel:
+    description: UC Volume path of the datalab framework wheel for the customer_sales domain.
+    default: /Volumes/${var.catalog}/artifacts/wheels/datalab-${var.datalab_version}-py3-none-any.whl
+  sales_datalab_wheel:
+    description: UC Volume path of the datalab framework wheel for the sales domain.
+    default: /Volumes/${var.sales_catalog}/artifacts/wheels/datalab-${var.datalab_version}-py3-none-any.whl

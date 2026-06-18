@@ -12,9 +12,9 @@ TARGET ?= dev
 
 .DEFAULT_GOAL := help
 .PHONY: help install lock lint fmt test validate-configs schema validate \
-        deploy run destroy bootstrap-uc enable-githooks commit-protected clean \
-        sync-skills check-skills publish-genie-skills spec-local dry-run-local \
-        run-local validate-connect design
+        deploy run destroy publish-wheel bootstrap-uc enable-githooks \
+        commit-protected clean sync-skills check-skills publish-genie-skills \
+        spec-local dry-run-local run-local validate-connect design
 
 help:  ## Show available targets
 	@printf "\ndatalab · make targets (TARGET=$(TARGET))\n\n"
@@ -93,6 +93,20 @@ run:  ## Trigger a refresh of the customer_sales_etl pipeline on $(TARGET)
 
 destroy:  ## Tear down everything the bundle deployed to $(TARGET) (asks first)
 	databricks bundle destroy -t $(TARGET)
+
+# ---- framework wheel publish (Phase 0: framework-only wheel -> UC Volume) ----
+# Build the datalab FRAMEWORK wheel and upload it to each domain's
+# artifacts.wheels UC Volume for $(TARGET); every pipeline/job environment
+# installs datalab from that Volume path (variables/medallion.yml + AGENTS.md).
+# The Volume must exist first (make bootstrap-uc) and CI publishes before each
+# deploy. Dry run by default; APPLY=1 uploads. `--with databricks-sdk` keeps the
+# SDK out of uv.lock; override the CLI profile with PROFILE=<name>.
+publish-wheel:  ## Build the framework wheel + publish it to the artifacts Volume for $(TARGET) (APPLY=1 to upload)
+	$(UV) build --wheel --out-dir dist-framework
+	$(UV) run --with databricks-sdk python scripts/publish_wheel.py \
+		--target $(TARGET) --dist-dir dist-framework \
+		$(if $(APPLY),--apply,) \
+		$(if $(PROFILE),--profile $(PROFILE),)
 
 # ---- local OSS run (spark-pipelines, no Databricks) -------------------------
 # The `local` profile (datalab.framework.local) downgrades the medallion to a

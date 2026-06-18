@@ -21,10 +21,12 @@ resources:
           spec:
             environment_version: "4"
             dependencies:
-              # Built wheel (datalab_wheel artifact in databricks.yml). Serverless
-              # environments don't honor an --editable install of the synced
-              # workspace files, so the framework ships as a wheel.
-              - ../../../dist/*.whl
+              # datalab FRAMEWORK wheel from this domain's artifacts UC Volume
+              # (make publish-wheel; CI publishes before deploy). Serverless
+              # doesn't honor --editable installs of synced files.
+              - ${var.datalab_wheel}
+              # This domain's wheel — built by the customer_sales_etl_wheel artifact.
+              - ../../../dist/customer_sales_etl-*.whl
 
       tasks:
         - task_key: quarantine_report

@@ -5,6 +5,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+dist-framework/   # isolated output for the framework wheel (make publish-wheel)
 
 # Virtual envs (uv-managed)
 .venv/

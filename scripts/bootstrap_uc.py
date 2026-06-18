@@ -20,9 +20,10 @@ import argparse
 import sys
 
 # Domain catalogs to provision per target, each as (catalog, with_volumes).
-# customer_sales backs the Auto Loader landing + export volumes; the pipeline-only
-# `sales` domain (silver+gold over pre-existing bronze) needs no volumes. Keep in
-# sync with databricks.yml targets.*.variables (catalog, sales_catalog).
+# `with_volumes` controls only the edge-lane Auto Loader landing + export volumes
+# (customer_sales). EVERY catalog additionally gets an `artifacts.wheels` Volume
+# holding the datalab framework wheel its pipelines/jobs install (see ARTIFACTS_*
+# below). Keep in sync with databricks.yml targets.*.variables (catalog, sales_catalog).
 CATALOGS = {
     "dev":   [("customer_sales",       True), ("sales",       False)],
     "stage": [("customer_sales_stage", True), ("sales_stage", False)],
@@ -39,6 +40,11 @@ GROUPS = {
 
 BASE_SCHEMAS = ["bronze", "silver", "gold"]
 VOLUME_SCHEMAS = ["landing", "exports"]  # only for catalogs with edge-lane volumes
+# Every domain catalog hosts an `artifacts.wheels` Volume holding the datalab
+# FRAMEWORK wheel that the domain's pipeline/job environments install from
+# (make publish-wheel; see variables/medallion.yml var.datalab_wheel + AGENTS.md).
+ARTIFACTS_SCHEMA = "artifacts"
+ARTIFACTS_VOLUME = "wheels"
 
 # The CI/CD deploy service principal (GitHub OIDC) — needs full rights on the
 # catalog it deploys pipelines/tables into. Keep in sync with docs/CICD.md.
@@ -50,9 +56,10 @@ def _catalog_sql(
 ) -> list[str]:
     """Idempotent DDL + grants for ONE catalog. Engineers get build rights across
     the medallion; readers get silver+gold reads; bronze stays engineer-only.
-    Volume catalogs (customer_sales) additionally get the Auto Loader landing +
-    export volumes and their grants."""
-    schemas = BASE_SCHEMAS + (VOLUME_SCHEMAS if with_volumes else [])
+    EVERY catalog gets an `artifacts.wheels` Volume for the datalab framework
+    wheel. Volume catalogs (customer_sales) additionally get the Auto Loader
+    landing + export volumes and their grants."""
+    schemas = BASE_SCHEMAS + [ARTIFACTS_SCHEMA] + (VOLUME_SCHEMAS if with_volumes else [])
     stmts = [
         f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location}",
         # The deploy SP owns everything the bundle creates in this catalog.
@@ -67,6 +74,16 @@ def _catalog_sql(
         f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{reader}`",
         f"GRANT USE SCHEMA, SELECT ON SCHEMA `{catalog}`.`silver` TO `{reader}`",
         f"GRANT USE SCHEMA, SELECT ON SCHEMA `{catalog}`.`gold` TO `{reader}`",
+    ]
+    # Framework-wheel distribution Volume (Phase 0): the datalab wheel is published
+    # here by `make publish-wheel` and installed by every pipeline/job environment
+    # from /Volumes/<catalog>/artifacts/wheels/. The deploy SP (ALL PRIVILEGES
+    # above) publishes; engineers + readers get READ so any pipeline run-as
+    # identity can install it.
+    stmts += [
+        f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{ARTIFACTS_SCHEMA}`.`{ARTIFACTS_VOLUME}`",
+        f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`{ARTIFACTS_SCHEMA}`.`{ARTIFACTS_VOLUME}` TO `{engineer}`",
+        f"GRANT READ VOLUME ON VOLUME `{catalog}`.`{ARTIFACTS_SCHEMA}`.`{ARTIFACTS_VOLUME}` TO `{reader}`",
     ]
     if with_volumes:
         stmts += [

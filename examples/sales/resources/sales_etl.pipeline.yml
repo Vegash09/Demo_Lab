@@ -25,11 +25,14 @@ resources:
         # Pins the Python runtime independently of DBR upgrades.
         environment_version: "4"
         dependencies:
-          # Install the datalab wheel built by the `datalab_wheel` artifact
-          # (databricks.yml). Serverless pipeline environments do NOT honor an
-          # `--editable` install of the synced workspace files, so a built wheel
-          # is the delivery path. Path is relative to this resource file.
-          - ../../../dist/*.whl
+          # datalab FRAMEWORK wheel — installed from the sales domain's artifacts
+          # UC Volume (make publish-wheel uploads datalab-<ver>; CI publishes before
+          # deploy). Bump var.datalab_version to roll it. Serverless does NOT honor
+          # an `--editable` install of synced workspace files, so a wheel is the path.
+          - ${var.sales_datalab_wheel}
+          # This domain's wheel — built by the bundle's sales_etl_wheel artifact
+          # (uv build --package sales_etl). Relative to this resource file.
+          - ../../../dist/sales_etl-*.whl
 
       # Surfaced to pipeline code as Spark conf — read via datalab.config.pipeline_conf.
       configuration:

@@ -20,17 +20,25 @@
 bundle:
   name: datalab
 
-# The datalab framework + example domain packages ship to the serverless
-# pipeline environments as a BUILT WHEEL (referenced from each pipeline's
-# environment.dependencies as ../../../dist/*.whl). Serverless pipeline
-# environments do NOT honor `--editable` installs of the synced workspace files
-# (the package never lands on the runtime path → ModuleNotFoundError), so the
-# wheel is the delivery path. `uv build --wheel` produces one wheel containing
-# all three hatch packages (datalab + the example domain packages).
+# Wheel delivery (Phase 0): the datalab FRAMEWORK no longer ships with the
+# bundle — it is published as a versioned wheel to a per-domain `artifacts.wheels`
+# UC Volume (`make publish-wheel`; CI publishes before deploy) and installed by
+# each environment from that Volume path (var.datalab_wheel / var.sales_datalab_wheel).
+# The bundle now builds ONLY the example domain wheels (uv-workspace members); each
+# resource lists its own domain wheel next to the datalab Volume wheel. Serverless
+# still does NOT honor `--editable` installs of synced workspace files, so the
+# example packages must also be built wheels.
+# NB (verify on first dev deploy): each artifact below builds one example wheel
+# into ./dist/; resources reference them by filename glob (customer_sales_etl-*.whl
+# / sales_etl-*.whl). uv must be on PATH for `bundle deploy` (deploy-dab installs it).
 artifacts:
-  datalab_wheel:
+  customer_sales_etl_wheel:
     type: whl
-    build: uv build --wheel
+    build: uv build --wheel --package customer_sales_etl
+    path: .
+  sales_etl_wheel:
+    type: whl
+    build: uv build --wheel --package sales_etl
     path: .
 
 # variables: and targets: deep-merge across includes, so they live in their own
