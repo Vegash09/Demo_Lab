@@ -109,9 +109,10 @@ scripts/validate_connect.py  Databricks Connect validation entry (make validate-
 schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml
                           (make schema regenerates from the Pydantic models)
 tests/                    FRAMEWORK unit tests (local Spark, example-free) — no workspace needed
-scripts/bootstrap_uc.py   One-time UC bootstrap per target: catalogs (customer_sales + sales) + schemas/volumes/GRANTs (make bootstrap-uc)
+scripts/bootstrap_uc.py   One-time UC bootstrap per target: catalogs (customer_sales + sales) + schemas/volumes/artifacts-Volume/GRANTs (make bootstrap-uc)
+scripts/publish_wheel.py  Build + upload the versioned FRAMEWORK wheel to each domain's artifacts UC Volume (make publish-wheel)
 scripts/export_config_schema.py  make schema implementation
-pyproject.toml            PEP 621 + [dependency-groups].dev; hatchling builds src/datalab + the example pkg
+pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.workspace]; hatchling builds the FRAMEWORK-ONLY datalab wheel (examples are workspace members → own <catalog>_etl wheels)
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
 .github/                  Workflows (ci-cd-*, common-*, pr-template-check) + composite actions
@@ -152,6 +153,7 @@ make test             # pytest (framework suite + example suites; needs Java 17+
 make validate-configs # validate every domain's artifacts (pydantic + dqx)
 make validate         # databricks bundle validate -t dev
 make deploy           # validate + bundle deploy -t dev
+make publish-wheel    # build + upload the framework wheel to the artifacts UC Volume (APPLY=1)
 make run              # databricks bundle run customer_sales_etl -t dev (dev refresh)
 make run-local        # materialize the medallion on sample data via OSS spark-pipelines
 make dry-run-local    # spark-pipelines dry-run (graph validation, no data)
@@ -264,10 +266,10 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
 - Wire as `spark_python_task` in a `*.job.yml` resource with job
   `parameters:` defaulted from bundle variables; the task `parameters:` list
   maps them to flags via `{{job.parameters.<name>}}`.
-- Serverless `environments:` block installs the built `datalab_wheel`
-  (`../../../dist/*.whl`) — the same mechanism as the pipeline, one
-  dependency-delivery path (serverless does not honor `--editable`; see the
-  Critical-knowledge gotcha).
+- Serverless `environments:` block installs the framework wheel from the
+  artifacts UC Volume (`${var.datalab_wheel}`) plus this domain's wheel
+  (`../../../dist/<catalog>_etl-*.whl`) — the same mechanism as the pipeline
+  (serverless does not honor `--editable`; see the Critical-knowledge gotcha).
 - Any valid/invalid split belongs upstream in the SDP lane (dqx rules in the
   table's artifact — quarantine evidence included); jobs consume the already
   gated tables. If you find yourself wanting upsert semantics, the target
@@ -336,24 +338,34 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   idles in the graph and re-runs automatically when the pipeline/table is
   fully refreshed — leave it in the config (it's the recreation path and the
   audit trail).
-- **Pipeline deps are NOT `[project].dependencies` at dev time, and the
-  framework ships as a BUILT WHEEL — never `--editable`.** Serverless pipeline
-  (and job) environments do **not** honor an `--editable` install of the synced
-  workspace files: the package never lands on the runtime path and the pipeline
-  fails at import with `ModuleNotFoundError: No module named 'datalab'` (verified
-  June 2026 — the editable form the DAB templates suggest silently installs
-  nothing here). Delivery is the `datalab_wheel` bundle artifact (`databricks.yml`:
-  `artifacts: {datalab_wheel: {type: whl, build: uv build --wheel, path: .}}`);
-  every pipeline/job environment lists `dependencies: [../../../dist/*.whl]`
-  (path relative to the resource file). One `uv build --wheel` produces a single
-  wheel containing all three hatch packages (datalab + the example domain
-  packages). **CI/CD must have `uv` on PATH for `bundle deploy`** — the
-  `deploy-dab` action installs it via `astral-sh/setup-uv` (deploy builds the
-  wheel; `bundle validate` does not, so the validate-only CI job doesn't need it).
-  `environment_version: "4"` pins Python 3.12 + preinstalled libs.
-  Extra runtime libs go in `[project].dependencies` (folded into the wheel) — but
-  environments cache dependencies during development; trigger a full restart if a
-  new dep doesn't show up.
+- **Wheel delivery: the FRAMEWORK installs from a UC Volume; the example domains
+  build their OWN wheels — never `--editable`.** Serverless pipeline (and job)
+  environments do **not** honor an `--editable` install of the synced workspace
+  files: the package never lands on the runtime path and the pipeline fails at
+  import with `ModuleNotFoundError: No module named 'datalab'` (verified June 2026
+  — the editable form the DAB templates suggest silently installs nothing here).
+  So `datalab` is a FRAMEWORK-ONLY wheel (`uv build` at the repo root → only
+  `datalab/**`; the examples are uv-workspace members) published as a versioned
+  artifact (`datalab-<ver>-py3-none-any.whl`) to a per-domain `artifacts.wheels`
+  UC Volume — `make publish-wheel` locally, and CI publishes it in the `deploy-dab`
+  action BEFORE `bundle deploy` (the referenced version must exist on the Volume
+  before a pipeline runs, or the env install fails). Each pipeline/job environment
+  lists TWO deps: `${var.datalab_wheel}` / `${var.sales_datalab_wheel}` (the
+  framework, an absolute `/Volumes/...` path) and `../../../dist/<catalog>_etl-*.whl`
+  (this domain's wheel, built by the bundle's `artifacts:` — `uv build --package
+  <catalog>_etl`, relative to the resource file). **CI/CD must have `uv` on PATH
+  for `bundle deploy`** (it builds the example wheels) and for the publish step —
+  the `deploy-dab` action installs it via `astral-sh/setup-uv` (`bundle validate`
+  builds nothing, so the validate-only CI job doesn't need it). The artifacts
+  Volume must be readable by every pipeline/job run-as identity (`make bootstrap-uc`
+  provisions + grants it) or the install fails. The version lives in THREE
+  lockstep places — `pyproject.toml`, `src/datalab/__init__.py`,
+  `variables/medallion.yml` `datalab_version` (the Volume filename); bump all
+  three + `make publish-wheel` (CHANGELOG.md / docs/FRAMEWORK.md "Distribution").
+  `environment_version: "4"` pins Python 3.12 + preinstalled libs. Extra framework
+  runtime libs go in `[project].dependencies` (folded into the framework wheel) —
+  but environments cache dependencies; trigger a full restart (or publish a new
+  version) if a new dep doesn't show up.
 - **Never install `databricks-connect` into the dev venv / `uv.lock`.** It
   conflicts with the `pyspark` dev dependency (both own the `pyspark`
   namespace). The sanctioned way to drive a live cluster from local is
@@ -437,18 +449,20 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   Don't block legitimate `.write` calls there in review.
 - **Job environments share the pipeline's dependency mechanism and gotcha.**
   The edge-job resources (`examples/customer_sales/resources/customer_sales_*.job.yml`) install
-  the built `datalab_wheel` (`../../../dist/*.whl`) into serverless job
-  environments — same as pipelines, and for the same reason (serverless does not
-  honor `--editable` of synced workspace files); like pipeline environments they
-  cache dependencies, so a changed `datalab` package may not appear until the
-  environment rebuilds.
+  the framework wheel from the artifacts UC Volume (`${var.datalab_wheel}`) plus
+  the `customer_sales_etl` wheel (`../../../dist/customer_sales_etl-*.whl`) into
+  serverless job environments — same as pipelines, and for the same reason
+  (serverless does not honor `--editable` of synced workspace files); like
+  pipeline environments they cache dependencies, so a changed `datalab` package
+  may not appear until the environment rebuilds or a new version is published.
 - **Spark 4 ANSI mode**: serverless/SDP runs with ANSI SQL on, so a plain
   `.cast()` on malformed data **fails the stream** instead of yielding NULL.
   The framework's `columns:` mapping always casts with `try_cast` so bad
   values become NULLs that the quality rules then catch.
 - **`python_wheel_task` is opt-in only.** The framework already ships to every
-  environment as the `datalab_wheel`; `python_wheel_task` is only for a target
-  that additionally needs an immutable, versioned CLI entrypoint
+  environment as the versioned wheel from the artifacts Volume;
+  `python_wheel_task` is only for a target that additionally needs an immutable,
+  versioned CLI entrypoint
   (`[project.scripts]` console script invoked by the wheel-task). Until then
   `spark_python_task` running a `.py` file is the default — zero extra build
   steps. Never poetry.
@@ -576,9 +590,11 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   full refresh by design. See "Backfills" in `docs/FRAMEWORK.md`.
 - **Add a new domain pipeline** (e.g. finance): follow
   `docs/GETTING_STARTED.md` end to end — copy the `examples/customer_sales/` shape
-  (config + `src/<catalog>_etl` + resources), add the domain package dir to
-  `[tool.hatch.build.targets.wheel]` packages, point `datalab.config_dir` at
-  the new config dir. The framework (`src/datalab`) is not touched.
+  (config + `src/<catalog>_etl` + resources + `pyproject.toml`), register the
+  domain as a `[tool.uv.workspace]` member (it builds its own `<catalog>_etl`
+  wheel), point `datalab.config_dir` at the new config dir, and list
+  `${var.datalab_wheel}` + the domain wheel in the resource
+  `environment.dependencies`. The framework (`src/datalab`) is not touched.
 - **Change quality rules**: edit the column's `quality:` list (or the
   table-level `quality.checks`) in the table's artifact — dqx metadata,
   NL→function mapping in the `author-ldp-artifact` skill (full dqx catalog;

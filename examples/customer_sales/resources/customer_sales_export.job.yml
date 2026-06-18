@@ -3,8 +3,8 @@
 # invariant) — see AGENTS.md "Authoring rules".
 #
 # Reuses the pipeline's exact dependency mechanism: a serverless environment
-# installing the built `datalab_wheel` (../../../dist/*.whl) — one delivery
-# path, same caching gotcha (see AGENTS.md Critical knowledge).
+# installing the framework wheel from the artifacts UC Volume (${var.datalab_wheel})
+# plus this domain's wheel — same caching gotcha (see AGENTS.md "Wheel delivery").
 
 resources:
   jobs:

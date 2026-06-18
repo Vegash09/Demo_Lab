@@ -6,8 +6,9 @@
 # bundle deploy exclude the same dev-only surfaces.
 #
 # The deploy MUST ship: pyproject.toml + src/** + examples/** (the example
-# pipelines' code/config live under examples/; the framework is delivered as
-# the datalab wheel built by the databricks.yml `datalab_wheel` artifact).
+# pipelines' code/config live under examples/; the example domain wheels are
+# built by the databricks.yml `artifacts:`, and the framework wheel is installed
+# from a per-domain UC Volume — see AGENTS.md "Wheel delivery").
 
 # Dev-only surfaces — not needed at runtime
 tests/

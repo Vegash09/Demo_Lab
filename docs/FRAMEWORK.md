@@ -461,7 +461,7 @@ Built-ins available without any python: `framework.add_lineage`,
 flowchart LR
     A["1 · config/&lt;catalog&gt;/domain.yml<br/>name, imports, catalog_conf, layers"] --> B["2 · &lt;schema&gt;/&lt;table&gt;.yml<br/>one artifact per table"]
     B --> C["3 · src/&lt;catalog&gt;_etl/<br/>transforms · checks ·<br/>3-line pipeline.py"]
-    C --> D["4 · hatch wheel packages<br/>+= src/&lt;catalog&gt;_etl"]
+    C --> D["4 · &lt;catalog&gt;/pyproject.toml<br/>own &lt;catalog&gt;_etl wheel (workspace member)"]
     D --> E["5 · resources/&lt;catalog&gt;_etl.pipeline.yml<br/>point datalab.config_dir at config/&lt;catalog&gt;"]
 ```
 
@@ -472,13 +472,65 @@ flowchart LR
 3. `src/<catalog>_etl/` — `transforms/` (pure `@transform` functions),
    `checks/` (custom dqx checks), `transformations/pipeline.py` (copy the
    3-line customer_sales one verbatim).
-4. Add the domain package dir to `[tool.hatch.build.targets.wheel]` packages.
+4. Give the domain its OWN `pyproject.toml` building `<catalog>_etl`. In this
+   repo that's a `[tool.uv.workspace]` member (a SEPARATE wheel from the
+   framework); an adopter repo's domain is its own project that pins `datalab`
+   — see "Distribution" below.
 5. Copy `examples/customer_sales/resources/customer_sales_etl.pipeline.yml`
-   (+ job yml), rename, point `datalab.config_dir` at the new config dir.
+   (+ job yml), rename, point `datalab.config_dir` at the new config dir, and
+   list this domain's wheel + `${var.datalab_wheel}` in `environment.dependencies`.
 
 Full walkthrough: [GETTING_STARTED.md](GETTING_STARTED.md). The shipped
 example to copy from:
 [examples/customer_sales/](../examples/customer_sales/README.md).
+
+## Distribution — the framework wheel
+
+The framework is a **consumable library**: `datalab` builds as its OWN wheel
+(`datalab-<ver>-py3-none-any.whl`, containing only `datalab/**`) and is installed
+into every serverless pipeline/job environment from a **per-domain
+`artifacts.wheels` Unity Catalog Volume** — never the synced workspace files
+(serverless ignores `--editable` installs of synced files → `ModuleNotFoundError`).
+
+```
+src/datalab  ──uv build──▶  datalab-<ver>.whl  ──make publish-wheel──▶
+                                 /Volumes/<catalog>/artifacts/wheels/datalab-<ver>-py3-none-any.whl
+examples/<catalog> ──uv build --package <catalog>_etl──▶ <catalog>_etl-<ver>.whl  (bundle artifact, in dist/)
+
+pipeline/job environment.dependencies:
+  - ${var.datalab_wheel}                 # framework, from the UC Volume
+  - ../../../dist/<catalog>_etl-*.whl    # this domain, built by the bundle
+```
+
+- **Build.** `uv build` (repo root) → the framework wheel; `uv build --package
+  <catalog>_etl` → a domain wheel. The bundle's `artifacts:` build the domain
+  wheels into `dist/`; `make publish-wheel` builds the framework wheel (into the
+  isolated `dist-framework/`) and uploads it to each domain's Volume.
+- **Publish before deploy.** The referenced version MUST exist on the Volume
+  before a pipeline runs, or the env install fails. Locally: `make publish-wheel
+  TARGET=<t> APPLY=1`; in CI the `deploy-dab` action publishes before `bundle
+  deploy`. The artifacts Volume is provisioned once by `make bootstrap-uc`.
+- **Versioning.** `datalab` follows [semver](https://semver.org); see
+  [CHANGELOG.md](../CHANGELOG.md). The version lives in THREE places that move in
+  lockstep — `pyproject.toml`, `src/datalab/__init__.py`, and
+  `variables/medallion.yml` `datalab_version` (the Volume filename). Versioned
+  filenames let versions coexist on the Volume; adopters pin a version.
+- **Local dev needs no published wheel.** The reference domains are uv-workspace
+  members, so `uv sync` installs `datalab` + both domains editable —
+  `make test`/`lint`/`validate-configs` run entirely off the workspace.
+
+### Public API (what a pinned `datalab` version guarantees)
+
+| Module | Stable surface |
+|---|---|
+| `datalab.config` | `pipeline_conf(spark, key)` (read a pipeline `configuration` value), `fqn(...)` |
+| `datalab.params` | `notebook_params(dbutils, names)`, `cli_params(argv, names)` — the job-lane parameter contract |
+| `datalab.framework` | `generate`, `run_dataset`, `capture_graph` (+ the config loader/models) |
+| Registries | `@transform("<domain>.<name>")`, `@check_function`, `@snapshot_source` — how a domain plugs logic into the framework |
+| Config schema | the Pydantic models behind `<table>.yml` + `domain.yml`, exported to `schemas/*.json` (`make schema`); `schema_version` (currently `1`) is the config-format compatibility marker |
+
+Anything outside this table (e.g. `datalab.framework.writers` / `.local` /
+`.generator` internals) may change between minor versions.
 
 ## Verify before deploying
 
