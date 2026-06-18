@@ -30,12 +30,8 @@ PROTECTED: list[tuple[str, str]] = [
      "dependency manifest (uv-managed; CI runs `uv sync --frozen`)"),
     (r"^\.databricksignore$",
      "controls which files ship to the workspace on deploy"),
-    (r"^src/datalab/(config|params)\.py$",
-     "parameterization contracts shared by every pipeline and job lane"),
     (r"^(config|examples/[^/]+/config)/.*\.ya?ml$",
      "dataset configs — the deployed pipeline definition (validate: make validate-configs)"),
-    (r"^src/datalab/framework/(models|loader|generator|dq|writers)\.py$",
-     "framework core: config contract + LDP/dqx generation semantics"),
     (r"^\.github/(workflows|actions)/.*",
      "CI/CD pipeline (GitHub OIDC federation, bundle deploy)"),
     (r"^\.github/pull_request_template\.md$",
@@ -56,7 +52,7 @@ PROTECTED: list[tuple[str, str]] = [
      "developer + CI entrypoints"),
     (r"^\.env(\..*)?$",
      "secrets file — must never be committed"),
-    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK|GETTING_STARTED|NAMING)\.md$",
+    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION|GETTING_STARTED|NAMING)\.md$",
      "document-of-record for AI coding agents"),
 ]
 

@@ -11,8 +11,8 @@ UV     ?= uv
 TARGET ?= dev
 
 .DEFAULT_GOAL := help
-.PHONY: help install lock lint fmt test validate-configs schema validate \
-        deploy run destroy publish-wheel bootstrap-uc enable-githooks \
+.PHONY: help install lock lint fmt test validate-configs validate \
+        deploy run destroy bootstrap-uc enable-githooks \
         commit-protected clean sync-skills check-skills publish-genie-skills \
         spec-local dry-run-local run-local validate-connect design
 
@@ -29,9 +29,9 @@ lock:  ## Re-resolve dependencies and refresh uv.lock (run after editing pyproje
 	$(UV) lock
 
 # ---- quality gates (same commands CI runs) ----------------------------------
-LINT_PATHS := src tests scripts examples
+LINT_PATHS := scripts examples
 
-lint: install  ## Ruff lint over src/, tests/, scripts/ and examples/
+lint: install  ## Ruff lint over scripts/ and examples/
 	$(UV) run ruff check $(LINT_PATHS)
 
 fmt: install  ## Ruff auto-format + fix imports
@@ -48,8 +48,10 @@ CONFIG_DIRS := $(wildcard config) $(wildcard examples/*/config)
 validate-configs: install  ## Validate every domain's <layer>/<table>.yml artifacts (pydantic + dqx checks)
 	$(UV) run python -m datalab.framework $(CONFIG_DIRS)
 
-schema: install  ## Regenerate schemas/{domain,table}_config.schema.json from the Pydantic models
-	$(UV) run python scripts/export_config_schema.py
+# Editor schemas (schemas/*.json) are VENDORED here for config validation; they
+# are generated FROM the datalab models in the datalab-framework repo (its
+# `scripts/export_config_schema.py`). Refresh them when bumping the datalab
+# version: regenerate there and copy the JSON over.
 
 # ---- agent skills (one canonical source: .agents/skills) --------------------
 # Authored ONCE under .agents/skills (read natively by Cursor + Codex); the
@@ -94,20 +96,10 @@ run:  ## Trigger a refresh of the customer_sales_etl pipeline on $(TARGET)
 destroy:  ## Tear down everything the bundle deployed to $(TARGET) (asks first)
 	databricks bundle destroy -t $(TARGET)
 
-# ---- framework wheel publish (framework-only wheel -> shared UC Volume) ------
-# Build the common datalab FRAMEWORK wheel and upload it to the shared
-# datalab_artifacts catalog's framework.wheels UC Volume for $(TARGET); every
-# pipeline/job environment across all domains installs datalab from that one
-# Volume path (variables/medallion.yml + AGENTS.md). The Volume must exist first
-# (make bootstrap-uc) and CI publishes before each deploy. Dry run by default;
-# APPLY=1 uploads. `--with databricks-sdk` keeps the SDK out of uv.lock; override
-# the CLI profile with PROFILE=<name>.
-publish-wheel:  ## Build the framework wheel + publish it to the shared artifacts Volume for $(TARGET) (APPLY=1 to upload)
-	$(UV) build --wheel --out-dir dist-framework
-	$(UV) run --with databricks-sdk python scripts/publish_wheel.py \
-		--target $(TARGET) --dist-dir dist-framework \
-		$(if $(APPLY),--apply,) \
-		$(if $(PROFILE),--profile $(PROFILE),)
+# The datalab FRAMEWORK wheel is built + published to the shared datalab_artifacts
+# UC Volume by the datalab-framework repo's release CI (tag vX.Y.Z), NOT here.
+# This repo only references the published wheel (var.datalab_wheel) + pins the
+# matching git tag in pyproject.toml. Bump both in lockstep when upgrading.
 
 # ---- local OSS run (spark-pipelines, no Databricks) -------------------------
 # The `local` profile (datalab.framework.local) downgrades the medallion to a
