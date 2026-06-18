@@ -1,102 +1,48 @@
-# Project metadata + build config + tool configs.
+# datalab — reference domains + deploy bundle (the adopter-shaped repo).
 #
-# Dependency management is `uv`-driven. ONE source of truth:
+# The reusable FRAMEWORK lives in its OWN repo (dediggibyte/datalab-framework) and
+# is consumed two ways:
+#   * local dev / CI  → the `datalab` git dependency below, pinned to a release tag
+#     (resolved by uv into the shared venv so test/lint/validate-configs see it);
+#   * Databricks serverless → the versioned wheel from the shared datalab_artifacts
+#     UC Volume (var.datalab_wheel), listed in each resource's environment.
 #
-#   pyproject.toml [project] + [dependency-groups]
-#         │
-#         │  uv lock   → uv.lock   (transitive pins for reproducibility)
-#         │  uv sync   → .venv/    (creates + populates the venv)
-#         ▼
-#   uv.lock — committed; CI uses `uv sync --frozen` so any unexpected drift fails fast.
+# KEEP IN LOCKSTEP: the `datalab` git tag below and the bundle's var.datalab_version
+# (the Volume wheel) must reference the same framework release.
 #
-# Use `uv sync` locally; `uv run pytest` for tests; `uv run ruff check` for linting.
-#
-# NOTE on pipeline runtime deps: the Lakeflow SDP and job runtimes install the
-# FRAMEWORK as a versioned wheel published to a UC Volume (datalab-<ver>-py3-none-any.whl,
-# see `make publish-wheel`); each resource's environment.dependencies points at
-# that Volume path PLUS the example domain wheel built by the bundle. Serverless
-# does NOT honor an `--editable` install of the synced workspace files. Anything
-# you add to [project].dependencies is folded into the framework wheel on top of
-# the pinned environment_version. Keep it minimal — pyspark is provided by the runtime.
+# This root is NOT a built package — it is the uv workspace + dev-env definition.
+# The reference domains under examples/ are workspace MEMBERS, each building its own
+# `<catalog>_etl` wheel via the bundle's `artifacts:`.
 
-[build-system]
-requires      = ["hatchling>=1.27"]
-build-backend = "hatchling.build"
-
-# ---------------------------------------------------------------------------
-# PEP 621 project metadata
-# ---------------------------------------------------------------------------
 [project]
-name            = "datalab"
+name            = "datalab-examples"
 version         = "0.3.0"
-description     = "Medallion (bronze→silver→gold) lakehouse framework on Lakeflow Spark Declarative Pipelines, shipped as a Declarative Automation Bundle."
-readme          = "README.md"
-license         = { text = "MIT" }
-requires-python = ">=3.12,<3.14"   # serverless environment v4/v5 ships Python 3.12
-authors         = [{ name = "Datalab Team", email = "nivethan.venkatachalam@diggibyte.com" }]
-keywords        = ["databricks", "lakeflow", "spark-declarative-pipelines", "medallion", "lakehouse"]
+description     = "datalab reference domains + deploy bundle (consumes the datalab framework as a dependency)."
+requires-python = ">=3.12,<3.14"
+dependencies    = []
 
-# Runtime dependencies installed into the pipeline environment (keep minimal —
-# the SDP runtime already provides pyspark, delta, etc.).
-# - pydantic capped <2.11 to MATCH serverless env v4 (ships 2.10.6): the dev venv
-#   then resolves the same 2.10.x, so a 2.11+ feature can't pass tests locally and
-#   then break on the pinned runtime. (dqx allows >=2.10,<3, so the cap is ours.)
-# - databricks-labs-dqx pinned EXACT (Beta, breaking minor releases) and with
-#   NO extras: the [cli] extra pulls databricks-connect, which conflicts with
-#   the local pyspark dev dependency.
-dependencies = [
-    "pydantic>=2.10,<2.11",
-    "PyYAML>=6.0,<7",
-    "databricks-labs-dqx==0.14.0",
-]
-
-# ---------------------------------------------------------------------------
-# Dependency groups (PEP 735) — dev-only tooling, never shipped to pipelines.
-# `uv sync` installs the `dev` group by default.
-# ---------------------------------------------------------------------------
 [dependency-groups]
 dev = [
     "pytest>=8.4",
     "ruff>=0.14",
-    # Local Spark for fast unit tests of the pure functions in src/datalab.
-    # The [pipelines] extra adds the `spark-pipelines` CLI + Spark Connect deps,
-    # so the OSS local-run profile (datalab.framework.local, `make run-local`)
-    # executes the whole medallion locally — see docs/FRAMEWORK.md "Run locally".
-    # Do NOT add databricks-connect to THIS venv — it conflicts with pyspark
-    # (both own the `pyspark` namespace); the Connect validation path uses an
-    # isolated, out-of-lock overlay instead (`make validate-connect`).
+    # Local Spark for the example tests + the OSS local-run profile. Never add
+    # databricks-connect here (conflicts with pyspark; use `make validate-connect`).
     "pyspark[pipelines]>=4.1.0",
-    # dqx's check_funcs imports pandas but doesn't declare it; serverless
-    # preinstalls pandas, locally we need it for the dqx unit tests.
     "pandas>=2.0",
-    # The reference domains are uv-workspace members (examples/<catalog>/), installed
-    # EDITABLE into the dev venv so the framework's test / lint / validate-configs
-    # gates exercise them locally. They are NOT framework runtime deps — at deploy
-    # each ships as its own bundle-built wheel (see [tool.uv.workspace] below).
+    # The framework, pinned to a release tag (source mapped to git below). Keep the
+    # tag in lockstep with var.datalab_version (the UC-Volume wheel serverless uses).
+    "datalab",
+    # Reference domains — uv-workspace members, installed editable so the local
+    # test/lint/validate-configs gates exercise them (built as separate wheels by
+    # the bundle, not here).
     "customer_sales_etl",
     "sales_etl",
 ]
 
-# ---------------------------------------------------------------------------
-# Hatchling package — the root project builds the FRAMEWORK-ONLY wheel
-# (`datalab-<ver>-py3-none-any.whl`), published to a UC Volume by
-# `make publish-wheel` and installed by every pipeline/job environment from that
-# Volume path. The example domain packages are SEPARATE wheels: each example is a
-# uv-workspace MEMBER with its own pyproject.toml (examples/<catalog>/pyproject.toml)
-# building `<catalog>_etl`, built by the bundle's `artifacts:` and referenced
-# locally. A new domain in an adopter repo is its OWN project pinning datalab —
-# never added here. See docs/FRAMEWORK.md "Distribution" + AGENTS.md.
-# ---------------------------------------------------------------------------
-[tool.hatch.build.targets.wheel]
-packages = ["src/datalab"]
-
-# ---------------------------------------------------------------------------
-# Tool configs
-# ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
-# tests/ = framework-only suite (no example dependency); examples/*/tests =
-# each example domain's own tests (transforms + end-to-end contract).
-testpaths = ["tests", "examples"]
+# Framework unit tests live in the datalab-framework repo; here we run each
+# reference domain's own tests (transforms + end-to-end contract).
+testpaths = ["examples"]
 addopts   = "-ra --tb=short"
 
 [tool.ruff]
@@ -104,38 +50,28 @@ line-length    = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-# pyflakes (F), pycodestyle (E/W), import-sort (I), pyupgrade (UP), bugbear (B)
 select = ["E", "F", "I", "W", "UP", "B"]
 ignore = ["E501"]   # line length — handled by line-length above
 
 [tool.ruff.lint.isort]
-# The reference domain packages live under examples/ (outside ruff's src-root
-# detection) but are first-party — they're this repo's worked-example packages.
 known-first-party = ["datalab", "customer_sales_etl", "sales_etl"]
 
-# `spark` is injected by the SDP runtime in pipeline source files; ruff would
-# otherwise flag it as undefined. Notebooks additionally get `dbutils`/`display`
-# ambient globals (F821) and cell-structured imports (E402). The jobs lane
-# (examples/*/src/jobs/) gets NO ignore — entry points build their own
-# SparkSession, so an undefined name there is a real bug.
 [tool.ruff.lint.per-file-ignores]
-# Only the SDP-interpreted entrypoint gets the ambient-`spark` allowance;
-# domain transforms/checks are ordinary python and keep full linting.
+# `spark` is injected by the SDP runtime in the pipeline entrypoint; notebooks
+# additionally get ambient dbutils/display (F821) + cell imports (E402).
 "examples/*/src/*/transformations/**" = ["F821"]
 "examples/*/notebooks/**" = ["F821", "E402"]
 
 [tool.uv]
 managed = true
+package = false   # workspace + dev-env root, not a built package
 
-# uv workspace: the root project is the FRAMEWORK (datalab); each reference domain
-# under examples/ is a workspace MEMBER with its own pyproject.toml, building a
-# separate `<catalog>_etl` wheel. Members are installed editable into the dev venv
-# (via the dev group above) so `make test`/`make lint`/`make validate-configs` see
-# them, while `uv build --package <name>` builds each domain wheel independently
-# and `uv build` (root) builds the framework wheel published to the UC Volume.
+# uv workspace: each reference domain under examples/ is a member building a
+# separate `<catalog>_etl` wheel; `datalab` comes from the framework repo (git).
 [tool.uv.workspace]
 members = ["examples/customer_sales", "examples/sales"]
 
 [tool.uv.sources]
+datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v0.3.0" }
 customer_sales_etl = { workspace = true }
 sales_etl = { workspace = true }

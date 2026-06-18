@@ -35,13 +35,21 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Auth for the private datalab-framework git dependency
+        # pyproject pins `datalab @ git+https://.../datalab-framework@vX.Y.Z`; uv
+        # resolves it via git, which needs read access to that PRIVATE repo. The
+        # built-in GITHUB_TOKEN is scoped to THIS repo only — add a repo/org secret
+        # DATALAB_FRAMEWORK_TOKEN (a fine-grained PAT with read access, or a deploy
+        # key) for git to use on github.com.
+        run: git config --global url."https://x-access-token:${{ secrets.DATALAB_FRAMEWORK_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
       - name: Sync dependencies (frozen — fails fast if uv.lock drifted)
         run: uv sync --frozen
 
       - name: Ruff lint
-        # Same paths as `make lint` — examples/ holds the reference domains
-        # (domain packages + their tests) and is part of the linted surface.
-        run: uv run ruff check src tests scripts examples
+        # Same paths as `make lint` — the framework moved to the datalab-framework
+        # repo; here we lint scripts/ + the reference domains under examples/.
+        run: uv run ruff check scripts examples
 
       - name: Check agent-skill mirror is in sync (no drift from .agents/skills)
         # Mirror of `make check-skills`. Skills are authored once under

@@ -92,13 +92,13 @@ flowchart TD
 
 | Surface | Where | What |
 |---|---|---|
-| Framework | `src/datalab/` | the ONLY package under `src/` — REUSABLE, zero domain code: Pydantic models, LDP generator, dqx engine, devtools, param helpers |
+| Framework | [`dediggibyte/datalab-framework`](https://github.com/dediggibyte/datalab-framework) (separate repo) | the REUSABLE library — Pydantic models, LDP generator, dqx engine, devtools, param helpers. Consumed here as a git dependency (local/CI, pinned in `pyproject.toml`) + a versioned UC-Volume wheel (serverless) |
 | Reference domains | `examples/customer_sales/` + `examples/sales/` | complete worked adoptions, each named after its base UC catalog and mirroring an adopter repo root — copy one to start your own domain. `customer_sales` is the full reference (all 3 lanes: pipeline + jobs + notebook); `sales` is pipeline-only (silver + gold over pre-existing `sales.bronze.*`) |
 | Dataset configs | `examples/customer_sales/config/customer_sales/` (adopters: `config/<catalog>/`) | ONE artifact per target table: column mappings + types, dqx rules, target kind — path mirrors `<catalog>.<schema>.<table>` |
 | Domain code | `examples/customer_sales/src/customer_sales_etl/` (adopters: `src/<catalog>_etl/`) | pure `@transform` functions, custom dqx checks, 3-line pipeline entrypoint |
 | Edge lanes | `examples/customer_sales/src/jobs/customer_sales/` + `examples/customer_sales/notebooks/customer_sales/` | python-file lane (headless exports) + notebook lane (human-gated triage) |
 | Deploy | `databricks.yml` + `examples/*/resources/` (adopters: `resources/`) | bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
-| Tests | `tests/` (framework, example-free) + `examples/customer_sales/tests/` | unit tests on a local SparkSession — no workspace needed |
+| Tests | `examples/*/tests/` (per-domain) | unit tests on a local SparkSession — no workspace needed. Framework unit tests live in the `datalab-framework` repo |
 | CI/CD | `.github/` | ruff + pytest + config validation + `bundle validate` on PRs; OIDC deploys on merge/tags |
 | Agent harness | `.claude/`, `.cursor/`, `.codex/` + `.agents/skills/`, `.githooks/`, `.mcp.json` | rules + skills + PR-template/protected-file guards across three harnesses (`.codex` references the canonical guards; the 5 skills are authored once in `.agents/skills/` — read natively by Cursor + Codex — and copied to `.claude/skills/` via `make sync-skills`, and pushed to Databricks Genie via `make publish-genie-skills`), opt-in Databricks MCP config (read-only UC queries — [docs/AGENT_MCP.md](docs/AGENT_MCP.md)) |
 | Docs | `docs/` | the child docs mapped above |

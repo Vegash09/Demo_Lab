@@ -3,6 +3,15 @@
 Shared source of truth for AI coding agents (Cursor, Claude Code, Codex) and humans.
 Read this before editing. Keep it accurate when you change the system.
 
+> **Repo split:** the reusable framework now lives in its OWN repo,
+> **[dediggibyte/datalab-framework](https://github.com/dediggibyte/datalab-framework)**.
+> THIS repo is the reference **domains + deploy bundle**, consuming `datalab` as a
+> **git dependency** (local dev/CI — pinned in `pyproject.toml` `[tool.uv.sources]`)
+> and a **UC-Volume wheel** (serverless — `var.datalab_wheel`). Keep the git tag and
+> `var.datalab_version` in lockstep. Sections below that still describe `src/datalab`
+> as in-repo reflect the pre-split monorepo and are being updated — treat the
+> framework as an external dependency; its reference is `docs/FRAMEWORK.md` in that repo.
+
 ## Overview
 
 datalab is a medallion (bronze → silver → gold) lakehouse framework built on
@@ -83,13 +92,10 @@ variables/                Variable declarations + defaults (medallion catalog/sc
 targets/                  One file per environment (dev/stage/prod): mode, host, per-env variable values; include'd
 rbac.yml                  Workspace-resource RBAC: group + permission-level string vars + complex
                           pipeline_permissions/job_permissions + per-target overrides (include'd by databricks.yml)
-src/
-  datalab/                THE FRAMEWORK — the only package under src/; reusable, zero domain code
-    config.py             pipeline_conf() (read pipeline configuration), fqn()
-    params.py             notebook_params() / cli_params() — job-lane parameter contract
-    framework/            flowspec: models, loader, registry, readers, writers,
-                          dq (DQX adapter), generator, devtools, compat, context, errors,
-                          local (OSS spark-pipelines run profile + spark-pipeline.yml generator)
+(THE FRAMEWORK — src/datalab — now lives in its OWN repo: dediggibyte/datalab-framework.
+ It is consumed here as a git dependency (local dev/CI, pinned in pyproject.toml
+ [tool.uv.sources] datalab) and a versioned UC-Volume wheel (serverless,
+ var.datalab_wheel). It moved there WITH history; there is no src/ in this repo.)
 examples/                 REFERENCE domains — each named after its base UC catalog and mirroring
                           an adopter repo root (examples/README.md, docs/NAMING.md)
   customer_sales/
@@ -551,9 +557,7 @@ change:
 | `^databricks\.yml$`, `^rbac\.yml$`, `^(variables\|targets)/.*\.ya?ml$`, `^(resources\|examples/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle + variables/targets + RBAC (deploy surface) |
 | `^pyproject\.toml$`, `^uv\.lock$` | dependency manifests (uv-managed, CI `--frozen`) |
 | `^\.databricksignore$` | `databricks sync` / IDE-extension exclusions (bundle deploy excludes via `sync.exclude` in databricks.yml) |
-| `^src/datalab/(config|params)\.py$` | parameterization contracts used by every pipeline and job lane |
 | `^(config\|examples/[^/]+/config)/.*\.ya?ml$` | dataset configs — the deployed pipeline definition |
-| `^src/datalab/framework/(models|loader|generator|dq|writers)\.py$` | framework core: config contract + LDP/dqx generation semantics |
 | `^\.github/(workflows\|actions)/.*` | CI/CD (OIDC, bundle deploy) |
 | `^\.github/pull_request_template\.md$` | unified PR template |
 | `^\.claude/(settings\.json\|hooks/.*\|skills/.*)` | Claude agent harness (hooks, settings, + the generated `.claude/skills` copy) |
@@ -564,7 +568,7 @@ change:
 | `^\.githooks/.*` | git pre-commit guard |
 | `^Makefile$` | developer + CI entrypoints |
 | `^\.env(\..*)?$` | secrets — never commit |
-| `^(AGENTS\|CLAUDE\|README)\.md$`, `^docs/(ARCHITECTURE\|CICD\|MIGRATION\|FRAMEWORK\|GETTING_STARTED\|NAMING)\.md$` | documents of record |
+| `^(AGENTS\|CLAUDE\|README)\.md$`, `^docs/(ARCHITECTURE\|CICD\|MIGRATION\|GETTING_STARTED\|NAMING)\.md$` | documents of record |
 
 The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
 

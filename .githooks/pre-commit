@@ -59,9 +59,7 @@ PATTERNS=(
   '^pyproject\.toml$'
   '^uv\.lock$'
   '^\.databricksignore$'
-  '^src/datalab/(config|params)\.py$'
   '^(config|examples/[^/]+/config)/.*\.ya?ml$'
-  '^src/datalab/framework/(models|loader|generator|dq|writers)\.py$'
   '^\.github/(workflows|actions)/.*'
   '^\.github/pull_request_template\.md$'
   '^\.claude/(settings\.json|hooks/.*|skills/.*)'
@@ -76,7 +74,7 @@ PATTERNS=(
   '^Makefile$'
   '^\.env(\..*)?$'
   '^(AGENTS|CLAUDE|README)\.md$'
-  '^docs/(ARCHITECTURE|CICD|MIGRATION|FRAMEWORK|GETTING_STARTED|NAMING)\.md$'
+  '^docs/(ARCHITECTURE|CICD|MIGRATION|GETTING_STARTED|NAMING)\.md$'
 )
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
