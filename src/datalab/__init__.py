@@ -10,4 +10,4 @@ declared to the framework via each ``domain.yml``'s ``imports:`` list — and
 everything is unit-testable with a local SparkSession.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

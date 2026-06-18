@@ -45,15 +45,35 @@ inputs:
 runs:
   using: "composite"
   steps:
-    # `bundle deploy` builds the datalab_wheel artifact (`uv build --wheel`, see
-    # databricks.yml) — so uv must be on PATH here. (`bundle validate` does NOT
-    # build artifacts, which is why the validate-only CI job doesn't need it.)
+    # `bundle deploy` builds the example domain wheels (`uv build --package …`,
+    # see databricks.yml artifacts) and the publish step below builds + uploads
+    # the FRAMEWORK wheel — so uv must be on PATH here. (`bundle validate` does
+    # NOT build artifacts, which is why the validate-only CI job doesn't need it.)
     # Mirrors the CI test job's uv setup.
     - name: Install uv
       uses: astral-sh/setup-uv@v5
       with:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
+
+    # Publish the common datalab FRAMEWORK wheel to this target's SHARED
+    # datalab_artifacts catalog (framework.wheels Volume) BEFORE deploy, so the
+    # version every environment references (var.datalab_wheel) is present when a
+    # pipeline first runs. One upload serves all domains; the bundle itself builds
+    # only the example domain wheels. The wheel location is independent of the
+    # domain-catalog override (inputs.catalog), so it is NOT passed here.
+    # PRECONDITION: the artifacts Volume already exists — `make bootstrap-uc
+    # TARGET=<t>` provisions it. Auth is the same OIDC env the deploy uses (set at
+    # the job level); the Databricks SDK picks it up ambiently. `--with
+    # databricks-sdk` keeps the SDK out of uv.lock.
+    - name: Publish datalab framework wheel to the shared artifacts Volume
+      shell: bash
+      run: |
+        # Build into an isolated dir so the framework wheel never lands in dist/
+        # (which `bundle deploy` fills with the example wheels right after).
+        uv build --wheel --out-dir dist-framework
+        uv run --with databricks-sdk python scripts/publish_wheel.py \
+          --target "${{ inputs.target }}" --dist-dir dist-framework --apply
 
     # Validate and deploy in one step so the quoted --var argument array
     # (group names may contain spaces) doesn't have to cross a step boundary.
