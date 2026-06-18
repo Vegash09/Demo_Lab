@@ -488,28 +488,33 @@ example to copy from:
 
 The framework is a **consumable library**: `datalab` builds as its OWN wheel
 (`datalab-<ver>-py3-none-any.whl`, containing only `datalab/**`) and is installed
-into every serverless pipeline/job environment from a **per-domain
-`artifacts.wheels` Unity Catalog Volume** — never the synced workspace files
+into every serverless pipeline/job environment — **across all domains** — from a
+single **shared `datalab_artifacts` catalog `framework.wheels` Unity Catalog
+Volume** (one upload, one source of truth), never the synced workspace files
 (serverless ignores `--editable` installs of synced files → `ModuleNotFoundError`).
 
 ```
 src/datalab  ──uv build──▶  datalab-<ver>.whl  ──make publish-wheel──▶
-                                 /Volumes/<catalog>/artifacts/wheels/datalab-<ver>-py3-none-any.whl
+                   /Volumes/<datalab_artifacts_catalog>/framework/wheels/datalab-<ver>-py3-none-any.whl
 examples/<catalog> ──uv build --package <catalog>_etl──▶ <catalog>_etl-<ver>.whl  (bundle artifact, in dist/)
 
 pipeline/job environment.dependencies:
-  - ${var.datalab_wheel}                 # framework, from the UC Volume
+  - ${var.datalab_wheel}                 # the common framework, from the shared UC Volume
   - ../../../dist/<catalog>_etl-*.whl    # this domain, built by the bundle
 ```
 
+- **One shared Volume.** Every domain installs the framework from the same
+  `${var.datalab_wheel}` path, resolved through `${var.datalab_artifacts_catalog}`
+  (per-target: `datalab_artifacts` / `datalab_artifacts_stage` /
+  `datalab_artifacts_prod`). Publishing is a single upload, not per domain.
 - **Build.** `uv build` (repo root) → the framework wheel; `uv build --package
   <catalog>_etl` → a domain wheel. The bundle's `artifacts:` build the domain
   wheels into `dist/`; `make publish-wheel` builds the framework wheel (into the
-  isolated `dist-framework/`) and uploads it to each domain's Volume.
+  isolated `dist-framework/`) and uploads it once to the shared Volume.
 - **Publish before deploy.** The referenced version MUST exist on the Volume
   before a pipeline runs, or the env install fails. Locally: `make publish-wheel
   TARGET=<t> APPLY=1`; in CI the `deploy-dab` action publishes before `bundle
-  deploy`. The artifacts Volume is provisioned once by `make bootstrap-uc`.
+  deploy`. The shared Volume is provisioned once by `make bootstrap-uc`.
 - **Versioning.** `datalab` follows [semver](https://semver.org); see
   [CHANGELOG.md](../CHANGELOG.md). The version lives in THREE places that move in
   lockstep — `pyproject.toml`, `src/datalab/__init__.py`, and

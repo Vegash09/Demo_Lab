@@ -94,14 +94,15 @@ run:  ## Trigger a refresh of the customer_sales_etl pipeline on $(TARGET)
 destroy:  ## Tear down everything the bundle deployed to $(TARGET) (asks first)
 	databricks bundle destroy -t $(TARGET)
 
-# ---- framework wheel publish (Phase 0: framework-only wheel -> UC Volume) ----
-# Build the datalab FRAMEWORK wheel and upload it to each domain's
-# artifacts.wheels UC Volume for $(TARGET); every pipeline/job environment
-# installs datalab from that Volume path (variables/medallion.yml + AGENTS.md).
-# The Volume must exist first (make bootstrap-uc) and CI publishes before each
-# deploy. Dry run by default; APPLY=1 uploads. `--with databricks-sdk` keeps the
-# SDK out of uv.lock; override the CLI profile with PROFILE=<name>.
-publish-wheel:  ## Build the framework wheel + publish it to the artifacts Volume for $(TARGET) (APPLY=1 to upload)
+# ---- framework wheel publish (framework-only wheel -> shared UC Volume) ------
+# Build the common datalab FRAMEWORK wheel and upload it to the shared
+# datalab_artifacts catalog's framework.wheels UC Volume for $(TARGET); every
+# pipeline/job environment across all domains installs datalab from that one
+# Volume path (variables/medallion.yml + AGENTS.md). The Volume must exist first
+# (make bootstrap-uc) and CI publishes before each deploy. Dry run by default;
+# APPLY=1 uploads. `--with databricks-sdk` keeps the SDK out of uv.lock; override
+# the CLI profile with PROFILE=<name>.
+publish-wheel:  ## Build the framework wheel + publish it to the shared artifacts Volume for $(TARGET) (APPLY=1 to upload)
 	$(UV) build --wheel --out-dir dist-framework
 	$(UV) run --with databricks-sdk python scripts/publish_wheel.py \
 		--target $(TARGET) --dist-dir dist-framework \

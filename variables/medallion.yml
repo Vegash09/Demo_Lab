@@ -39,18 +39,20 @@ variables:
     description: UC volume path where gold sales extracts are exported (python-file lane).
     default: /Volumes/${var.catalog}/exports/sales/
   # --- framework wheel distribution (Phase 0) -------------------------------
-  # The datalab FRAMEWORK ships as a versioned wheel published to a PER-DOMAIN
-  # `artifacts.wheels` UC Volume (make publish-wheel) and installed by every
-  # pipeline/job environment from the Volume path below. `datalab_version` is the
-  # single knob: bump it (in lockstep with pyproject.toml + src/datalab/__init__.py)
-  # and re-publish to roll the framework; the versioned filename lets versions
-  # coexist on the Volume. The example domain wheels are still bundle-built (local).
+  # The datalab FRAMEWORK is ONE wheel, COMMON to every pipeline built on this
+  # repo. It is published ONCE per target to a shared `datalab_artifacts` catalog's
+  # `framework.wheels` UC Volume (make publish-wheel) and installed by every
+  # pipeline/job environment from `datalab_wheel` below — NOT per domain (one
+  # upload, one source of truth). `datalab_version` is the single version knob
+  # (bump in lockstep with pyproject.toml + src/datalab/__init__.py, then
+  # re-publish); the versioned filename lets versions coexist on the Volume. The
+  # per-domain `<catalog>_etl` wheels are still bundle-built (local).
+  datalab_artifacts_catalog:
+    description: Shared UC catalog hosting the common datalab framework wheel (per-target).
+    default: datalab_artifacts
   datalab_version:
-    description: Version of the datalab framework wheel installed from the artifacts Volume.
+    description: Version of the common datalab framework wheel installed from the shared Volume.
     default: "0.3.0"
   datalab_wheel:
-    description: UC Volume path of the datalab framework wheel for the customer_sales domain.
-    default: /Volumes/${var.catalog}/artifacts/wheels/datalab-${var.datalab_version}-py3-none-any.whl
-  sales_datalab_wheel:
-    description: UC Volume path of the datalab framework wheel for the sales domain.
-    default: /Volumes/${var.sales_catalog}/artifacts/wheels/datalab-${var.datalab_version}-py3-none-any.whl
+    description: UC Volume path of the COMMON datalab framework wheel, shared by all pipelines.
+    default: /Volumes/${var.datalab_artifacts_catalog}/framework/wheels/datalab-${var.datalab_version}-py3-none-any.whl

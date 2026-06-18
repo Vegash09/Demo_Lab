@@ -26,20 +26,22 @@ all three, then `make publish-wheel`.
   reference domains became separate uv-workspace members
   (`examples/<catalog>/pyproject.toml`), each building its own `<catalog>_etl`
   wheel. Previously a single wheel contained all three packages.
-- **The framework wheel is distributed via a UC Volume.** Pipeline/job serverless
-  environments install `datalab` from a per-domain `artifacts.wheels` Unity
-  Catalog Volume
-  (`/Volumes/<catalog>/artifacts/wheels/datalab-<ver>-py3-none-any.whl`) instead
-  of the bundle-local `../../../dist/*.whl`. The bundle now builds only the
-  example domain wheels. See [docs/FRAMEWORK.md](docs/FRAMEWORK.md) "Distribution".
+- **The framework wheel is distributed via a single shared UC Volume.**
+  Pipeline/job serverless environments install the common `datalab` wheel from a
+  shared `datalab_artifacts` catalog's `framework.wheels` Unity Catalog Volume
+  (`/Volumes/<datalab_artifacts_catalog>/framework/wheels/datalab-<ver>-py3-none-any.whl`)
+  instead of the bundle-local `../../../dist/*.whl` — one upload for ALL domains,
+  not a per-domain Volume. The bundle now builds only the example domain wheels.
+  See [docs/FRAMEWORK.md](docs/FRAMEWORK.md) "Distribution".
 
 ### Added
 - `make publish-wheel` + `scripts/publish_wheel.py` — build and upload the
-  versioned framework wheel to each domain's artifacts Volume (dry run by
-  default; `APPLY=1` uploads). CI publishes before every deploy.
-- `scripts/bootstrap_uc.py` provisions an `artifacts.wheels` Volume (+ READ
-  grants) in every domain catalog.
-- Bundle variables `datalab_version`, `datalab_wheel`, `sales_datalab_wheel`.
+  versioned framework wheel ONCE to the shared `datalab_artifacts`
+  `framework.wheels` Volume (dry run by default; `APPLY=1` uploads). CI publishes
+  before every deploy.
+- `scripts/bootstrap_uc.py` provisions the shared `datalab_artifacts` catalog
+  (`framework.wheels` Volume + READ grants), per target.
+- Bundle variables `datalab_artifacts_catalog`, `datalab_version`, `datalab_wheel`.
 
 ### Notes
 - **Public API is unchanged from 0.2.0** — `datalab.config`, `datalab.params`,

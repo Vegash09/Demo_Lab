@@ -8,7 +8,7 @@
 # The deploy MUST ship: pyproject.toml + src/** + examples/** (the example
 # pipelines' code/config live under examples/; the example domain wheels are
 # built by the databricks.yml `artifacts:`, and the framework wheel is installed
-# from a per-domain UC Volume — see AGENTS.md "Wheel delivery").
+# from the shared datalab_artifacts UC Volume — see AGENTS.md "Wheel delivery").
 
 # Dev-only surfaces — not needed at runtime
 tests/

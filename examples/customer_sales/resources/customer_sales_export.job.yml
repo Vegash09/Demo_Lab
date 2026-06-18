@@ -3,8 +3,9 @@
 # invariant) — see AGENTS.md "Authoring rules".
 #
 # Reuses the pipeline's exact dependency mechanism: a serverless environment
-# installing the framework wheel from the artifacts UC Volume (${var.datalab_wheel})
-# plus this domain's wheel — same caching gotcha (see AGENTS.md "Wheel delivery").
+# installing the framework wheel from the shared datalab_artifacts catalog's
+# framework.wheels UC Volume (${var.datalab_wheel}) plus this domain's wheel —
+# same caching gotcha (see AGENTS.md "Wheel delivery").
 
 resources:
   jobs:
@@ -31,9 +32,9 @@ resources:
           spec:
             environment_version: "4"
             dependencies:
-              # datalab FRAMEWORK wheel from this domain's artifacts UC Volume
-              # (make publish-wheel; CI publishes before deploy). Serverless
-              # doesn't honor --editable installs of synced files.
+              # datalab FRAMEWORK wheel from the shared datalab_artifacts catalog's
+              # framework.wheels UC Volume (make publish-wheel; CI publishes before
+              # deploy). Serverless doesn't honor --editable installs of synced files.
               - ${var.datalab_wheel}
               # This domain's wheel — built by the customer_sales_etl_wheel artifact.
               - ../../../dist/customer_sales_etl-*.whl

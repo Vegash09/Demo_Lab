@@ -20,14 +20,14 @@
 bundle:
   name: datalab
 
-# Wheel delivery (Phase 0): the datalab FRAMEWORK no longer ships with the
-# bundle — it is published as a versioned wheel to a per-domain `artifacts.wheels`
-# UC Volume (`make publish-wheel`; CI publishes before deploy) and installed by
-# each environment from that Volume path (var.datalab_wheel / var.sales_datalab_wheel).
-# The bundle now builds ONLY the example domain wheels (uv-workspace members); each
-# resource lists its own domain wheel next to the datalab Volume wheel. Serverless
-# still does NOT honor `--editable` installs of synced workspace files, so the
-# example packages must also be built wheels.
+# Wheel delivery: the datalab FRAMEWORK no longer ships with the bundle — it is
+# published as a versioned wheel to a single SHARED `datalab_artifacts` catalog's
+# `framework.wheels` UC Volume (`make publish-wheel`; CI publishes before deploy)
+# and installed by every environment, across all domains, from that one Volume
+# path (var.datalab_wheel). The bundle now builds ONLY the example domain wheels
+# (uv-workspace members); each resource lists its own domain wheel next to the
+# datalab Volume wheel. Serverless still does NOT honor `--editable` installs of
+# synced workspace files, so the example packages must also be built wheels.
 # NB (verify on first dev deploy): each artifact below builds one example wheel
 # into ./dist/; resources reference them by filename glob (customer_sales_etl-*.whl
 # / sales_etl-*.whl). uv must be on PATH for `bundle deploy` (deploy-dab installs it).

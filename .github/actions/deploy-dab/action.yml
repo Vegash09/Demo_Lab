@@ -56,23 +56,24 @@ runs:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
 
-    # Publish the datalab FRAMEWORK wheel to this target's per-domain artifacts UC
-    # Volume BEFORE deploy, so the version every environment references
-    # (var.datalab_wheel / var.sales_datalab_wheel) is present when a pipeline
-    # first runs. The bundle itself now builds only the example domain wheels.
+    # Publish the common datalab FRAMEWORK wheel to this target's SHARED
+    # datalab_artifacts catalog (framework.wheels Volume) BEFORE deploy, so the
+    # version every environment references (var.datalab_wheel) is present when a
+    # pipeline first runs. One upload serves all domains; the bundle itself builds
+    # only the example domain wheels. The wheel location is independent of the
+    # domain-catalog override (inputs.catalog), so it is NOT passed here.
     # PRECONDITION: the artifacts Volume already exists — `make bootstrap-uc
     # TARGET=<t>` provisions it. Auth is the same OIDC env the deploy uses (set at
     # the job level); the Databricks SDK picks it up ambiently. `--with
     # databricks-sdk` keeps the SDK out of uv.lock.
-    - name: Publish datalab framework wheel to the artifacts Volume
+    - name: Publish datalab framework wheel to the shared artifacts Volume
       shell: bash
       run: |
         # Build into an isolated dir so the framework wheel never lands in dist/
         # (which `bundle deploy` fills with the example wheels right after).
         uv build --wheel --out-dir dist-framework
-        PUB_ARGS=(--target "${{ inputs.target }}" --dist-dir dist-framework --apply)
-        [ -n "${{ inputs.catalog }}" ] && PUB_ARGS+=(--catalog "${{ inputs.catalog }}")
-        uv run --with databricks-sdk python scripts/publish_wheel.py "${PUB_ARGS[@]}"
+        uv run --with databricks-sdk python scripts/publish_wheel.py \
+          --target "${{ inputs.target }}" --dist-dir dist-framework --apply
 
     # Validate and deploy in one step so the quoted --var argument array
     # (group names may contain spaces) doesn't have to cross a step boundary.

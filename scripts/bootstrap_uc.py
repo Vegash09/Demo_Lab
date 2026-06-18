@@ -20,14 +20,25 @@ import argparse
 import sys
 
 # Domain catalogs to provision per target, each as (catalog, with_volumes).
-# `with_volumes` controls only the edge-lane Auto Loader landing + export volumes
-# (customer_sales). EVERY catalog additionally gets an `artifacts.wheels` Volume
-# holding the datalab framework wheel its pipelines/jobs install (see ARTIFACTS_*
-# below). Keep in sync with databricks.yml targets.*.variables (catalog, sales_catalog).
+# `with_volumes` controls the edge-lane Auto Loader landing + export volumes
+# (customer_sales only). The datalab framework wheel does NOT live here — it has
+# its own SHARED catalog (ARTIFACTS_CATALOGS below). Keep in sync with
+# databricks.yml targets.*.variables (catalog, sales_catalog).
 CATALOGS = {
     "dev":   [("customer_sales",       True), ("sales",       False)],
     "stage": [("customer_sales_stage", True), ("sales_stage", False)],
     "prod":  [("customer_sales_prod",  True), ("sales_prod",  False)],
+}
+
+# The SHARED framework-artifacts catalog per target — hosts exactly ONE thing: the
+# common datalab framework wheel under `framework.wheels`, installed by every
+# pipeline/job environment across ALL domains (one upload, one source of truth;
+# see variables/medallion.yml var.datalab_artifacts_catalog + var.datalab_wheel).
+# Keep in sync with databricks.yml targets.*.variables.datalab_artifacts_catalog.
+ARTIFACTS_CATALOGS = {
+    "dev":   "datalab_artifacts",
+    "stage": "datalab_artifacts_stage",
+    "prod":  "datalab_artifacts_prod",
 }
 
 # Persona groups per target — keep in sync with rbac.yml
@@ -40,11 +51,12 @@ GROUPS = {
 
 BASE_SCHEMAS = ["bronze", "silver", "gold"]
 VOLUME_SCHEMAS = ["landing", "exports"]  # only for catalogs with edge-lane volumes
-# Every domain catalog hosts an `artifacts.wheels` Volume holding the datalab
-# FRAMEWORK wheel that the domain's pipeline/job environments install from
-# (make publish-wheel; see variables/medallion.yml var.datalab_wheel + AGENTS.md).
-ARTIFACTS_SCHEMA = "artifacts"
-ARTIFACTS_VOLUME = "wheels"
+# The shared framework-artifacts catalog (ARTIFACTS_CATALOGS) holds the common
+# datalab FRAMEWORK wheel under this schema/volume — installed by every
+# pipeline/job environment across all domains (make publish-wheel; see
+# variables/medallion.yml var.datalab_wheel + AGENTS.md "Wheel delivery").
+FRAMEWORK_SCHEMA = "framework"
+FRAMEWORK_VOLUME = "wheels"
 
 # The CI/CD deploy service principal (GitHub OIDC) — needs full rights on the
 # catalog it deploys pipelines/tables into. Keep in sync with docs/CICD.md.
@@ -54,12 +66,12 @@ DEPLOY_SP = "437346a1-0b53-418a-80d4-abaf2586ed97"
 def _catalog_sql(
     catalog: str, reader: str, engineer: str, location: str, with_volumes: bool
 ) -> list[str]:
-    """Idempotent DDL + grants for ONE catalog. Engineers get build rights across
-    the medallion; readers get silver+gold reads; bronze stays engineer-only.
-    EVERY catalog gets an `artifacts.wheels` Volume for the datalab framework
-    wheel. Volume catalogs (customer_sales) additionally get the Auto Loader
-    landing + export volumes and their grants."""
-    schemas = BASE_SCHEMAS + [ARTIFACTS_SCHEMA] + (VOLUME_SCHEMAS if with_volumes else [])
+    """Idempotent DDL + grants for ONE domain catalog. Engineers get build rights
+    across the medallion; readers get silver+gold reads; bronze stays
+    engineer-only. Volume catalogs (customer_sales) additionally get the Auto
+    Loader landing + export volumes and their grants. The framework wheel lives in
+    the SHARED artifacts catalog (_artifacts_catalog_sql), not here."""
+    schemas = BASE_SCHEMAS + (VOLUME_SCHEMAS if with_volumes else [])
     stmts = [
         f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location}",
         # The deploy SP owns everything the bundle creates in this catalog.
@@ -75,16 +87,6 @@ def _catalog_sql(
         f"GRANT USE SCHEMA, SELECT ON SCHEMA `{catalog}`.`silver` TO `{reader}`",
         f"GRANT USE SCHEMA, SELECT ON SCHEMA `{catalog}`.`gold` TO `{reader}`",
     ]
-    # Framework-wheel distribution Volume (Phase 0): the datalab wheel is published
-    # here by `make publish-wheel` and installed by every pipeline/job environment
-    # from /Volumes/<catalog>/artifacts/wheels/. The deploy SP (ALL PRIVILEGES
-    # above) publishes; engineers + readers get READ so any pipeline run-as
-    # identity can install it.
-    stmts += [
-        f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{ARTIFACTS_SCHEMA}`.`{ARTIFACTS_VOLUME}`",
-        f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`{ARTIFACTS_SCHEMA}`.`{ARTIFACTS_VOLUME}` TO `{engineer}`",
-        f"GRANT READ VOLUME ON VOLUME `{catalog}`.`{ARTIFACTS_SCHEMA}`.`{ARTIFACTS_VOLUME}` TO `{reader}`",
-    ]
     if with_volumes:
         stmts += [
             f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`sales`",
@@ -96,8 +98,32 @@ def _catalog_sql(
     return stmts
 
 
+def _artifacts_catalog_sql(
+    catalog: str, reader: str, engineer: str, location: str
+) -> list[str]:
+    """Idempotent DDL + grants for the SHARED framework-artifacts catalog. Holds
+    exactly ONE thing: the common datalab framework wheel under `framework.wheels`,
+    published by `make publish-wheel` / CI and installed by every pipeline and job
+    environment across ALL domains. The deploy SP owns it (publishes; the
+    serverless run-as installs); engineers get READ+WRITE (local publish), readers
+    READ — so any pipeline/job run-as identity can install the wheel."""
+    return [
+        f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location}",
+        f"GRANT ALL PRIVILEGES ON CATALOG `{catalog}` TO `{DEPLOY_SP}`",
+        f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{FRAMEWORK_SCHEMA}`",
+        f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{FRAMEWORK_SCHEMA}`.`{FRAMEWORK_VOLUME}`",
+        f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{engineer}`",
+        f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{FRAMEWORK_SCHEMA}` TO `{engineer}`",
+        f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`{FRAMEWORK_SCHEMA}`.`{FRAMEWORK_VOLUME}` TO `{engineer}`",
+        f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{reader}`",
+        f"GRANT USE SCHEMA ON SCHEMA `{catalog}`.`{FRAMEWORK_SCHEMA}` TO `{reader}`",
+        f"GRANT READ VOLUME ON VOLUME `{catalog}`.`{FRAMEWORK_SCHEMA}`.`{FRAMEWORK_VOLUME}` TO `{reader}`",
+    ]
+
+
 def bootstrap_sql(target: str, managed_location: str = "") -> list[str]:
-    """Idempotent DDL + grants for EVERY domain catalog in ``target`` (the
+    """Idempotent DDL + grants for ``target``: the SHARED framework-artifacts
+    catalog (the common datalab wheel) plus every domain catalog (the
     customer_sales medallion + the pipeline-only ``sales`` catalog).
 
     ``managed_location`` is required on metastores without a storage root
@@ -106,7 +132,11 @@ def bootstrap_sql(target: str, managed_location: str = "") -> list[str]:
     reader = GROUPS[target]["reader"]
     engineer = GROUPS[target]["engineer"]
     location = f" MANAGED LOCATION '{managed_location}'" if managed_location else ""
-    stmts: list[str] = []
+    # The shared framework-wheel catalog first (every domain's pipelines install
+    # from it), then each domain's medallion + edge-lane volumes.
+    stmts: list[str] = _artifacts_catalog_sql(
+        ARTIFACTS_CATALOGS[target], reader, engineer, location
+    )
     for catalog, with_volumes in CATALOGS[target]:
         stmts += _catalog_sql(catalog, reader, engineer, location, with_volumes)
     return stmts

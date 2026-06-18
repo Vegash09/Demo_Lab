@@ -109,8 +109,8 @@ scripts/validate_connect.py  Databricks Connect validation entry (make validate-
 schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml
                           (make schema regenerates from the Pydantic models)
 tests/                    FRAMEWORK unit tests (local Spark, example-free) — no workspace needed
-scripts/bootstrap_uc.py   One-time UC bootstrap per target: catalogs (customer_sales + sales) + schemas/volumes/artifacts-Volume/GRANTs (make bootstrap-uc)
-scripts/publish_wheel.py  Build + upload the versioned FRAMEWORK wheel to each domain's artifacts UC Volume (make publish-wheel)
+scripts/bootstrap_uc.py   One-time UC bootstrap per target: the SHARED datalab_artifacts catalog (framework.wheels Volume) + each domain catalog (customer_sales + sales) schemas/volumes/GRANTs (make bootstrap-uc)
+scripts/publish_wheel.py  Build + upload the versioned FRAMEWORK wheel ONCE to the SHARED datalab_artifacts framework.wheels UC Volume (make publish-wheel)
 scripts/export_config_schema.py  make schema implementation
 pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.workspace]; hatchling builds the FRAMEWORK-ONLY datalab wheel (examples are workspace members → own <catalog>_etl wheels)
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
@@ -153,7 +153,7 @@ make test             # pytest (framework suite + example suites; needs Java 17+
 make validate-configs # validate every domain's artifacts (pydantic + dqx)
 make validate         # databricks bundle validate -t dev
 make deploy           # validate + bundle deploy -t dev
-make publish-wheel    # build + upload the framework wheel to the artifacts UC Volume (APPLY=1)
+make publish-wheel    # build + upload the framework wheel to the shared datalab_artifacts UC Volume (APPLY=1)
 make run              # databricks bundle run customer_sales_etl -t dev (dev refresh)
 make run-local        # materialize the medallion on sample data via OSS spark-pipelines
 make dry-run-local    # spark-pipelines dry-run (graph validation, no data)
@@ -267,8 +267,8 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `parameters:` defaulted from bundle variables; the task `parameters:` list
   maps them to flags via `{{job.parameters.<name>}}`.
 - Serverless `environments:` block installs the framework wheel from the
-  artifacts UC Volume (`${var.datalab_wheel}`) plus this domain's wheel
-  (`../../../dist/<catalog>_etl-*.whl`) — the same mechanism as the pipeline
+  shared datalab_artifacts UC Volume (`${var.datalab_wheel}`) plus this domain's
+  wheel (`../../../dist/<catalog>_etl-*.whl`) — the same mechanism as the pipeline
   (serverless does not honor `--editable`; see the Critical-knowledge gotcha).
 - Any valid/invalid split belongs upstream in the SDP lane (dqx rules in the
   table's artifact — quarantine evidence included); jobs consume the already
@@ -346,18 +346,20 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   — the editable form the DAB templates suggest silently installs nothing here).
   So `datalab` is a FRAMEWORK-ONLY wheel (`uv build` at the repo root → only
   `datalab/**`; the examples are uv-workspace members) published as a versioned
-  artifact (`datalab-<ver>-py3-none-any.whl`) to a per-domain `artifacts.wheels`
-  UC Volume — `make publish-wheel` locally, and CI publishes it in the `deploy-dab`
-  action BEFORE `bundle deploy` (the referenced version must exist on the Volume
-  before a pipeline runs, or the env install fails). Each pipeline/job environment
-  lists TWO deps: `${var.datalab_wheel}` / `${var.sales_datalab_wheel}` (the
-  framework, an absolute `/Volumes/...` path) and `../../../dist/<catalog>_etl-*.whl`
-  (this domain's wheel, built by the bundle's `artifacts:` — `uv build --package
-  <catalog>_etl`, relative to the resource file). **CI/CD must have `uv` on PATH
-  for `bundle deploy`** (it builds the example wheels) and for the publish step —
-  the `deploy-dab` action installs it via `astral-sh/setup-uv` (`bundle validate`
-  builds nothing, so the validate-only CI job doesn't need it). The artifacts
-  Volume must be readable by every pipeline/job run-as identity (`make bootstrap-uc`
+  artifact (`datalab-<ver>-py3-none-any.whl`) to a single SHARED `datalab_artifacts`
+  catalog `framework.wheels` UC Volume (one upload for ALL domains) — `make
+  publish-wheel` locally, and CI publishes it in the `deploy-dab` action BEFORE
+  `bundle deploy` (the referenced version must exist on the Volume before a
+  pipeline runs, or the env install fails). Each pipeline/job environment lists TWO
+  deps: `${var.datalab_wheel}` (the common framework — an absolute
+  `/Volumes/<datalab_artifacts_catalog>/framework/wheels/...` path, the SAME for
+  every domain) and `../../../dist/<catalog>_etl-*.whl` (this domain's wheel, built
+  by the bundle's `artifacts:` — `uv build --package <catalog>_etl`, relative to
+  the resource file). **CI/CD must have `uv` on PATH for `bundle deploy`** (it
+  builds the example wheels) and for the publish step — the `deploy-dab` action
+  installs it via `astral-sh/setup-uv` (`bundle validate` builds nothing, so the
+  validate-only CI job doesn't need it). The shared Volume must be readable by
+  every pipeline/job run-as identity across all domains (`make bootstrap-uc`
   provisions + grants it) or the install fails. The version lives in THREE
   lockstep places — `pyproject.toml`, `src/datalab/__init__.py`,
   `variables/medallion.yml` `datalab_version` (the Volume filename); bump all
@@ -449,8 +451,8 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   Don't block legitimate `.write` calls there in review.
 - **Job environments share the pipeline's dependency mechanism and gotcha.**
   The edge-job resources (`examples/customer_sales/resources/customer_sales_*.job.yml`) install
-  the framework wheel from the artifacts UC Volume (`${var.datalab_wheel}`) plus
-  the `customer_sales_etl` wheel (`../../../dist/customer_sales_etl-*.whl`) into
+  the framework wheel from the shared datalab_artifacts UC Volume (`${var.datalab_wheel}`)
+  plus the `customer_sales_etl` wheel (`../../../dist/customer_sales_etl-*.whl`) into
   serverless job environments — same as pipelines, and for the same reason
   (serverless does not honor `--editable` of synced workspace files); like
   pipeline environments they cache dependencies, so a changed `datalab` package
@@ -460,7 +462,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   The framework's `columns:` mapping always casts with `try_cast` so bad
   values become NULLs that the quality rules then catch.
 - **`python_wheel_task` is opt-in only.** The framework already ships to every
-  environment as the versioned wheel from the artifacts Volume;
+  environment as the versioned wheel from the shared datalab_artifacts Volume;
   `python_wheel_task` is only for a target that additionally needs an immutable,
   versioned CLI entrypoint
   (`[project.scripts]` console script invoked by the wheel-task). Until then
@@ -636,9 +638,10 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
 - **Change access (RBAC/ABAC)**: workspace-resource permissions → `rbac.yml`
   (group + permission-level string vars; per-target overrides in its own
   `targets:` block, per-environment via `DATALAB_*_GROUP` repo variables → the
-  `deploy-dab` `--var`); data grants → `scripts/bootstrap_uc.py` (provisions both
-  the customer_sales and sales catalogs; keep its CATALOGS/GROUPS dicts in sync
-  with the group names in `rbac.yml`), re-run
+  `deploy-dab` `--var`); data grants → `scripts/bootstrap_uc.py` (provisions the
+  shared datalab_artifacts catalog plus the customer_sales and sales catalogs;
+  keep its CATALOGS/ARTIFACTS_CATALOGS/GROUPS dicts in sync with the catalog vars
+  in targets/ and the group names in `rbac.yml`), re-run
   `make bootstrap-uc`; row/column
   policies → add display-only SQL under the domain's `sql/abac/` following
   the conventions in `docs/ARCHITECTURE.md` — never execute them from CI or
