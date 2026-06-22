@@ -24,9 +24,10 @@ Quick pointers:
   `.write`, `.saveAsTable`, `.start()`, or `.collect()` inside them. Upserts
   use AUTO CDC (`target.cdc` in the artifact); data quality uses
   **databrickslabs/dqx** via the framework — `dp.expect_*` is retired here.
-- `src/` holds ONLY the framework (`src/datalab/`). Domain business logic
-  lives in the domain package (`src/<catalog>_etl/transforms/`, in this repo
-  under `examples/customer_sales/`) as pure, unit-tested `@transform` functions.
+- The framework is an EXTERNAL dependency (the `datalab-framework` repo),
+  consumed as a git dep + UC-Volume wheel. Domain business logic lives in the
+  domain package (`src/<catalog>_etl/transforms/`, in this repo under
+  `examples/customer_sales/`) as pure, unit-tested `@transform` functions.
   Parameters come from the pipeline `configuration` mapping via
   `datalab.config.pipeline_conf` — never hardcode catalogs/schemas/paths.
 - Deploy = **Declarative Automation Bundle**: `databricks.yml` +

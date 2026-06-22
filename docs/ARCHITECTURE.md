@@ -38,7 +38,8 @@ every PR; CD deploys it on merge (dev) and tags (stage/prod) — details in
 One config-driven codebase runs three ways; `datalab.profile` (a pipeline
 `configuration` value, default `databricks`) selects the graph. Only the
 Databricks profile is the deploy/production path — the other two are local
-development aids. Details + fidelity caveats: [FRAMEWORK.md](FRAMEWORK.md)
+development aids. Details + fidelity caveats: the framework repo's
+[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)
 "Run anywhere".
 
 ```mermaid
@@ -98,15 +99,15 @@ Developers (and agents) edit YAML only; the framework validates configs with
 Pydantic at pipeline import and registers every LDP object through
 reader/writer adapters; data quality is databrickslabs/dqx end to end. The
 artifact schema and semantics — including fan-in `sources:`, `backfill:`
-once-flows, snapshot CDC, kafka in/out, and the SDP capability matrix — are
-in [FRAMEWORK.md](FRAMEWORK.md).
+once-flows, snapshot CDC, kafka in/out, and the SDP capability matrix — are in
+the framework repo's [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
 
 ## Code organization
 
 ```mermaid
 flowchart TD
-    subgraph REPO["repository"]
-        FW["src/datalab/<br/>THE framework — models, adapters,<br/>generator, devtools, param helpers<br/>(zero domain code)"]
+    FW["datalab framework — EXTERNAL dependency<br/>(dediggibyte/datalab-framework: git dep + UC-Volume wheel)<br/>models · adapters · generator · devtools · param helpers"]
+    subgraph REPO["this repo — reference domains + deploy bundle"]
         subgraph DOMAIN["examples/&lt;domain&gt;/ — reference domain (adopters: repo root)"]
             CFG["config/&lt;domain&gt;/<br/>domain.yml + &lt;layer&gt;/&lt;table&gt;.yml"]
             DOM["src/&lt;domain&gt;_etl/<br/>pure @transform fns · custom dqx checks ·<br/>3-line pipeline entrypoint"]
@@ -114,20 +115,19 @@ flowchart TD
             RES["resources/<br/>the domain's bundle resources"]
             DTESTS["tests/<br/>the domain's own tests"]
         end
-        TESTS["tests/<br/>framework tests — local SparkSession,<br/>example-free, no workspace"]
     end
     CFG -->|consumed by| FW
     DOM -->|registered into| FW
-    TESTS -->|exercise| FW
+    DTESTS -->|exercise| FW
 ```
 
 Layer rules, deliberately separated:
 
-1. **`src/datalab/`** — THE framework, the only package under `src/`
-   (installed into the pipeline and job environments via
-   `--editable ${workspace.file_path}`). Models, adapters, generator,
-   devtools, param helpers; never contains domain code or hardcoded domain
-   module paths. Unit-testable locally (`tests/`, example-free).
+1. **The `datalab` framework** — an EXTERNAL dependency (the `datalab-framework`
+   repo), consumed as a git dep (local/CI) + a versioned UC-Volume wheel
+   (serverless, `${var.datalab_wheel}` — never `--editable`). Models, adapters,
+   generator, devtools, param helpers; never contains domain code or hardcoded
+   domain module paths. Its unit tests live in that repo.
 2. **`examples/<domain>/`** — complete reference domains, each mirroring an
    adopter repo root (`examples/README.md` has the mapping table): the YAML
    artifacts (`config/<domain>/`), the domain package (`src/<domain>_etl/`),

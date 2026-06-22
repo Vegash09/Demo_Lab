@@ -3,14 +3,18 @@
 Shared source of truth for AI coding agents (Cursor, Claude Code, Codex) and humans.
 Read this before editing. Keep it accurate when you change the system.
 
-> **Repo split:** the reusable framework now lives in its OWN repo,
-> **[dediggibyte/datalab-framework](https://github.com/dediggibyte/datalab-framework)**.
-> THIS repo is the reference **domains + deploy bundle**, consuming `datalab` as a
-> **git dependency** (local dev/CI — pinned in `pyproject.toml` `[tool.uv.sources]`)
-> and a **UC-Volume wheel** (serverless — `var.datalab_wheel`). Keep the git tag and
-> `var.datalab_version` in lockstep. Sections below that still describe `src/datalab`
-> as in-repo reflect the pre-split monorepo and are being updated — treat the
-> framework as an external dependency; its reference is `docs/FRAMEWORK.md` in that repo.
+> **Repo split (done).** The reusable framework lives in its OWN repo,
+> **[dediggibyte/datalab-framework](https://github.com/dediggibyte/datalab-framework)** —
+> there is no `src/datalab` in this repo. THIS repo is the reference **domains +
+> deploy bundle** that CONSUMES `datalab` two ways: a **git dependency** for local
+> dev/CI (pinned in `pyproject.toml` `[tool.uv.sources]` to a release tag) and a
+> versioned **UC-Volume wheel** for serverless (`var.datalab_wheel`) that this repo
+> **builds from the pinned git dep and publishes on every deploy** (`make
+> publish-wheel` / the `deploy-dab` action). Keep the git tag and
+> `var.datalab_version` in lockstep. The framework **reference** (artifact anatomy,
+> target kinds, dqx, the SDP capability matrix) lives in that repo's
+> [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md);
+> to stand up your own repo on the framework, see [`docs/ADOPTING.md`](docs/ADOPTING.md).
 
 ## Overview
 
@@ -25,20 +29,22 @@ Bundle).
   plus fan-in `sources:`, one-time `backfill:` flows, AUTO CDC and snapshot
   CDC), authored from natural language via the `author-ldp-artifact` skill,
   validated by Pydantic models and generated into LDP datasets by
-  `datalab.framework.generate` — see `docs/FRAMEWORK.md` (the full reference,
-  including the SDP capability matrix). The per-domain
+  `datalab.framework.generate` — see the framework repo's
+  [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)
+  (the full reference, including the SDP capability matrix). The per-domain
   `transformations/pipeline.py` is 3 lines. Never `import dlt` (deprecated).
-- **Framework vs domain — strict separation**: `src/` contains ONLY
-  `src/datalab/`, the REUSABLE framework (models, adapters, dqx engine,
-  devtools, param helpers) with zero domain code — it lifts into any project
-  untouched. Domain code is declared to the framework via `domain.yml`'s
-  `imports:` list — never by editing the framework.
+- **Framework vs domain — strict separation**: the REUSABLE framework (models,
+  adapters, dqx engine, devtools, param helpers) is an **external dependency**
+  (the `datalab-framework` repo), consumed here as a git dep + UC-Volume wheel —
+  it has zero domain code and lifts into any project untouched. Domain code is
+  declared to the framework via `domain.yml`'s `imports:` list — never by editing
+  the framework (which lives in its own repo).
 - **examples/ holds the reference domains**: `examples/customer_sales/` is a
   complete worked adoption (config + domain package + edge jobs + notebook +
   resources + tests + ABAC SQL) laid out to MIRROR an adopter repo root —
   copy it to start a real domain (`docs/GETTING_STARTED.md`). The bundle
-  deploys it, so it doubles as the framework's integration test; nothing in
-  `src/datalab` depends on it. A second domain, `examples/sales/`, is a
+  deploys it, so it doubles as the framework's integration test; the framework
+  does not depend on it. A second domain, `examples/sales/`, is a
   pipeline-only adoption — silver (AUTO CDC SCD1 + dqx) + gold MVs over
   pre-existing `sales.bronze.*` tables, no edge jobs/notebooks — and deploys
   from the same bundle.
@@ -112,13 +118,11 @@ examples/                 REFERENCE domains — each named after its base UC cat
   sales/                  Second reference domain (pipeline-only): config/sales/ + src/sales_etl + resources +
                           tests; silver (AUTO CDC SCD1 + dqx) → gold MVs over pre-existing sales.bronze.* tables
 scripts/validate_connect.py  Databricks Connect validation entry (make validate-connect; out-of-lock)
-schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml
-                          (make schema regenerates from the Pydantic models)
-tests/                    FRAMEWORK unit tests (local Spark, example-free) — no workspace needed
+schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml —
+                          VENDORED from the datalab-framework repo (regenerate there + copy over; no make schema here)
 scripts/bootstrap_uc.py   One-time UC bootstrap per target: the SHARED datalab_artifacts catalog (framework.wheels Volume) + each domain catalog (customer_sales + sales) schemas/volumes/GRANTs (make bootstrap-uc)
-scripts/publish_wheel.py  Build + upload the versioned FRAMEWORK wheel ONCE to the SHARED datalab_artifacts framework.wheels UC Volume (make publish-wheel)
-scripts/export_config_schema.py  make schema implementation
-pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.workspace]; hatchling builds the FRAMEWORK-ONLY datalab wheel (examples are workspace members → own <catalog>_etl wheels)
+scripts/publish_wheel.py  Build the FRAMEWORK wheel FROM the pinned git dep + upload it ONCE to the SHARED datalab_artifacts framework.wheels UC Volume (make publish-wheel; CI runs it in deploy-dab before bundle deploy)
+pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.sources] (datalab → git tag) + [tool.uv.workspace]; root is package=false (builds nothing); each examples/<domain> is a workspace member building its own <catalog>_etl wheel
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
 .github/                  Workflows (ci-cd-*, common-*, pr-template-check) + composite actions
@@ -153,13 +157,13 @@ contract: `docs/NAMING.md`).
 ## Local development
 
 ```bash
-make install          # uv sync → .venv from uv.lock
-make lint             # ruff check src tests notebooks scripts examples
-make test             # pytest (framework suite + example suites; needs Java 17+)
+make install          # uv sync → .venv from uv.lock (incl. the datalab git dep)
+make lint             # ruff check scripts and examples
+make test             # pytest (the example domain suites; needs Java 17+)
 make validate-configs # validate every domain's artifacts (pydantic + dqx)
 make validate         # databricks bundle validate -t dev
 make deploy           # validate + bundle deploy -t dev
-make publish-wheel    # build + upload the framework wheel to the shared datalab_artifacts UC Volume (APPLY=1)
+make publish-wheel    # build the framework wheel from the pinned git dep + upload to the shared datalab_artifacts UC Volume (APPLY=1)
 make run              # databricks bundle run customer_sales_etl -t dev (dev refresh)
 make run-local        # materialize the medallion on sample data via OSS spark-pipelines
 make dry-run-local    # spark-pipelines dry-run (graph validation, no data)
@@ -176,7 +180,7 @@ selects the graph — default `databricks`): the Databricks deploy path; a
 **local** OSS `spark-pipelines` run (`make run-local`, a batch
 materialized-view downgrade — no AUTO CDC dedup, no dqx, no Auto Loader/sinks);
 and **Databricks Connect** validation from local (`make validate-connect`, an
-isolated out-of-lock overlay). Full reference: docs/FRAMEWORK.md "Run anywhere".
+isolated out-of-lock overlay). Full reference: the framework repo's FRAMEWORK.md "Run anywhere".
 
 ## Authoring rules
 
@@ -225,7 +229,8 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   quality, optional `backfill:` once-flows, and target (streaming_table
   [+cdc | +cdc_from_snapshot] / materialized_view / temporary_view /
   delta_sink / kafka_sink). NL→artifact recipe: `author-ldp-artifact` skill;
-  full reference incl. the SDP capability matrix: `docs/FRAMEWORK.md`.
+  full reference incl. the SDP capability matrix: the framework repo's
+  [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
 - Business logic stays in `src/<catalog>_etl/transforms/` as pure functions
   registered with `@transform("<domain>.<name>")`; custom dqx checks in
   `src/<catalog>_etl/checks/` with `@check_function`; snapshot walkers with
@@ -235,8 +240,8 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   pipeline); verify behavior with `datalab.framework.run_dataset` (call it from
   a test or a notebook/REPL) or `make validate-connect` — no deploy needed.
 - Hand-written `dp.*` wiring in transformation files is reserved for cases the
-  framework genuinely cannot express (see the capability matrix in
-  `docs/FRAMEWORK.md` for what's deliberately out) — extend the framework
+  framework genuinely cannot express (see the capability matrix in the
+  framework repo's `docs/FRAMEWORK.md` for what's deliberately out) — extend the framework
   first. The rules below then still apply. Import:
   `from pyspark import pipelines as dp`. The `dlt` module is the old name and
   must not be used.
@@ -292,7 +297,8 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
 - Wire as `notebook_task` with `base_parameters:` mapping
   `{{job.parameters.<name>}}`; **no trigger** — this lane is human-gated by
   definition, run via `databricks bundle run <job> -t dev`.
-- No business logic in cells: call pure functions from `src/datalab`. Writes
+- No business logic in cells: call pure functions from the domain package
+  (`src/<catalog>_etl`) or the installed `datalab` framework. Writes
   are allowed only to tables/volumes the notebook owns (e.g. its report
   snapshot table), never to SDP-owned tables.
 
@@ -350,13 +356,13 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   files: the package never lands on the runtime path and the pipeline fails at
   import with `ModuleNotFoundError: No module named 'datalab'` (verified June 2026
   — the editable form the DAB templates suggest silently installs nothing here).
-  So `datalab` is a FRAMEWORK-ONLY wheel (`uv build` at the repo root → only
-  `datalab/**`; the examples are uv-workspace members) published as a versioned
-  artifact (`datalab-<ver>-py3-none-any.whl`) to a single SHARED `datalab_artifacts`
-  catalog `framework.wheels` UC Volume (one upload for ALL domains) — `make
-  publish-wheel` locally, and CI publishes it in the `deploy-dab` action BEFORE
-  `bundle deploy` (the referenced version must exist on the Volume before a
-  pipeline runs, or the env install fails). Each pipeline/job environment lists TWO
+  So the framework ships as a versioned wheel (`datalab-<ver>-py3-none-any.whl`):
+  this repo BUILDS it FROM the pinned git dep (`pip wheel "datalab @ git+…@<tag>"
+  --no-deps`, NOT `uv build` at the root — the root is package-less) and publishes
+  it to a single SHARED `datalab_artifacts` catalog `framework.wheels` UC Volume
+  (one upload for ALL domains) — `make publish-wheel` locally, and CI publishes it
+  in the `deploy-dab` action BEFORE `bundle deploy` (the referenced version must
+  exist on the Volume before a pipeline runs, or the env install fails). Each pipeline/job environment lists TWO
   deps: `${var.datalab_wheel}` (the common framework — an absolute
   `/Volumes/<datalab_artifacts_catalog>/framework/wheels/...` path, the SAME for
   every domain) and `../../../dist/<catalog>_etl-*.whl` (this domain's wheel, built
@@ -366,21 +372,23 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   installs it via `astral-sh/setup-uv` (`bundle validate` builds nothing, so the
   validate-only CI job doesn't need it). The shared Volume must be readable by
   every pipeline/job run-as identity across all domains (`make bootstrap-uc`
-  provisions + grants it) or the install fails. The version lives in THREE
-  lockstep places — `pyproject.toml`, `src/datalab/__init__.py`,
-  `variables/medallion.yml` `datalab_version` (the Volume filename); bump all
-  three + `make publish-wheel` (CHANGELOG.md / docs/FRAMEWORK.md "Distribution").
+  provisions + grants it) or the install fails. The framework version lives in TWO
+  lockstep places HERE — the `datalab` git tag in `pyproject.toml`
+  `[tool.uv.sources]` and `variables/medallion.yml` `datalab_version` (the Volume
+  filename); bump both + `make publish-wheel` to upgrade (CHANGELOG.md; the
+  framework's own `__version__` lives in the datalab-framework repo).
   `environment_version: "4"` pins Python 3.12 + preinstalled libs. Extra framework
-  runtime libs go in `[project].dependencies` (folded into the framework wheel) —
-  but environments cache dependencies; trigger a full restart (or publish a new
+  runtime libs are declared in the framework repo (folded into its wheel) — but
+  environments cache dependencies; trigger a full restart (or publish a new
   version) if a new dep doesn't show up.
 - **Never install `databricks-connect` into the dev venv / `uv.lock`.** It
   conflicts with the `pyspark` dev dependency (both own the `pyspark`
   namespace). The sanctioned way to drive a live cluster from local is
   `make validate-connect`, which installs it into a THROWAWAY overlay (`uv run
-  --no-project --with-editable . --with databricks-connect`, mirroring the
-  `--with databricks-sdk` bootstrap pattern) — never the project venv. This
-  works because `[project].dependencies` has no `pyspark`, so the overlay has no
+  --no-project` with the framework git dep + the editable domain package + `--with
+  databricks-connect`, mirroring the `--with databricks-sdk` bootstrap pattern) —
+  never the project venv. This works because neither the domain package nor the
+  framework git dep pulls `pyspark`, so the overlay has no
   conflict; and `datalab.framework.__init__` imports `generate` lazily so
   `run_dataset` loads without `pyspark.pipelines` (which databricks-connect may
   lack). Full integration still = deploy + `make run` against dev. Corollary:
@@ -388,7 +396,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   Databricks Connect" step errors against `.venv` (`databricks-connect package
   is not installed`) — expected and advisory (it powers only interactive cell
   run/debug, never sync/deploy/run); keep `.venv` as the interpreter and use
-  `make validate-connect` (see docs/FRAMEWORK.md "Run anywhere" §2).
+  `make validate-connect` (see the framework repo's FRAMEWORK.md "Run anywhere").
 - **Dev target uses `mode: development`**: resources get a `[dev <user>]`
   prefix and the daily trigger is paused. Stage/prod use `mode: production`
   with explicit `root_path`s.
@@ -535,11 +543,13 @@ change:
    `design/OVERVIEW.md` if the customer narrative changed — all in the same PR.
    Follow the `maintain-design-diagram` skill (`design/01_*` only when the design
    intent changes).
-3. **Any change under `src/datalab/framework/` updates `docs/FRAMEWORK.md`
-   in the same commit** — the framework is the shared baseline for every
-   customer project; undocumented behavior changes break downstream adopters.
-   If the models changed, also run `make schema` and commit the regenerated
-   `schemas/*.json`.
+3. **The framework is an external dependency — change it in the
+   `datalab-framework` repo, not here** (its `docs/FRAMEWORK.md` is the doc of
+   record for framework behavior). When you BUMP the framework version in this
+   repo (the `datalab` git tag in `pyproject.toml` + `var.datalab_version` in
+   lockstep, then `make lock` + `make publish-wheel`), refresh the VENDORED
+   `schemas/*.json` (copy them from the framework repo's regenerated output —
+   there is no `make schema` here) and record the bump in `CHANGELOG.md`.
 4. If you change the protected set itself, update **all three** in one commit:
    `.claude/hooks/protected_files_guard.py`, `.githooks/pre-commit`, and the
    table below.
@@ -589,18 +599,18 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   follow the `author-ldp-artifact` skill; if new logic is needed, add a pure
   `@transform`-registered function in `src/<catalog>_etl/transforms/` with a
   unit test (and the module in `domain.yml` `imports:`).
-  `make validate-configs lint test validate`. Reference: `docs/FRAMEWORK.md`.
+  `make validate-configs lint test validate`. Reference: the framework repo's FRAMEWORK.md.
 - **Backfill an SDP table**: add a `backfill:` entry (name + batch source;
   streaming source when the target has `cdc:`) to the table's artifact —
   never a job write. Names are checkpoint identities; the flow re-runs on
-  full refresh by design. See "Backfills" in `docs/FRAMEWORK.md`.
+  full refresh by design. See "Backfills" in the framework repo's FRAMEWORK.md.
 - **Add a new domain pipeline** (e.g. finance): follow
   `docs/GETTING_STARTED.md` end to end — copy the `examples/customer_sales/` shape
   (config + `src/<catalog>_etl` + resources + `pyproject.toml`), register the
   domain as a `[tool.uv.workspace]` member (it builds its own `<catalog>_etl`
   wheel), point `datalab.config_dir` at the new config dir, and list
   `${var.datalab_wheel}` + the domain wheel in the resource
-  `environment.dependencies`. The framework (`src/datalab`) is not touched.
+  `environment.dependencies`. The framework (the external `datalab` dependency) is not touched.
 - **Change quality rules**: edit the column's `quality:` list (or the
   table-level `quality.checks`) in the table's artifact — dqx metadata,
   NL→function mapping in the `author-ldp-artifact` skill (full dqx catalog;
@@ -611,7 +621,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   `make validate-connect`.
 - **Add a python-file task**: run the 3-question router first. Entry point in
   `src/jobs/<domain>/` (argparse via `datalab.params.cli_params`, pure logic
-  in `src/datalab` with a unit test), copy the `customer_sales_export` job shape from
+  in the domain package `src/<catalog>_etl` with a unit test), copy the `customer_sales_export` job shape from
   `examples/customer_sales/resources/customer_sales_export.job.yml` (parameters from bundle
   variables, `environments` block, `permissions: ${var.job_permissions}`).
   `make lint test validate`.
@@ -633,7 +643,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   dry-run-local` just validates the graph. To check mapping/transforms/dqx on a
   LIVE cluster, `make validate-connect LAYER=<l> TABLE=<t> CONNECT_ARGS="--param
   datalab.catalog=… --param datalab.bronze_schema=…"` (isolated Databricks
-  Connect overlay). Reference: docs/FRAMEWORK.md "Run anywhere".
+  Connect overlay). Reference: the framework repo's FRAMEWORK.md "Run anywhere".
 - **Add a dependency**: edit `pyproject.toml`, `make lock`, commit both files.
   For pipeline-runtime deps, remember the environment caching gotcha above.
 - **Change deploy config**: edit `databricks.yml` / the domain's

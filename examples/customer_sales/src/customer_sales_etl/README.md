@@ -1,8 +1,9 @@
 # customer_sales_etl — the customer_sales domain (framework adopter)
 
 Everything the customer_sales domain owns, kept OUTSIDE the reusable
-framework (`src/datalab/`) so the framework lifts into other projects
-untouched. The package is named `<catalog>_etl` per the repo naming contract
+framework (an external dependency — the `datalab-framework` repo) so the
+framework lifts into other projects untouched. The package is named
+`<catalog>_etl` per the repo naming contract
 (`docs/NAMING.md`):
 
 ```
@@ -17,7 +18,8 @@ checks/
 The datasets themselves are declared in the artifacts under
 `../../config/customer_sales/<schema>/<table>.yml` (this folder's python is
 referenced from there via the `imports:` list and transform registry names —
-see `docs/FRAMEWORK.md`). The full tour of the example lives in
+see the framework repo's [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)).
+The full tour of the example lives in
 `examples/customer_sales/README.md`.
 
 Conventions:
@@ -26,8 +28,9 @@ Conventions:
 - No hand-written `dp.*` wiring — the framework generates all LDP objects.
 - Parameters come from the pipeline `configuration` mapping (bundle
   variables); never hardcode catalogs, schemas, or paths.
-- This package is listed in `[tool.hatch.build.targets.wheel]` so the
-  pipeline/job environments can import it.
+- This package is a uv-workspace member; its own `pyproject.toml`
+  `[tool.hatch.build.targets.wheel]` builds the `customer_sales_etl` wheel the
+  pipeline/job environments install (next to the framework wheel from the Volume).
 
 Run a development refresh:
 

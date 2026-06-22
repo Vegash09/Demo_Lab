@@ -17,7 +17,7 @@
 
 <!-- Check all that apply. Keep the list; just tick boxes. -->
 - [ ] Pipeline / transformation
-- [ ] Shared library (src/datalab)
+- [ ] Framework version bump (datalab git tag + var.datalab_version)
 - [ ] Bundle / deploy config
 - [ ] CI/CD
 - [ ] Docs

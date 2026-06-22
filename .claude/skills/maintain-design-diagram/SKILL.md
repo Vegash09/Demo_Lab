@@ -1,6 +1,6 @@
 ---
 name: maintain-design-diagram
-description: Keep the design/ package in sync with the implemented datalab architecture — the draw.io diagrams (design/*.drawio), their exported images (design/images/*.png via `make design`), and the customer-facing design/OVERVIEW.md. Invoke whenever a code change adds/removes/renames a config artifact (a target table), a framework module under src/datalab/framework/, a domain @transform/@check_function/@snapshot_source, a medallion table (bronze/silver/gold/quarantine), an edge-lane job or notebook, an execution profile, a CI/CD workflow, or a bundle resource the diagrams reference; also when AGENTS.md's "Architecture" or "Codebase layout" changes. After editing a diagram, ALWAYS re-export images with `make design`, and refresh OVERVIEW.md when the customer narrative changes. Skip only for pure refactors that move no boxes/arrows and change no narrative.
+description: Keep the design/ package in sync with the implemented datalab architecture — the draw.io diagrams (design/*.drawio), their exported images (design/images/*.png via `make design`), and the customer-facing design/OVERVIEW.md. Invoke whenever a code change adds/removes/renames a config artifact (a target table), changes how the framework is consumed/published (it is an external dependency), a domain @transform/@check_function/@snapshot_source, a medallion table (bronze/silver/gold/quarantine), an edge-lane job or notebook, an execution profile, a CI/CD workflow, or a bundle resource the diagrams reference; also when AGENTS.md's "Architecture" or "Codebase layout" changes. After editing a diagram, ALWAYS re-export images with `make design`, and refresh OVERVIEW.md when the customer narrative changes. Skip only for pure refactors that move no boxes/arrows and change no narrative.
 ---
 
 # Maintain the design package
@@ -34,7 +34,8 @@ YES — any of these in the same PR/work session:
 
 - A new (or renamed) config artifact `config/<catalog>/<schema>/<table>.yml`
   — a new target table in the medallion.
-- A new module under `src/datalab/framework/` that the generate path uses.
+- A change to how this repo consumes/publishes the framework (the pinned version,
+  the wheel publish flow) — the framework itself is an external dependency.
 - A new domain `@transform` / `@check_function` / `@snapshot_source`, or a new
   domain package surface (`src/<catalog>_etl/...`).
 - A new medallion table or a changed target kind (streaming_table, +cdc,
@@ -218,9 +219,9 @@ add a line to OVERVIEW.md's medallion section.
 inside `dom_transforms` / `dom_checks`. Edit that box's text if the surface
 changes; add a purple registry edge only if a new module appears. `make design`.
 
-**"Added a new framework module under src/datalab/framework/"** → Add or edit a
-box in `framework_band`; wire purple generate edges. `make design`. Update
-AGENTS.md "Codebase layout" and `docs/FRAMEWORK.md`.
+**"Changed how the framework is consumed/published"** → The framework is an
+external dependency (one box in `framework_band`); edit that box or the
+wheel/publish flow. `make design`. Update AGENTS.md "Codebase layout".
 
 **"Added an edge-lane job / notebook"** → New box in `edge_band`; add a teal
 read-only edge from the SDP table it consumes (never a write edge — single-

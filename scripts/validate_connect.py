@@ -11,8 +11,10 @@ the ``pyspark`` dev dependency). Run it through the out-of-lock overlay:
     make validate-connect LAYER=silver TABLE=customers \
         CONNECT_ARGS="--param datalab.catalog=customer_sales --param datalab.bronze_schema=bronze"
 
-which expands to ``uv run --no-project --with-editable . --with databricks-connect``
-so databricks-connect never enters uv.lock.
+which expands to an isolated ``uv run --no-project`` overlay installing the
+framework (from the pinned git dep), the domain package (editable), and
+databricks-connect — none of which enter uv.lock (the root project is package-less
+and so cannot supply the framework or domain itself).
 
 Because there is no pipeline ``configuration`` mapping off-Databricks, pass every
 conf key the dataset resolves (catalog/schema of its source, plus any path/topic

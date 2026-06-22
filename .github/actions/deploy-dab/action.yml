@@ -65,15 +65,17 @@ runs:
     # PRECONDITION: the artifacts Volume already exists — `make bootstrap-uc
     # TARGET=<t>` provisions it. Auth is the same OIDC env the deploy uses (set at
     # the job level); the Databricks SDK picks it up ambiently. `--with
-    # databricks-sdk` keeps the SDK out of uv.lock.
+    # databricks-sdk` / `--with pip` keep the SDK + pip out of uv.lock.
     - name: Publish datalab framework wheel to the shared artifacts Volume
       shell: bash
       run: |
-        # Build into an isolated dir so the framework wheel never lands in dist/
-        # (which `bundle deploy` fills with the example wheels right after).
-        uv build --wheel --out-dir dist-framework
-        uv run --with databricks-sdk python scripts/publish_wheel.py \
-          --target "${{ inputs.target }}" --dist-dir dist-framework --apply
+        # Build the FRAMEWORK wheel from the pinned git dep (pyproject
+        # [tool.uv.sources].datalab) into an isolated dir, then upload — never
+        # touches the bundle's dist/ (which `bundle deploy` fills with the example
+        # wheels right after). `--with pip` builds the wheel, `--with databricks-sdk`
+        # uploads it; neither enters uv.lock.
+        uv run --with databricks-sdk --with pip python scripts/publish_wheel.py \
+          --target "${{ inputs.target }}" --build --apply
 
     # Validate and deploy in one step so the quoted --var argument array
     # (group names may contain spaces) doesn't have to cross a step boundary.

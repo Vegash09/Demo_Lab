@@ -58,12 +58,18 @@ Avoid (Public Preview, deliberately unused here): `@dp.update_flow`,
 
 ## If the gap is worth keeping: extend the framework instead
 
-1. Model the field(s) in `src/datalab/framework/models.py` (+ validators).
-2. Read/write it in `readers.py` / `writers.py` (late-binding rule: closures
+The framework lives in its OWN repo
+([dediggibyte/datalab-framework](https://github.com/dediggibyte/datalab-framework)) —
+extending it is a change THERE, not in this repo:
+
+1. Model the field(s) in the framework repo's `src/datalab/framework/models.py`
+   (+ validators).
+2. Read/write it in its `readers.py` / `writers.py` (late-binding rule: closures
    bind loop state via DEFAULT ARGUMENTS only).
-3. Unit tests (`tests/unit/framework/`), `make schema`, and document the
-   field + matrix row in `docs/FRAMEWORK.md` — same commit (AGENTS.md
-   maintenance protocol; these are protected files).
+3. Add unit tests (`tests/unit/framework/`), regenerate its schemas, and document
+   the field + matrix row in its `docs/FRAMEWORK.md` — same commit. Then cut a
+   release tag and, here, bump the pin (`pyproject.toml` `[tool.uv.sources]` +
+   `var.datalab_version`) + `make publish-wheel`.
 
 ## Done check
 
