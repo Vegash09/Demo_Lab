@@ -39,12 +39,12 @@ Bundle).
   it has zero domain code and lifts into any project untouched. Domain code is
   declared to the framework via `domain.yml`'s `imports:` list — never by editing
   the framework (which lives in its own repo).
-- **examples/ holds the reference domains**: `examples/customer_sales/` is a
+- **projects/ holds the reference domains**: `projects/customer_sales/` is a
   complete worked adoption (config + domain package + edge jobs + notebook +
   resources + tests + ABAC SQL) laid out to MIRROR an adopter repo root —
   copy it to start a real domain (`docs/GETTING_STARTED.md`). The bundle
   deploys it, so it doubles as the framework's integration test; the framework
-  does not depend on it. A second domain, `examples/sales/`, is a
+  does not depend on it. A second domain, `projects/sales/`, is a
   pipeline-only adoption — silver (AUTO CDC SCD1 + dqx) + gold MVs over
   pre-existing `sales.bronze.*` tables, no edge jobs/notebooks — and deploys
   from the same bundle.
@@ -60,7 +60,7 @@ Bundle).
 - **Three authoring lanes**: SDP pipelines (all medallion tables), python-file
   job tasks (headless side-effectful edge work) and notebook job tasks
   (human-gated runs). Route with the 3-question router in "Authoring rules".
-- **Deploy**: `databricks.yml` + `examples/*/resources/*.yml` (adopters:
+- **Deploy**: `databricks.yml` + `projects/*/resources/*.yml` (adopters:
   root-level `resources/*.yml`), deployed via GitHub OIDC CI/CD to targets
   `dev` / `stage` / `prod`.
 - **Dependencies**: `uv` end to end (`pyproject.toml` + committed `uv.lock`).
@@ -70,7 +70,7 @@ Bundle).
 
 ```
 Developer ──push/PR──▶ GitHub Actions ──OIDC──▶ Declarative Automation Bundle
-                       ci-cd-{dev,stage,prod}    (databricks.yml + examples/*/resources/*.yml)
+                       ci-cd-{dev,stage,prod}    (databricks.yml + projects/*/resources/*.yml)
                        common-ci / common-cd                │ deploys
                                                             ▼
                   ┌──────────── Lakeflow SDP pipeline: customer_sales_etl ──────────┐
@@ -102,8 +102,8 @@ rbac.yml                  Workspace-resource RBAC: group + permission-level stri
  It is consumed here as a git dependency (local dev/CI, pinned in pyproject.toml
  [tool.uv.sources] datalab) and a versioned UC-Volume wheel (serverless,
  var.datalab_wheel). It moved there WITH history; there is no src/ in this repo.)
-examples/                 REFERENCE domains — each named after its base UC catalog and mirroring
-                          an adopter repo root (examples/README.md, docs/NAMING.md)
+projects/                 REFERENCE domains — each named after its base UC catalog and mirroring
+                          an adopter repo root (projects/README.md, docs/NAMING.md)
   customer_sales/
     README.md             File-by-file tour of the complete worked example
     config/customer_sales/  domain.yml + ONE <schema>/<table>.yml artifact per target table
@@ -122,7 +122,7 @@ schemas/                  JSON schemas for editor validation of domain.yml and <
                           VENDORED from the datalab-framework repo (regenerate there + copy over; no make schema here)
 scripts/bootstrap_uc.py   One-time UC bootstrap per target: the SHARED datalab_artifacts catalog (framework.wheels Volume) + each domain catalog (customer_sales + sales) schemas/volumes/GRANTs (make bootstrap-uc)
 scripts/publish_wheel.py  Build the FRAMEWORK wheel FROM the pinned git dep + upload it ONCE to the SHARED datalab_artifacts framework.wheels UC Volume (make publish-wheel; CI runs it in deploy-dab before bundle deploy)
-pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.sources] (datalab → git tag) + [tool.uv.workspace]; root is package=false (builds nothing); each examples/<domain> is a workspace member building its own <catalog>_etl wheel
+pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.sources] (datalab → git tag) + [tool.uv.workspace]; root is package=false (builds nothing); each projects/<domain> is a workspace member building its own <catalog>_etl wheel
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
 .github/                  Workflows (ci-cd-*, common-*, pr-template-check) + composite actions
@@ -150,15 +150,15 @@ omnigent/                 Opt-in, dev-time pilot: an Omnigent agent spec (datala
 ```
 
 Adopter repos use the same shape with the domain at the ROOT instead of under
-examples/: `config/<catalog>/`, `src/<catalog>_etl/`, `src/jobs/<catalog>/`,
-`notebooks/<catalog>/`, `resources/*.yml` (see `examples/README.md`; naming
+projects/: `config/<catalog>/`, `src/<catalog>_etl/`, `src/jobs/<catalog>/`,
+`notebooks/<catalog>/`, `resources/*.yml` (see `projects/README.md`; naming
 contract: `docs/NAMING.md`).
 
 ## Local development
 
 ```bash
 make install          # uv sync → .venv from uv.lock (incl. the datalab git dep)
-make lint             # ruff check scripts and examples
+make lint             # ruff check scripts and projects
 make test             # pytest (the example domain suites; needs Java 17+)
 make validate-configs # validate every domain's artifacts (pydantic + dqx)
 make validate         # databricks bundle validate -t dev
@@ -273,7 +273,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `datalab.params.cli_params(argv, names)` (snake_case names ↔ kebab-case
   flags), `SparkSession.builder.getOrCreate()`, explicit `main()` +
   `if __name__ == "__main__":` — see
-  `examples/customer_sales/src/jobs/customer_sales/export_customer_summary.py`.
+  `projects/customer_sales/src/jobs/customer_sales/export_customer_summary.py`.
 - Wire as `spark_python_task` in a `*.job.yml` resource with job
   `parameters:` defaulted from bundle variables; the task `parameters:` list
   maps them to flags via `{{job.parameters.<name>}}`.
@@ -293,7 +293,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
 - Source-format `.py` notebooks (`# Databricks notebook source`). Widgets are
   named identically to the job parameters and resolved via
   `datalab.params.notebook_params(dbutils, names)` — see
-  `examples/customer_sales/notebooks/customer_sales/quarantine_report.py`.
+  `projects/customer_sales/notebooks/customer_sales/quarantine_report.py`.
 - Wire as `notebook_task` with `base_parameters:` mapping
   `{{job.parameters.<name>}}`; **no trigger** — this lane is human-gated by
   definition, run via `databricks bundle run <job> -t dev`.
@@ -464,7 +464,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   constrained by the single-writer invariant (never write SDP-owned tables).
   Don't block legitimate `.write` calls there in review.
 - **Job environments share the pipeline's dependency mechanism and gotcha.**
-  The edge-job resources (`examples/customer_sales/resources/customer_sales_*.job.yml`) install
+  The edge-job resources (`projects/customer_sales/resources/customer_sales_*.job.yml`) install
   the framework wheel from the shared datalab_artifacts UC Volume (`${var.datalab_wheel}`)
   plus the `customer_sales_etl` wheel (`../../../dist/customer_sales_etl-*.whl`) into
   serverless job environments — same as pipelines, and for the same reason
@@ -501,7 +501,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   name or level back into the complex defaults.
 - **ABAC SQL is display-only.** Nothing in this repo (CI, agents, scripts)
   executes the `sql/abac/*.sql` files (in this repo:
-  `examples/customer_sales/sql/abac/`); an admin reviews and applies them manually.
+  `projects/customer_sales/sql/abac/`); an admin reviews and applies them manually.
   Keep it that way — auto-applying access policies from a code repo is the
   failure mode the convention exists to prevent.
 - **Databricks MCP is read-only grounding, never a write path.** The opt-in
@@ -564,10 +564,10 @@ change:
 
 | Path (regex) | Why it's protected |
 |---|---|
-| `^databricks\.yml$`, `^rbac\.yml$`, `^(variables\|targets)/.*\.ya?ml$`, `^(resources\|examples/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle + variables/targets + RBAC (deploy surface) |
+| `^databricks\.yml$`, `^rbac\.yml$`, `^(variables\|targets)/.*\.ya?ml$`, `^(resources\|projects/[^/]+/resources)/.*\.yml$` | Declarative Automation Bundle + variables/targets + RBAC (deploy surface) |
 | `^pyproject\.toml$`, `^uv\.lock$` | dependency manifests (uv-managed, CI `--frozen`) |
 | `^\.databricksignore$` | `databricks sync` / IDE-extension exclusions (bundle deploy excludes via `sync.exclude` in databricks.yml) |
-| `^(config\|examples/[^/]+/config)/.*\.ya?ml$` | dataset configs — the deployed pipeline definition |
+| `^(config\|projects/[^/]+/config)/.*\.ya?ml$` | dataset configs — the deployed pipeline definition |
 | `^\.github/(workflows\|actions)/.*` | CI/CD (OIDC, bundle deploy) |
 | `^\.github/pull_request_template\.md$` | unified PR template |
 | `^\.claude/(settings\.json\|hooks/.*\|skills/.*)` | Claude agent harness (hooks, settings, + the generated `.claude/skills` copy) |
@@ -595,7 +595,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
 
 - **Add a table to an existing pipeline**: create ONE artifact
   `config/<catalog>/<schema>/<table>.yml` (file name == table name; in this
-  repo: `examples/customer_sales/config/customer_sales/...`) with the columns/types/DQ rules —
+  repo: `projects/customer_sales/config/customer_sales/...`) with the columns/types/DQ rules —
   follow the `author-ldp-artifact` skill; if new logic is needed, add a pure
   `@transform`-registered function in `src/<catalog>_etl/transforms/` with a
   unit test (and the module in `domain.yml` `imports:`).
@@ -605,7 +605,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   never a job write. Names are checkpoint identities; the flow re-runs on
   full refresh by design. See "Backfills" in the framework repo's FRAMEWORK.md.
 - **Add a new domain pipeline** (e.g. finance): follow
-  `docs/GETTING_STARTED.md` end to end — copy the `examples/customer_sales/` shape
+  `docs/GETTING_STARTED.md` end to end — copy the `projects/customer_sales/` shape
   (config + `src/<catalog>_etl` + resources + `pyproject.toml`), register the
   domain as a `[tool.uv.workspace]` member (it builds its own `<catalog>_etl`
   wheel), point `datalab.config_dir` at the new config dir, and list
@@ -622,7 +622,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
 - **Add a python-file task**: run the 3-question router first. Entry point in
   `src/jobs/<domain>/` (argparse via `datalab.params.cli_params`, pure logic
   in the domain package `src/<catalog>_etl` with a unit test), copy the `customer_sales_export` job shape from
-  `examples/customer_sales/resources/customer_sales_export.job.yml` (parameters from bundle
+  `projects/customer_sales/resources/customer_sales_export.job.yml` (parameters from bundle
   variables, `environments` block, `permissions: ${var.job_permissions}`).
   `make lint test validate`.
 - **Add a notebook task**: router first — only if a human must read the run.

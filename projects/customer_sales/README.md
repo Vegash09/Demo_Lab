@@ -7,7 +7,7 @@ an adopter repo root and follows the repo's naming contract — **folder paths
 mirror the Unity Catalog namespace** (`customer_sales` is the base catalog;
 config subfolders are the schemas; see [docs/NAMING.md](../../docs/NAMING.md)).
 Copy its contents to your repo and rename every `customer_sales` token to your
-catalog (see [examples/README.md](../README.md) for the mapping table, and
+catalog (see [projects/README.md](../README.md) for the mapping table, and
 [docs/GETTING_STARTED.md](../../docs/GETTING_STARTED.md) for the
 step-by-step).
 
@@ -73,4 +73,4 @@ databricks bundle run customer_sales_quarantine_report -t dev   # notebook lane
 To verify a single dataset without deploying, call
 `datalab.framework.run_dataset(...)` in a test or notebook/REPL (or
 `make validate-connect` against a live cluster) with
-`config_dir = examples/customer_sales/config/customer_sales`.
+`config_dir = projects/customer_sales/config/customer_sales`.

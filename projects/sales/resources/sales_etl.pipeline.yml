@@ -1,7 +1,7 @@
 # Lakeflow Spark Declarative Pipeline for the sales domain (bronze→silver→gold).
-# Source code: examples/sales/src/sales_etl/transformations/*.py
+# Source code: projects/sales/src/sales_etl/transformations/*.py
 # (pyspark.pipelines). Paths below are relative to THIS file, so the whole
-# examples/sales/ tree can be copied to an adopter repo root (where resources/
+# projects/sales/ tree can be copied to an adopter repo root (where resources/
 # sits beside src/) as is.
 #
 # The five bronze tables (sales.bronze.*) are ingested upstream; this pipeline
@@ -45,6 +45,6 @@ resources:
         # Where the framework finds this domain's layer YAMLs (config-driven
         # pipeline — see docs/FRAMEWORK.md). Deployed workspace files; in an
         # adopter repo this would be ${workspace.file_path}/config/<catalog>.
-        datalab.config_dir: ${workspace.file_path}/examples/sales/config/sales
+        datalab.config_dir: ${workspace.file_path}/projects/sales/config/sales
 
       permissions: ${var.pipeline_permissions}

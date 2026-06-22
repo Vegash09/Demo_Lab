@@ -20,7 +20,7 @@ The datasets themselves are declared in the artifacts under
 referenced from there via the `imports:` list and transform registry names —
 see the framework repo's [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)).
 The full tour of the example lives in
-`examples/customer_sales/README.md`.
+`projects/customer_sales/README.md`.
 
 Conventions:
 

@@ -10,7 +10,7 @@ resolution-markers = [
 [manifest]
 members = [
     "customer-sales-etl",
-    "datalab-examples",
+    "datalab-projects",
     "sales-etl",
 ]
 
@@ -159,7 +159,7 @@ wheels = [
 [[package]]
 name = "customer-sales-etl"
 version = "0.3.0"
-source = { editable = "examples/customer_sales" }
+source = { editable = "projects/customer_sales" }
 
 [[package]]
 name = "databricks-labs-blueprint"
@@ -213,7 +213,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "datalab-examples"
+name = "datalab-projects"
 version = "0.3.0"
 source = { virtual = "." }
 
@@ -232,13 +232,13 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "customer-sales-etl", editable = "examples/customer_sales" },
+    { name = "customer-sales-etl", editable = "projects/customer_sales" },
     { name = "datalab", git = "https://github.com/dediggibyte/datalab-framework.git?tag=v0.3.0" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "pyspark", extras = ["pipelines"], specifier = ">=4.1.0" },
     { name = "pytest", specifier = ">=8.4" },
     { name = "ruff", specifier = ">=0.14" },
-    { name = "sales-etl", editable = "examples/sales" },
+    { name = "sales-etl", editable = "projects/sales" },
 ]
 
 [[package]]
@@ -712,7 +712,7 @@ wheels = [
 [[package]]
 name = "sales-etl"
 version = "0.3.0"
-source = { editable = "examples/sales" }
+source = { editable = "projects/sales" }
 
 [[package]]
 name = "six"

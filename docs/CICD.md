@@ -45,10 +45,10 @@ flowchart LR
 Reusable pieces:
 
 - `common-ci-steps.yml` — `uv sync --frozen` → `ruff check` (same paths as
-  `make lint`, examples/ included) → config validation
+  `make lint`, projects/ included) → config validation
   (`python -m datalab.framework`, the `make validate-configs` loader) →
-  `pytest` (local Spark, Java 21; runs the framework suite AND the examples'
-  suites) → `databricks bundle validate -t <target>` (OIDC).
+  `pytest` (local Spark, Java 21; runs each project's suite) →
+  `databricks bundle validate -t <target>` (OIDC).
 - `common-cd-steps.yml` — OIDC setup → `deploy-dab` composite action
   (validate + deploy with optional `--var` overrides). **dev passes
   `auto-approve: true`** so CI can apply destructive changes (e.g. deleting a

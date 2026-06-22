@@ -7,7 +7,7 @@ description: Deploy or troubleshoot the datalab Declarative Automation Bundle (d
 
 The repo ships as a **Declarative Automation Bundle** (formerly Databricks
 Asset Bundle): `databricks.yml` (variables + targets `dev`/`stage`/`prod`) +
-per-domain resource files — in this repo `examples/*/resources/*.yml`
+per-domain resource files — in this repo `projects/*/resources/*.yml`
 (adopter repos: root-level `resources/*.yml`); one SDP pipeline + its
 refresh job per domain. CI/CD deploys via GitHub OIDC; local deploys use
 your CLI auth.

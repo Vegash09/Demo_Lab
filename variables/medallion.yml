@@ -19,7 +19,7 @@ variables:
   gold_schema:
     description: Schema for business-level aggregates.
     default: gold
-  # --- sales domain (examples/sales) — bronze tables pre-exist; SDP owns silver+gold ---
+  # --- sales domain (projects/sales) — bronze tables pre-exist; SDP owns silver+gold ---
   sales_catalog:
     description: Unity Catalog catalog for the `sales` domain medallion.
     default: sales

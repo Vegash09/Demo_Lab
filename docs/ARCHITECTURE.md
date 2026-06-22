@@ -20,7 +20,7 @@ flowchart LR
     end
 
     subgraph WS["Databricks workspace"]
-        CD --> DAB["Declarative Automation Bundle<br/>databricks.yml + examples/*/resources/*.yml"]
+        CD --> DAB["Declarative Automation Bundle<br/>databricks.yml + projects/*/resources/*.yml"]
         DAB --> PL["Lakeflow SDP pipeline: customer_sales_etl<br/>(serverless, environment_version 4)"]
         DAB --> JOB["job: customer_sales_etl_refresh<br/>daily pipeline_task · paused in dev"]
         DAB --> EXP["job: customer_sales_export<br/>weekly spark_python_task"]
@@ -69,8 +69,8 @@ Jobs work the lakehouse edges and only *read* pipeline-owned tables:
 ```mermaid
 flowchart LR
     PL["SDP pipeline customer_sales_etl<br/>bronze → silver → gold<br/>(owns every medallion table)"]
-    PL -->|read-only| EXP["customer_sales_export · python-file lane<br/>examples/customer_sales/src/jobs/customer_sales/export_customer_summary.py<br/>→ /Volumes/&lt;catalog&gt;/exports/sales/ (CSV)"]
-    PL -->|read-only| QR["customer_sales_quarantine_report · notebook lane<br/>examples/customer_sales/notebooks/customer_sales/quarantine_report.py<br/>→ owns customers_quarantine_report"]
+    PL -->|read-only| EXP["customer_sales_export · python-file lane<br/>projects/customer_sales/src/jobs/customer_sales/export_customer_summary.py<br/>→ /Volumes/&lt;catalog&gt;/exports/sales/ (CSV)"]
+    PL -->|read-only| QR["customer_sales_quarantine_report · notebook lane<br/>projects/customer_sales/notebooks/customer_sales/quarantine_report.py<br/>→ owns customers_quarantine_report"]
     QR -.->|"repaired rows re-enter<br/>via landing"| PL
 ```
 
@@ -86,7 +86,7 @@ Routing is the 3-question router (AGENTS.md, "Authoring rules"):
 
 ```mermaid
 flowchart LR
-    YML[["examples/customer_sales/config/customer_sales/*.yml<br/>Pydantic-validated artifacts<br/>(datasets + dqx rules)"]] -.->|"datalab.framework.generate"| BR
+    YML[["projects/customer_sales/config/customer_sales/*.yml<br/>Pydantic-validated artifacts<br/>(datasets + dqx rules)"]] -.->|"datalab.framework.generate"| BR
     LAND[("UC volume<br/>landing/sales/customers")] -->|"Auto Loader cloudFiles"| BR["bronze.customers_raw<br/>streaming_table + lineage cols"]
     BR --> IN["customers__input<br/>temporary view<br/>(rename + try_cast + customer_sales.normalize_email)"]
     IN -->|"dqx inline · get_valid"| VAL["customers__valid<br/>apply_checks_by_metadata + get_valid"]
@@ -108,7 +108,7 @@ the framework repo's [FRAMEWORK.md](https://github.com/dediggibyte/datalab-frame
 flowchart TD
     FW["datalab framework — EXTERNAL dependency<br/>(dediggibyte/datalab-framework: git dep + UC-Volume wheel)<br/>models · adapters · generator · devtools · param helpers"]
     subgraph REPO["this repo — reference domains + deploy bundle"]
-        subgraph DOMAIN["examples/&lt;domain&gt;/ — reference domain (adopters: repo root)"]
+        subgraph DOMAIN["projects/&lt;domain&gt;/ — reference domain (adopters: repo root)"]
             CFG["config/&lt;domain&gt;/<br/>domain.yml + &lt;layer&gt;/&lt;table&gt;.yml"]
             DOM["src/&lt;domain&gt;_etl/<br/>pure @transform fns · custom dqx checks ·<br/>3-line pipeline entrypoint"]
             JOBS["src/jobs/ + notebooks/<br/>edge lanes"]
@@ -128,8 +128,8 @@ Layer rules, deliberately separated:
    (serverless, `${var.datalab_wheel}` — never `--editable`). Models, adapters,
    generator, devtools, param helpers; never contains domain code or hardcoded
    domain module paths. Its unit tests live in that repo.
-2. **`examples/<domain>/`** — complete reference domains, each mirroring an
-   adopter repo root (`examples/README.md` has the mapping table): the YAML
+2. **`projects/<domain>/`** — complete reference domains, each mirroring an
+   adopter repo root (`projects/README.md` has the mapping table): the YAML
    artifacts (`config/<domain>/`), the domain package (`src/<domain>_etl/`),
    the edge-lane entry points (`src/jobs/<domain>/`, `notebooks/<domain>/`),
    the domain's bundle `resources/` (relative paths, so the folder
@@ -184,7 +184,7 @@ flowchart TD
   build rights; bronze/landing stay engineer-only.
 - **Layer 3** is row/column-level policy: column masks and row filters under
   the domain's `sql/abac/` folder (this repo:
-  `examples/customer_sales/sql/abac/`). Display-only by convention — agents and CI
+  `projects/customer_sales/sql/abac/`). Display-only by convention — agents and CI
   never execute them; an admin reviews and applies. SDP does offer a
   pipeline-level `row_filter`/column-mask surface (Public Preview); this
   repo deliberately does not use it — access policy stays admin-applied,
@@ -192,7 +192,7 @@ flowchart TD
   `CREATE FUNCTION ... RETURN`, `ALTER TABLE ... SET MASK / SET ROW FILTER`,
   `is_account_group_member()`, `current_user()`. Re-runnable, function
   before ALTER, named `dl_mask_<purpose>` / `dl_rf_<purpose>`. Worked
-  example: `examples/customer_sales/sql/abac/mask_customer_email.sql`.
+  example: `projects/customer_sales/sql/abac/mask_customer_email.sql`.
 
 Group creation stays account/workspace-level (`databricks groups create`) —
 nothing in this repo creates principals.

@@ -11,11 +11,11 @@
 # (the Volume wheel) must reference the same framework release.
 #
 # This root is NOT a built package — it is the uv workspace + dev-env definition.
-# The reference domains under examples/ are workspace MEMBERS, each building its own
+# The reference domains under projects/ are workspace MEMBERS, each building its own
 # `<catalog>_etl` wheel via the bundle's `artifacts:`.
 
 [project]
-name            = "datalab-examples"
+name            = "datalab-projects"
 version         = "0.3.0"
 description     = "datalab reference domains + deploy bundle (consumes the datalab framework as a dependency)."
 requires-python = ">=3.12,<3.14"
@@ -42,7 +42,7 @@ dev = [
 [tool.pytest.ini_options]
 # Framework unit tests live in the datalab-framework repo; here we run each
 # reference domain's own tests (transforms + end-to-end contract).
-testpaths = ["examples"]
+testpaths = ["projects"]
 addopts   = "-ra --tb=short"
 
 [tool.ruff]
@@ -59,17 +59,17 @@ known-first-party = ["datalab", "customer_sales_etl", "sales_etl"]
 [tool.ruff.lint.per-file-ignores]
 # `spark` is injected by the SDP runtime in the pipeline entrypoint; notebooks
 # additionally get ambient dbutils/display (F821) + cell imports (E402).
-"examples/*/src/*/transformations/**" = ["F821"]
-"examples/*/notebooks/**" = ["F821", "E402"]
+"projects/*/src/*/transformations/**" = ["F821"]
+"projects/*/notebooks/**" = ["F821", "E402"]
 
 [tool.uv]
 managed = true
 package = false   # workspace + dev-env root, not a built package
 
-# uv workspace: each reference domain under examples/ is a member building a
+# uv workspace: each reference domain under projects/ is a member building a
 # separate `<catalog>_etl` wheel; `datalab` comes from the framework repo (git).
 [tool.uv.workspace]
-members = ["examples/customer_sales", "examples/sales"]
+members = ["projects/customer_sales", "projects/sales"]
 
 [tool.uv.sources]
 datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v0.3.0" }
