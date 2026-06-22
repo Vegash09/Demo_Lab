@@ -60,6 +60,28 @@ Reusable pieces:
   `~/.databrickscfg` with `auth_type = github-oidc`),
   `.github/actions/deploy-dab`.
 
+## Private framework dependency (git auth)
+
+`pyproject.toml` pins `datalab` to the **private** `dediggibyte/datalab-framework`
+repo (`[tool.uv.sources]`, a `git+https://…@<tag>` URL). Both CI (`uv sync
+--frozen`) and CD (the `deploy-dab` publish step builds the framework wheel from
+that git dep, and `bundle deploy` resolves it) must clone it — and the built-in
+`GITHUB_TOKEN` is scoped to THIS repo only, so it cannot.
+
+Add a **repo- or org-level** Actions secret **`DATALAB_FRAMEWORK_TOKEN`** with read
+access to `datalab-framework`:
+
+- a **fine-grained PAT** with `Contents: Read-only` on
+  `dediggibyte/datalab-framework` (or a classic PAT with `repo` scope), or a
+  deploy key;
+- it must be **repo or org** scoped, **not** a per-environment secret — the CI
+  `lint + test` job declares no `environment:`, so it only sees repo/org secrets.
+
+The "Auth for the private datalab-framework git dependency" step in
+`common-ci-steps.yml` / `common-cd-steps.yml` configures git to use it
+(`git config url."https://x-access-token:<token>@github.com/".insteadOf …`) and
+fails fast with this exact remediation when the secret is missing.
+
 ## OIDC trust chain
 
 ```mermaid

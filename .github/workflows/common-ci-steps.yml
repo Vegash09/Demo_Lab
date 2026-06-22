@@ -39,9 +39,16 @@ jobs:
         # pyproject pins `datalab @ git+https://.../datalab-framework@vX.Y.Z`; uv
         # resolves it via git, which needs read access to that PRIVATE repo. The
         # built-in GITHUB_TOKEN is scoped to THIS repo only — add a repo/org secret
-        # DATALAB_FRAMEWORK_TOKEN (a fine-grained PAT with read access, or a deploy
-        # key) for git to use on github.com.
-        run: git config --global url."https://x-access-token:${{ secrets.DATALAB_FRAMEWORK_TOKEN }}@github.com/".insteadOf "https://github.com/"
+        # DATALAB_FRAMEWORK_TOKEN (a fine-grained PAT with Contents:Read on
+        # datalab-framework, or a deploy key). See docs/CICD.md.
+        env:
+          FW_TOKEN: ${{ secrets.DATALAB_FRAMEWORK_TOKEN }}
+        run: |
+          if [ -z "$FW_TOKEN" ]; then
+            echo "::error title=Missing DATALAB_FRAMEWORK_TOKEN::uv must clone the PRIVATE dediggibyte/datalab-framework repo to resolve the 'datalab' dependency, but the DATALAB_FRAMEWORK_TOKEN Actions secret is not set. Add it as a REPO or ORG secret (a fine-grained PAT with Contents:Read on datalab-framework, or a deploy key) — see docs/CICD.md."
+            exit 1
+          fi
+          git config --global url."https://x-access-token:${FW_TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - name: Sync dependencies (frozen — fails fast if uv.lock drifted)
         run: uv sync --frozen
