@@ -36,19 +36,23 @@ jobs:
           java-version: "21"
 
       - name: Auth for the private datalab-framework git dependency
-        # pyproject pins `datalab @ git+https://.../datalab-framework@vX.Y.Z`; uv
-        # resolves it via git, which needs read access to that PRIVATE repo. The
-        # built-in GITHUB_TOKEN is scoped to THIS repo only — add a repo/org secret
-        # DATALAB_FRAMEWORK_TOKEN (a fine-grained PAT with Contents:Read on
-        # datalab-framework, or a deploy key). See docs/CICD.md.
+        # uv resolves `datalab` from the PRIVATE dediggibyte/datalab-framework repo.
+        # We use a read-only SSH DEPLOY KEY — no PAT to rotate, scoped to that one
+        # repo: load it, then rewrite just that repo's https URL to ssh so uv's git
+        # clone authenticates with the key. See docs/CICD.md.
         env:
-          FW_TOKEN: ${{ secrets.DATALAB_FRAMEWORK_TOKEN }}
+          DEPLOY_KEY: ${{ secrets.DATALAB_FRAMEWORK_DEPLOY_KEY }}
         run: |
-          if [ -z "$FW_TOKEN" ]; then
-            echo "::error title=Missing DATALAB_FRAMEWORK_TOKEN::uv must clone the PRIVATE dediggibyte/datalab-framework repo to resolve the 'datalab' dependency, but the DATALAB_FRAMEWORK_TOKEN Actions secret is not set. Add it as a REPO or ORG secret (a fine-grained PAT with Contents:Read on datalab-framework, or a deploy key) — see docs/CICD.md."
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error title=Missing DATALAB_FRAMEWORK_DEPLOY_KEY::uv must clone the PRIVATE dediggibyte/datalab-framework repo to resolve 'datalab', but the DATALAB_FRAMEWORK_DEPLOY_KEY secret (the read-only deploy key's private half) is not set. See docs/CICD.md."
             exit 1
           fi
-          git config --global url."https://x-access-token:${FW_TOKEN}@github.com/".insteadOf "https://github.com/"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/datalab_framework
+          chmod 600 ~/.ssh/datalab_framework
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host github.com\n  IdentityFile ~/.ssh/datalab_framework\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+          git config --global url."git@github.com:dediggibyte/datalab-framework".insteadOf "https://github.com/dediggibyte/datalab-framework"
 
       - name: Sync dependencies (frozen — fails fast if uv.lock drifted)
         run: uv sync --frozen
