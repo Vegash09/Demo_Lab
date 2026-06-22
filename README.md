@@ -8,15 +8,20 @@
 [![CI/CD Dev](https://github.com/dediggibyte/datalab/actions/workflows/ci-cd-dev.yml/badge.svg?branch=main)](https://github.com/dediggibyte/datalab/actions/workflows/ci-cd-dev.yml)
 [![Docs](https://img.shields.io/badge/docs-getting%20started-blue.svg)](docs/GETTING_STARTED.md)
 
-**Config-driven Lakeflow framework for the medallion lakehouse.** Every
-target table is ONE YAML artifact — authored by a human or a coding agent,
-validated by Pydantic, generated into **Lakeflow Spark Declarative Pipelines**
-(`pyspark.pipelines`), quality-checked end to end with
-[databrickslabs/dqx](https://databrickslabs.github.io/dqx/), and deployed to
-Databricks as a **Declarative Automation Bundle** with GitHub-OIDC CI/CD.
+**Reference domains + deploy bundle for the config-driven [datalab
+framework](https://github.com/dediggibyte/datalab-framework).** The reusable
+framework lives in its **own repo**; THIS repo is the worked adoption — every
+target table is ONE YAML artifact, validated by Pydantic, generated into
+**Lakeflow Spark Declarative Pipelines** (`pyspark.pipelines`), quality-checked
+end to end with [databrickslabs/dqx](https://databrickslabs.github.io/dqx/), and
+deployed to Databricks as a **Declarative Automation Bundle** with GitHub-OIDC
+CI/CD. The framework is consumed as a **git dependency** (local/CI) and a
+versioned **UC-Volume wheel** (serverless) this repo builds + publishes on deploy.
 
 > AI coding agents and humans: the document of record is **[AGENTS.md](AGENTS.md)**.
-> Read it before editing.
+> Read it before editing. New here? **[docs/ADOPTING.md](docs/ADOPTING.md)** wires
+> your repo to the framework; **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**
+> authors your first table.
 
 ## Architecture at a glance
 
@@ -26,7 +31,7 @@ flowchart LR
         NL["natural-language request"] -->|"agent skill:<br/>author-ldp-artifact"| YML["config/&lt;domain&gt;/&lt;layer&gt;/&lt;table&gt;.yml<br/>ONE artifact per target table"]
     end
 
-    subgraph FW["Framework — src/datalab/"]
+    subgraph FW["Framework — external dependency<br/>(dediggibyte/datalab-framework)"]
         YML -->|Pydantic validation| GEN["datalab.framework.generate()"]
         GEN --> GRAPH["generated LDP graph<br/>readers → columns → transforms → dqx → writers"]
     end
@@ -63,8 +68,9 @@ Three invariants hold everywhere:
 
 ```mermaid
 flowchart TD
-    README["README.md<br/>(you are here)"] --> GS["docs/GETTING_STARTED.md<br/>empty folder → deployed pipeline,<br/>no framework-team help needed"]
-    README --> FWK["docs/FRAMEWORK.md<br/>flowspec reference: artifact anatomy ·<br/>target kinds · dqx semantics · capability matrix"]
+    README["README.md<br/>(you are here)"] --> ADOPT["docs/ADOPTING.md<br/>wire your repo to the framework:<br/>git dep · UC-Volume wheel · bootstrap"]
+    README --> GS["docs/GETTING_STARTED.md<br/>author your first table:<br/>empty folder → deployed pipeline"]
+    README --> FWK["framework repo · docs/FRAMEWORK.md<br/>flowspec reference: artifact anatomy ·<br/>target kinds · dqx · capability matrix"]
     README --> NAM["docs/NAMING.md<br/>folder structure mirrors the UC namespace:<br/>catalog · schema · table"]
     README --> EX["examples/customer_sales/<br/>complete worked domain to copy"]
     README --> OVR["design/OVERVIEW.md<br/>customer-facing tour:<br/>driving medallion transformations"]
@@ -76,8 +82,9 @@ flowchart TD
 
 | Doc | Read it when |
 |---|---|
-| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | you are building a pipeline on the framework — empty folder → deployed pipeline, no framework-team help needed |
-| [docs/FRAMEWORK.md](docs/FRAMEWORK.md) | you are adding a table or domain: artifact schema, generated graph, target kinds, data-quality semantics, the SDP capability matrix |
+| [docs/ADOPTING.md](docs/ADOPTING.md) | you are standing up your own repo on the framework: the two consumption paths (git dep + UC-Volume wheel), pinning + publishing the framework version, UC bootstrap, copying a reference domain |
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | you are authoring your first table on the framework — empty folder → deployed pipeline |
+| [framework repo: docs/FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) | you are adding a table or domain: artifact schema, generated graph, target kinds, data-quality semantics, the SDP capability matrix — the reusable framework's reference (separate repo) |
 | [docs/NAMING.md](docs/NAMING.md) | you are naming anything: folder paths mirror the UC namespace (catalog → schema → table), package/resource naming rules |
 | [examples/customer_sales/](examples/customer_sales/README.md) | you want a finished example to copy — complete worked domain, mirrors an adopter repo |
 | [design/OVERVIEW.md](design/OVERVIEW.md) | you want the customer-facing tour — how datalab drives transformations across bronze → silver → gold, with the architecture diagrams (shareable standalone: `design/datalab-customer-overview.html`) |

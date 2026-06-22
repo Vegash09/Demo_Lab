@@ -12,7 +12,7 @@ TARGET ?= dev
 
 .DEFAULT_GOAL := help
 .PHONY: help install lock lint fmt test validate-configs validate \
-        deploy run destroy bootstrap-uc enable-githooks \
+        deploy run destroy publish-wheel bootstrap-uc enable-githooks \
         commit-protected clean sync-skills check-skills publish-genie-skills \
         spec-local dry-run-local run-local validate-connect design
 
@@ -96,10 +96,17 @@ run:  ## Trigger a refresh of the customer_sales_etl pipeline on $(TARGET)
 destroy:  ## Tear down everything the bundle deployed to $(TARGET) (asks first)
 	databricks bundle destroy -t $(TARGET)
 
-# The datalab FRAMEWORK wheel is built + published to the shared datalab_artifacts
-# UC Volume by the datalab-framework repo's release CI (tag vX.Y.Z), NOT here.
-# This repo only references the published wheel (var.datalab_wheel) + pins the
-# matching git tag in pyproject.toml. Bump both in lockstep when upgrading.
+# The datalab FRAMEWORK wheel is built HERE from the pinned git dependency
+# (pyproject.toml [tool.uv.sources].datalab) and uploaded to this target's shared
+# datalab_artifacts framework.wheels UC Volume — one upload serves every domain.
+# CI runs this in the deploy-dab action BEFORE `bundle deploy` (the version every
+# environment references via var.datalab_wheel must be on the Volume first). Bump
+# the git tag + var.datalab_version in lockstep when upgrading the framework.
+publish-wheel: install  ## Build the framework wheel from the pinned git dep + publish it to the shared artifacts Volume for $(TARGET) (APPLY=1 to upload)
+	$(UV) run --with databricks-sdk --with pip python scripts/publish_wheel.py \
+		--target $(TARGET) --build \
+		$(if $(APPLY),--apply,) \
+		$(if $(PROFILE),--profile $(PROFILE),)
 
 # ---- local OSS run (spark-pipelines, no Databricks) -------------------------
 # The `local` profile (datalab.framework.local) downgrades the medallion to a
@@ -129,18 +136,26 @@ run-local: spec-local  ## Materialize the medallion locally on sample data — s
 
 # ---- Databricks Connect validation (isolated, out-of-lock) ------------------
 # databricks-connect conflicts with the dev `pyspark` (both own the `pyspark`
-# namespace), so it NEVER enters .venv/uv.lock. This overlay installs it +
-# this project (whose [project].dependencies have no pyspark) into a throwaway
-# env. Pin DBCONNECT to your workspace's DBR/serverless version. Auth via the
-# Databricks SDK env (DATABRICKS_HOST + token/profile, DATABRICKS_CLUSTER_ID or
-# serverless). See docs/FRAMEWORK.md "Validate via Databricks Connect".
+# namespace), so it NEVER enters .venv/uv.lock. This `--no-project` overlay
+# installs databricks-connect + the framework (from the pinned git dep, which has
+# no pyspark) + the domain package (editable, no runtime deps) into a throwaway
+# env — the package-less root project can't supply them. Pin DBCONNECT to your
+# workspace's DBR/serverless version. Auth via the Databricks SDK env
+# (DATABRICKS_HOST + token/profile, DATABRICKS_CLUSTER_ID or serverless). See the
+# framework repo's docs/FRAMEWORK.md "Run anywhere".
 DBCONNECT      ?= databricks-connect
 CONNECT_CONFIG ?= examples/customer_sales/config/customer_sales
+CONNECT_DOMAIN ?= examples/customer_sales
 LAYER          ?= silver
 TABLE          ?= customers
+# The framework requirement, derived from pyproject's [tool.uv.sources].datalab so
+# there's no separate version pin to maintain (recursively expanded: the $(shell)
+# runs only when validate-connect references it).
+DATALAB_GIT_REQ = $(shell $(UV) run python -c 'import tomllib,pathlib;d=tomllib.loads(pathlib.Path("pyproject.toml").read_text())["tool"]["uv"]["sources"]["datalab"];print("datalab @ git+"+d["git"]+"@"+(d.get("tag") or d.get("rev") or d.get("branch")))')
 
 validate-connect:  ## Validate one dataset on a LIVE cluster via isolated Databricks Connect
-	$(UV) run --no-project --with-editable . --with "$(DBCONNECT)" \
+	$(UV) run --no-project \
+		--with "$(DATALAB_GIT_REQ)" --with-editable $(CONNECT_DOMAIN) --with "$(DBCONNECT)" \
 		python scripts/validate_connect.py \
 		--config-dir $(CONNECT_CONFIG) --layer $(LAYER) --table $(TABLE) $(CONNECT_ARGS)
 

@@ -60,6 +60,33 @@ Reusable pieces:
   `~/.databrickscfg` with `auth_type = github-oidc`),
   `.github/actions/deploy-dab`.
 
+## Private framework dependency (git auth)
+
+`pyproject.toml` pins `datalab` to the **private** `dediggibyte/datalab-framework`
+repo (`[tool.uv.sources]`, a `git+https://…@<tag>` URL). Both CI (`uv sync
+--frozen`) and CD (the `deploy-dab` publish step builds the framework wheel from
+that git dep, and `bundle deploy` resolves it) must clone it — and the built-in
+`GITHUB_TOKEN` is scoped to THIS repo only, so it cannot.
+
+This repo authenticates with a **read-only SSH deploy key** — no PAT to rotate,
+not tied to a person, scoped to exactly one repo:
+
+- the key's **public** half is a read-only **deploy key** on
+  `dediggibyte/datalab-framework` (Settings → Deploy keys);
+- the key's **private** half is the Actions secret **`DATALAB_FRAMEWORK_DEPLOY_KEY`**
+  on this repo. It must be **repo- or org-scoped**, **not** per-environment — the CI
+  `lint + test` job declares no `environment:`, so it only sees repo/org secrets.
+
+The "Auth for the private datalab-framework git dependency" step in
+`common-ci-steps.yml` / `common-cd-steps.yml` loads the key, adds `github.com` to
+`known_hosts`, and rewrites just that repo's URL to ssh
+(`git config url."git@github.com:dediggibyte/datalab-framework".insteadOf
+"https://github.com/dediggibyte/datalab-framework"`) so uv clones it over the key.
+It fails fast with an actionable error when the secret is missing.
+
+To rotate: generate a new keypair, then replace the deploy key on
+`datalab-framework` and the `DATALAB_FRAMEWORK_DEPLOY_KEY` secret here.
+
 ## OIDC trust chain
 
 ```mermaid

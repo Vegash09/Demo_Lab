@@ -1,11 +1,12 @@
 # examples/ — reference domains
 
-Everything under `src/` is the reusable framework; everything under
-`examples/` is **reference material**: complete, working domains that show
-how a team adopts the framework for bronze → silver → gold ETL. The bundle
-deploys them (they double as the framework's integration test), but nothing
-in the framework depends on them — delete this folder and `src/datalab`
-still lifts into any project untouched.
+The reusable framework lives in its **own repo**
+([dediggibyte/datalab-framework](https://github.com/dediggibyte/datalab-framework)),
+consumed here as a dependency; everything under `examples/` is **reference
+material**: complete, working domains that show how a team adopts the framework
+for bronze → silver → gold ETL. The bundle deploys them (they double as the
+framework's integration test), but the framework does not depend on them — it
+lifts into any project untouched.
 
 ```
 examples/
@@ -19,8 +20,8 @@ Each `examples/<catalog>/` folder is named after the **base Unity Catalog
 catalog** the domain stores its data in, and **mirrors an adopter repo root**
 — the full folder↔UC naming contract is [docs/NAMING.md](../docs/NAMING.md).
 The layout transfers 1:1: copy the folder's contents to your repo root (next
-to `databricks.yml`, `pyproject.toml` and `src/datalab`) and rename every
-`customer_sales` token to your catalog name:
+to `databricks.yml` and `pyproject.toml`) and rename every `customer_sales`
+token to your catalog name:
 
 | In `examples/customer_sales/` | In your repo | What it is |
 |---|---|---|
@@ -34,12 +35,13 @@ to `databricks.yml`, `pyproject.toml` and `src/datalab`) and rename every
 
 The two places an adopter wires a new domain up outside the copied folder:
 
-1. `pyproject.toml` → `[tool.hatch.build.targets.wheel]` packages gets the
-   domain package dir (so pipeline/job environments can import it).
+1. `pyproject.toml` → register the domain as a `[tool.uv.workspace]` member, so
+   it builds its own `<catalog>_etl` wheel for the pipeline/job environments.
 2. `databricks.yml` → the `include:` glob already picks up `resources/*.yml`
    (this repo additionally globs `examples/*/resources/*.yml` to deploy the
    reference domains themselves).
 
 Step-by-step: [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
-Authoring reference: [docs/FRAMEWORK.md](../docs/FRAMEWORK.md).
+Wire your repo to the framework: [docs/ADOPTING.md](../docs/ADOPTING.md).
+Authoring reference: the framework repo's [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
 Naming convention: [docs/NAMING.md](../docs/NAMING.md).

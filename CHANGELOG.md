@@ -1,22 +1,45 @@
 # Changelog
 
-All notable changes to the **datalab framework** (`src/datalab`, the package
-published as the `datalab` wheel) are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to **this repo** — `datalab-examples`, the reference domains
++ deploy bundle that consumes the [datalab
+framework](https://github.com/dediggibyte/datalab-framework) — are documented
+here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Changes to the FRAMEWORK itself live in the framework repo's own CHANGELOG.
 
-**Scope.** This changelog tracks the FRAMEWORK's public API and distribution —
-the contracts adopters depend on (`datalab.config`, `datalab.params`,
-`datalab.framework`, the `@transform` / `@check_function` / `@snapshot_source`
-registries, the config models under `schemas/`, and the config `schema_version`).
-The reference domains under `examples/` are not separately released.
+**Scope.** This changelog tracks the bundle + reference domains and how they
+consume the framework — the pinned framework version, the deploy/publish flow,
+and the example domains under `examples/`.
 
-**Version is set in three places that MUST move in lockstep:**
-`pyproject.toml` `[project].version`, `src/datalab/__init__.py` `__version__`,
-and `variables/medallion.yml` `datalab_version` (the Volume wheel filename). Bump
-all three, then `make publish-wheel`.
+**Two version knobs.** This repo's own version is `pyproject.toml`
+`[project].version`. The FRAMEWORK version it pins lives in two places that MUST
+move in lockstep: the `datalab` git tag in `pyproject.toml` `[tool.uv.sources]`
+and `variables/medallion.yml` `datalab_version` (the Volume wheel filename) —
+bump both, then `make publish-wheel`.
 
 ## [Unreleased]
+
+### Changed
+- **Completed the framework split.** The reusable framework now lives in its own
+  repo, [`dediggibyte/datalab-framework`](https://github.com/dediggibyte/datalab-framework),
+  consumed here as a **git dependency** (local/CI, pinned in `pyproject.toml`
+  `[tool.uv.sources]`) + a **UC-Volume wheel** for serverless. This repo BUILDS
+  that wheel **from the pinned git dep** (`pip wheel "datalab @ git+…@<tag>"`) and
+  publishes it on every deploy — superseding 0.3.0's initial root `uv build`.
+  `src/datalab` and the framework `tests/` no longer live here.
+- Restored the CD publish path (`scripts/publish_wheel.py` + `make publish-wheel`,
+  now building from the git dep) and fixed `make validate-connect` (its overlay
+  installs the framework git dep + the editable domain, not the package-less root).
+
+### Added
+- **`docs/ADOPTING.md`** — how to stand up your own repo on the framework: the two
+  consumption paths, the version pin + lockstep, the wheel publish, UC bootstrap,
+  and copying a reference domain.
+
+### Docs
+- Reframed README / AGENTS / docs / examples as the **adopter-shaped reference
+  repo**; repointed the framework reference to the framework repo's
+  `docs/FRAMEWORK.md`.
 
 ## [0.3.0] — 2026-06-18
 
@@ -32,7 +55,7 @@ all three, then `make publish-wheel`.
   (`/Volumes/<datalab_artifacts_catalog>/framework/wheels/datalab-<ver>-py3-none-any.whl`)
   instead of the bundle-local `../../../dist/*.whl` — one upload for ALL domains,
   not a per-domain Volume. The bundle now builds only the example domain wheels.
-  See [docs/FRAMEWORK.md](docs/FRAMEWORK.md) "Distribution".
+  See the framework repo's [docs/FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) "Distribution".
 
 ### Added
 - `make publish-wheel` + `scripts/publish_wheel.py` — build and upload the

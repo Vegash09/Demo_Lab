@@ -50,7 +50,7 @@ hardcoded anywhere in this folder.
 | `src/customer_sales_etl/checks/__init__.py` | Custom dqx check example (`@check_function`) for rules the dqx catalog doesn't cover |
 | `src/jobs/customer_sales/export_customer_summary.py` | python-file lane: weekly headless CSV export of gold to the exports volume (reads pipeline tables READ-ONLY) |
 | `notebooks/customer_sales/quarantine_report.py` | notebook lane: on-demand, human-gated quarantine triage (no trigger by design) |
-| `resources/customer_sales_etl.pipeline.yml` | The SDP pipeline: serverless, `environment_version`, `configuration:` params, `--editable` install |
+| `resources/customer_sales_etl.pipeline.yml` | The SDP pipeline: serverless, `environment_version`, `configuration:` params, framework + domain wheel deps |
 | `resources/customer_sales_etl.job.yml` | Daily refresh job (`pipeline_task`; trigger paused automatically in dev) |
 | `resources/customer_sales_export.job.yml` | Weekly export job (`spark_python_task` + job parameters from bundle variables) |
 | `resources/customer_sales_quarantine_report.job.yml` | On-demand triage job (`notebook_task`, **no trigger**) |

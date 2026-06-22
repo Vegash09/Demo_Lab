@@ -1,7 +1,7 @@
 # GitHub Linguist overrides — keep the repository "Languages" bar reflecting the
 # Python framework. Linguist ranks languages by committed byte count, so the
 # single ~0.5 MB standalone HTML share under design/ was being counted as ~70%
-# of the repo even though src/datalab is 100% Python.
+# of the repo even though the actual code (domains + bundle) is Python.
 #
 # The design/ package is customer-facing DOCUMENTATION (draw.io diagram sources,
 # their PNG exports, OVERVIEW.md, and the generated datalab-customer-overview.html

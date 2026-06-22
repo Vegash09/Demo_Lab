@@ -9,7 +9,7 @@ Where things are explained in depth:
 
 | Question | Doc |
 |---|---|
-| What does every artifact field mean? | [FRAMEWORK.md](FRAMEWORK.md) — the reference |
+| What does every artifact field mean? | [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) — the reference |
 | What does a finished domain look like? | [examples/customer_sales/](../examples/customer_sales/README.md) — copy it |
 | How do I name folders/packages/resources? | [NAMING.md](NAMING.md) — folder paths mirror the UC namespace |
 | How do the pieces fit (lanes, governance)? | [ARCHITECTURE.md](ARCHITECTURE.md) |
@@ -36,7 +36,7 @@ author (Databricks MCP, opt-in) — see [AGENT_MCP.md](AGENT_MCP.md).
 - A **target table = one YAML artifact** at `config/<catalog>/<schema>/<table>.yml`
   — the path mirrors the UC namespace ([NAMING.md](NAMING.md)).
   You describe *what* (source, columns + types, quality rules, target kind);
-  the framework (`src/datalab`) generates all the Lakeflow SDP wiring.
+  the framework (an installed dependency) generates all the Lakeflow SDP wiring.
 - **Python is only for logic a mapping can't express** — pure functions
   registered with `@transform`, living in your domain package, never in the
   framework.
@@ -147,7 +147,7 @@ target:
 ```
 
 Every field, every source kind (files/kafka/fan-in `sources:`), backfills,
-snapshot CDC and sinks: [FRAMEWORK.md](FRAMEWORK.md).
+snapshot CDC and sinks: [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
 
 ## 4. Add python only where a mapping can't express it
 
@@ -198,16 +198,20 @@ dataset/flow the config will generate, locally.
    `resources/finance_etl.pipeline.yml`; rename the resource key and `name`,
    point `root_path`/`libraries` at `src/finance_etl`, and set
    `datalab.config_dir: ${workspace.file_path}/config/finance`. Keep
-   `serverless: true`, `environment_version`, and the
-   `--editable ${workspace.file_path}` dependency exactly as they are.
+   `serverless: true` and `environment_version`, and in
+   `environment.dependencies` keep `${var.datalab_wheel}` (the framework wheel
+   from the shared Volume) while renaming the domain wheel to
+   `../../../dist/finance_etl-*.whl` — serverless does **not** honor `--editable`.
 2. Copy `customer_sales_etl.job.yml` → `finance_etl.job.yml` (the scheduled refresh);
    point `pipeline_task.pipeline_id` at
    `${resources.pipelines.finance_etl.id}`.
 3. Add your variables (e.g. `finance_landing_path`) to `databricks.yml` and
    pass them through the pipeline's `configuration:` mapping.
-4. Add the domain package to `pyproject.toml` →
-   `[tool.hatch.build.targets.wheel] packages` (e.g. `"src/finance_etl"`),
-   then `make install`.
+4. Register the domain as a `[tool.uv.workspace]` member in the **root**
+   `pyproject.toml` (and `[tool.uv.sources] finance_etl = { workspace = true }`)
+   so it builds its own `finance_etl` wheel; then `make install`. The repo-level
+   wiring (framework pin, wheel publish, UC bootstrap) is in
+   [ADOPTING.md](ADOPTING.md).
 
 ```bash
 make validate            # databricks bundle validate -t dev
@@ -254,10 +258,10 @@ promote to stage/prod, and the head branch is deleted on merge
 
 | Symptom | Where to look |
 |---|---|
-| `make validate-configs` fails | The error names file + dotted field + fix; field reference in [FRAMEWORK.md](FRAMEWORK.md) |
+| `make validate-configs` fails | The error names file + dotted field + fix; field reference in [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) |
 | Unknown transform/check/snapshot function | Its module isn't in `domain.yml` `imports:`, or the package isn't in pyproject `packages` |
 | Stream fails on UPDATE/DELETE from a source table | Add `options: {skipChangeCommits: "true"}` — see FRAMEWORK.md gotchas |
 | `Missing pipeline configuration 'datalab.…'` | Add the key to the pipeline resource `configuration:` mapping |
 | `ModuleNotFoundError` on Databricks | `pyproject.toml`/source tree didn't ship (`.databricksignore`) or the env cached an old install — full restart |
 | Bundle validate/deploy errors | `deploy-databricks-bundle` skill troubleshooting table; [CICD.md](CICD.md) for OIDC |
-| Anything SDP the YAML can't express | The capability matrix in [FRAMEWORK.md](FRAMEWORK.md) — extend the framework, don't hand-wire |
+| Anything SDP the YAML can't express | The capability matrix in [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) — extend the framework, don't hand-wire |

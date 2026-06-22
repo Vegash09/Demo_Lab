@@ -10,5 +10,5 @@ This repo (`datalab`) is the reference **domains + deploy bundle**; it consumes 
 framework as a git dependency (local dev/CI) and a versioned UC-Volume wheel
 (serverless). See [AGENTS.md](../AGENTS.md) and [README.md](../README.md).
 
-> This stub keeps existing `docs/FRAMEWORK.md` links resolving during the split.
-> A follow-up doc pass will repoint the in-repo references to the framework repo.
+> This stub keeps existing `docs/FRAMEWORK.md` links resolving; in-repo references
+> now point directly at the framework repo's reference above.

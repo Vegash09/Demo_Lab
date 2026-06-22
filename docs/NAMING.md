@@ -81,9 +81,9 @@ Derived datasets follow the table they belong to: the quarantine table of
 
 `src/<catalog>_etl/` (here `src/customer_sales_etl/`) holds the domain's
 python: the 3-line pipeline entrypoint, pure `@transform` functions, custom
-dqx checks. The directory name is the import name (it's packaged by
-`[tool.hatch.build.targets.wheel]`), so imports and `domain.yml` `imports:`
-read as `customer_sales_etl.transforms.customers`.
+dqx checks. The directory name is the import name (it's packaged by the domain's
+own `pyproject.toml` `[tool.hatch.build.targets.wheel]`), so imports and
+`domain.yml` `imports:` read as `customer_sales_etl.transforms.customers`.
 
 Registry keys are prefixed with the catalog name:
 `@transform("customer_sales.normalize_email")` — making YAML references
@@ -126,8 +126,8 @@ volume named `sales`**, not the domain folder:
   paths. Rename them only if/when the volumes themselves are recreated under
   a new name.
 - `domain.yml`'s file name and the `layers:`/`domain:` model fields — that is
-  the framework contract (`src/datalab/framework/models.py`), shared by every
-  adopter; this page only constrains the *values* (e.g.
+  the framework contract (defined in the `datalab-framework` repo's models),
+  shared by every adopter; this page only constrains the *values* (e.g.
   `domain: customer_sales`).
 
 ## Renaming an existing domain (what it costs)
@@ -151,7 +151,7 @@ Starting a new domain (full walkthrough: `docs/GETTING_STARTED.md`):
    `config/finance/`, `src/finance_etl/`, `src/jobs/finance/`,
    `notebooks/finance/`, `resources/finance_*.yml`, registry keys
    `finance.*`, resources `finance_etl` / `finance_<purpose>`.
-3. Set `domain: finance` + `imports: [finance_etl...]` in `domain.yml`; add
-   `src/finance_etl` to `[tool.hatch.build.targets.wheel]` packages; point
-   `datalab.config_dir` at `.../config/finance`.
+3. Set `domain: finance` + `imports: [finance_etl...]` in `domain.yml`; register
+   `finance` as a `[tool.uv.workspace]` member (its own `pyproject.toml` packages
+   `src/finance_etl`); point `datalab.config_dir` at `.../config/finance`.
 4. `make validate-configs lint test validate` — the same gate CI runs.
