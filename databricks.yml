@@ -6,7 +6,7 @@
 #   variables/*.yml   variable declarations + defaults (medallion catalog/schemas/paths)
 #   targets/*.yml     one file per environment (dev/stage/prod): mode, host, per-env values
 #   rbac.yml          access-control variables + per-target permission overrides
-#   resources/*.yml + examples/*/resources/*.yml   pipelines & jobs
+#   resources/*.yml + projects/*/resources/*.yml   pipelines & jobs
 #
 # One-time prerequisite per target (catalog, schemas, volumes, UC grants —
 # kept out of the bundle lifecycle so `bundle destroy` never touches
@@ -49,19 +49,19 @@ include:
   - targets/*.yml
   - rbac.yml
   - resources/*.yml
-  - examples/*/resources/*.yml
+  - projects/*/resources/*.yml
 
 # Dev-only surfaces kept OUT of the deployed workspace files. A DAB
 # `bundle deploy` does NOT honor `.databricksignore` (that file is only for
 # `databricks sync` / the IDE extension) — `sync.exclude` is the
 # bundle-effective mechanism. Keep this list aligned with `.databricksignore`.
 # (gitignore-style globs, relative to the bundle root. Never exclude src/,
-# examples/*/{src,config,resources}, variables/, targets/, rbac.yml, pyproject —
+# projects/*/{src,config,resources}, variables/, targets/, rbac.yml, pyproject —
 # the deploy + the example pipelines need them.)
 sync:
   exclude:
     - tests
-    - examples/*/tests
+    - projects/*/tests
     - docs
     - design
     - .github

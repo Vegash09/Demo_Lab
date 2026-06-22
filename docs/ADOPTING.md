@@ -14,12 +14,12 @@ The reusable framework was split out of this repo. Two repos now collaborate:
 | Repo | What it is | You edit it to… |
 |---|---|---|
 | [`dediggibyte/datalab-framework`](https://github.com/dediggibyte/datalab-framework) | the **library** (`datalab`): Pydantic models, SDP adapters, dqx engine, devtools, param helpers — zero domain code | change framework behavior (rare); reference is its `docs/FRAMEWORK.md` |
-| this repo (`datalab`, internally the `datalab-examples` uv project) | the **domains + deploy bundle** that CONSUMES the framework — `databricks.yml` + reference domains under `examples/` | add/change tables, jobs, notebooks; deploy |
+| this repo (`datalab`, internally the `datalab-projects` uv project) | the **domains + deploy bundle** that CONSUMES the framework — `databricks.yml` + reference domains under `projects/` | add/change tables, jobs, notebooks; deploy |
 
 This repo has **no `src/datalab`** — the framework is a dependency, consumed two
 ways (below). Your adopter repo has the same shape, with your domain at the
 **root** (`config/<catalog>/`, `src/<catalog>_etl/`, `resources/`) instead of
-under `examples/`.
+under `projects/`.
 
 ## The two consumption paths
 
@@ -110,16 +110,16 @@ the catalog vars in `targets/` and the group names in `rbac.yml` (see AGENTS.md
 Copy a reference domain to your repo **root** and rename every `customer_sales`
 token to your catalog name. Two starting points:
 
-- `examples/customer_sales/` — the **full** adoption: pipeline + edge jobs +
+- `projects/customer_sales/` — the **full** adoption: pipeline + edge jobs +
   triage notebook + tests + ABAC SQL.
-- `examples/sales/` — **pipeline-only**: silver (AUTO CDC SCD1 + dqx) + gold MVs
+- `projects/sales/` — **pipeline-only**: silver (AUTO CDC SCD1 + dqx) + gold MVs
   over pre-existing bronze tables; no edge jobs/notebooks.
 
-The layout transfers 1:1 (`examples/README.md` has the full mapping table;
+The layout transfers 1:1 (`projects/README.md` has the full mapping table;
 naming contract: [NAMING.md](NAMING.md)). Adopters put these at the repo ROOT;
-this reference repo keeps them under `examples/<catalog>/`:
+this reference repo keeps them under `projects/<catalog>/`:
 
-| In `examples/customer_sales/` | In your repo |
+| In `projects/customer_sales/` | In your repo |
 |---|---|
 | `config/customer_sales/` | `config/<catalog>/` (`domain.yml` + one `<schema>/<table>.yml` per table) |
 | `src/customer_sales_etl/` | `src/<catalog>_etl/` (3-line entrypoint, `@transform` fns, dqx checks) |
@@ -134,7 +134,7 @@ Then wire the domain up in two places outside the copied folder:
 
    ```toml
    [tool.uv.workspace]
-   members = ["examples/customer_sales", "examples/sales"]   # → add your domain dir
+   members = ["projects/customer_sales", "projects/sales"]   # → add your domain dir
 
    [tool.uv.sources]
    <catalog>_etl = { workspace = true }

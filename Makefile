@@ -29,9 +29,9 @@ lock:  ## Re-resolve dependencies and refresh uv.lock (run after editing pyproje
 	$(UV) lock
 
 # ---- quality gates (same commands CI runs) ----------------------------------
-LINT_PATHS := scripts examples
+LINT_PATHS := scripts projects
 
-lint: install  ## Ruff lint over scripts/ and examples/
+lint: install  ## Ruff lint over scripts/ and projects/
 	$(UV) run ruff check $(LINT_PATHS)
 
 fmt: install  ## Ruff auto-format + fix imports
@@ -42,8 +42,8 @@ test: install  ## Run the unit test suite (local Spark, no workspace needed)
 	$(UV) run pytest
 
 # Domain config roots: a root-level config/ (adopter layout) and every
-# examples/<domain>/config/ — $(wildcard) drops whichever doesn't exist.
-CONFIG_DIRS := $(wildcard config) $(wildcard examples/*/config)
+# projects/<domain>/config/ — $(wildcard) drops whichever doesn't exist.
+CONFIG_DIRS := $(wildcard config) $(wildcard projects/*/config)
 
 validate-configs: install  ## Validate every domain's <layer>/<table>.yml artifacts (pydantic + dqx checks)
 	$(UV) run python -m datalab.framework $(CONFIG_DIRS)
@@ -113,9 +113,9 @@ publish-wheel: install  ## Build the framework wheel from the pinned git dep + p
 # batch materialized-view graph the OSS `spark-pipelines` CLI can run on sample
 # data. Fidelity caveat: CDC is approximated (SCD1 dedup), Auto Loader/sinks are
 # skipped — engine-owned semantics are still verified by `make deploy run`.
-LOCAL_DOMAIN_CONFIG ?= examples/customer_sales/config/customer_sales
-LOCAL_TRANSFORMS    ?= examples/customer_sales/src/customer_sales_etl/transformations
-LOCAL_LANDING       ?= $(CURDIR)/examples/customer_sales/sample_data/landing/sales/customers
+LOCAL_DOMAIN_CONFIG ?= projects/customer_sales/config/customer_sales
+LOCAL_TRANSFORMS    ?= projects/customer_sales/src/customer_sales_etl/transformations
+LOCAL_LANDING       ?= $(CURDIR)/projects/customer_sales/sample_data/landing/sales/customers
 # The OSS CLI globs libraries relative to the spec dir, so the spec lives at the
 # repo root (an ancestor of the transformations dir).
 LOCAL_SPEC          ?= spark-pipeline.local.yml
@@ -144,8 +144,8 @@ run-local: spec-local  ## Materialize the medallion locally on sample data — s
 # (DATABRICKS_HOST + token/profile, DATABRICKS_CLUSTER_ID or serverless). See the
 # framework repo's docs/FRAMEWORK.md "Run anywhere".
 DBCONNECT      ?= databricks-connect
-CONNECT_CONFIG ?= examples/customer_sales/config/customer_sales
-CONNECT_DOMAIN ?= examples/customer_sales
+CONNECT_CONFIG ?= projects/customer_sales/config/customer_sales
+CONNECT_DOMAIN ?= projects/customer_sales
 LAYER          ?= silver
 TABLE          ?= customers
 # The framework requirement, derived from pyproject's [tool.uv.sources].datalab so

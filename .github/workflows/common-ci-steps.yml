@@ -59,8 +59,8 @@ jobs:
 
       - name: Ruff lint
         # Same paths as `make lint` — the framework moved to the datalab-framework
-        # repo; here we lint scripts/ + the reference domains under examples/.
-        run: uv run ruff check scripts examples
+        # repo; here we lint scripts/ + the reference domains under projects/.
+        run: uv run ruff check scripts projects
 
       - name: Check agent-skill mirror is in sync (no drift from .agents/skills)
         # Mirror of `make check-skills`. Skills are authored once under
@@ -71,10 +71,10 @@ jobs:
       - name: Validate dataset configs (pydantic + static dqx checks)
         # Same loader as `make validate-configs`, the pipeline import, and the
         # editor schemas: a bad artifact fails CI before any deploy. Mirrors
-        # the Makefile's CONFIG_DIRS (root config/ for adopters, examples/*/config here).
+        # the Makefile's CONFIG_DIRS (root config/ for adopters, projects/*/config here).
         run: |
           dirs=()
-          for d in config examples/*/config; do [ -d "$d" ] && dirs+=("$d"); done
+          for d in config projects/*/config; do [ -d "$d" ] && dirs+=("$d"); done
           uv run python -m datalab.framework "${dirs[@]}"
 
       - name: Unit tests (local Spark)

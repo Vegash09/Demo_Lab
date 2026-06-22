@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **this repo** — `datalab-examples`, the reference domains
+All notable changes to **this repo** — `datalab-projects`, the reference domains
 + deploy bundle that consumes the [datalab
 framework](https://github.com/dediggibyte/datalab-framework) — are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
@@ -9,7 +9,7 @@ Changes to the FRAMEWORK itself live in the framework repo's own CHANGELOG.
 
 **Scope.** This changelog tracks the bundle + reference domains and how they
 consume the framework — the pinned framework version, the deploy/publish flow,
-and the example domains under `examples/`.
+and the example domains under `projects/`.
 
 **Two version knobs.** This repo's own version is `pyproject.toml`
 `[project].version`. The FRAMEWORK version it pins lives in two places that MUST
@@ -37,7 +37,7 @@ bump both, then `make publish-wheel`.
   and copying a reference domain.
 
 ### Docs
-- Reframed README / AGENTS / docs / examples as the **adopter-shaped reference
+- Reframed README / AGENTS / docs / projects as the **adopter-shaped reference
   repo**; repointed the framework reference to the framework repo's
   `docs/FRAMEWORK.md`.
 
@@ -47,7 +47,7 @@ bump both, then `make publish-wheel`.
 - **The framework now ships as its OWN wheel.** `uv build` at the repo root
   builds a FRAMEWORK-ONLY `datalab` wheel (contains only `datalab/**`). The two
   reference domains became separate uv-workspace members
-  (`examples/<catalog>/pyproject.toml`), each building its own `<catalog>_etl`
+  (`projects/<catalog>/pyproject.toml`), each building its own `<catalog>_etl`
   wheel. Previously a single wheel contained all three packages.
 - **The framework wheel is distributed via a single shared UC Volume.**
   Pipeline/job serverless environments install the common `datalab` wheel from a

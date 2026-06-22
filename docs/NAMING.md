@@ -2,15 +2,15 @@
 
 The repo layout is not arbitrary: **every domain folder path spells out where
 its data and resources live in Unity Catalog**. A developer (or agent) reading
-`examples/customer_sales/config/customer_sales/silver/customers.yml` should
+`projects/customer_sales/config/customer_sales/silver/customers.yml` should
 conclude, with no further context, that this artifact defines the table
 `customer_sales.silver.customers`. This page is the contract; the
-`customer_sales` reference domain under `examples/` demonstrates it.
+`customer_sales` reference domain under `projects/` demonstrates it.
 
 ```mermaid
 flowchart LR
-  subgraph repo ["Repo layout (adopter root or examples/<catalog>/)"]
-    A["examples/customer_sales/"]
+  subgraph repo ["Repo layout (adopter root or projects/<catalog>/)"]
+    A["projects/customer_sales/"]
     B["config/customer_sales/silver/customers.yml"]
     C["src/customer_sales_etl/"]
     D["src/jobs/customer_sales/ + notebooks/customer_sales/"]
@@ -34,7 +34,7 @@ flowchart LR
 
 ### 1. Domain folder == base catalog name
 
-The domain folder (`examples/<catalog>/` here; the repo root in an adopter
+The domain folder (`projects/<catalog>/` here; the repo root in an adopter
 repo) is named after the **base catalog** that holds the domain's medallion
 schemas — `customer_sales` in the reference example.
 
@@ -147,7 +147,7 @@ Starting a new domain (full walkthrough: `docs/GETTING_STARTED.md`):
 
 1. Pick the base catalog name, e.g. `finance` (dev catalog `finance`,
    stage/prod `finance_stage`/`finance_prod`).
-2. Copy `examples/customer_sales/` and rename every `customer_sales` token:
+2. Copy `projects/customer_sales/` and rename every `customer_sales` token:
    `config/finance/`, `src/finance_etl/`, `src/jobs/finance/`,
    `notebooks/finance/`, `resources/finance_*.yml`, registry keys
    `finance.*`, resources `finance_etl` / `finance_<purpose>`.

@@ -14,8 +14,8 @@ flowchart LR
 ```
 
 Today the framework is an external dependency (the `datalab-framework` repo);
-complete reference domains live under `examples/` (this repo's example:
-`examples/customer_sales/config/customer_sales/`). See the framework repo's
+complete reference domains live under `projects/` (this repo's example:
+`projects/customer_sales/config/customer_sales/`). See the framework repo's
 [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)
 and the naming contract in [NAMING.md](NAMING.md).
 
@@ -62,8 +62,8 @@ and the naming contract in [NAMING.md](NAMING.md).
   v0.295.0): naming only; `databricks bundle` commands unchanged.
 - **Repo layout (June 2026):** `src/sales_etl`, `src/jobs`, `notebooks/sales`,
   `config/sales`, the `resources/sales_*.yml` files and `sql/abac/` moved
-  into a self-contained `examples/sales/` tree; `src/` then held only the
-  framework. Adopter repos keep the root-level layout (`examples/README.md`
+  into a self-contained `projects/sales/` tree; `src/` then held only the
+  framework. Adopter repos keep the root-level layout (`projects/README.md`
   maps one to the other).
 - **Framework split (June 2026):** the reusable framework (`src/datalab`) was
   extracted into its own repo,
@@ -73,8 +73,8 @@ and the naming contract in [NAMING.md](NAMING.md).
   ([ADOPTING.md](ADOPTING.md)).
 - **UC-namespace naming (June 2026, [NAMING.md](NAMING.md)):** the example
   domain was renamed `sales` → `customer_sales` so folder paths mirror the UC
-  namespace (the catalog is `customer_sales`): `examples/sales/` →
-  `examples/customer_sales/`, `config/sales/` → `config/customer_sales/`,
+  namespace (the catalog is `customer_sales`): `projects/sales/` →
+  `projects/customer_sales/`, `config/sales/` → `config/customer_sales/`,
   `src/sales_etl/` → `src/customer_sales_etl/` (transforms module
   `sales.py` → `customers.py`, registry keys `sales.*` → `customer_sales.*`),
   `src/jobs/sales/` → `src/jobs/customer_sales/`, `notebooks/sales/` →
@@ -95,7 +95,7 @@ The sales customer flow kept its semantics across all three eras:
   `customer_sales.normalize_email` transform.
 - DQX `is_not_null(customer_id)` (error) and the email regex (warn) → the
   same dqx functions, now per-column `quality:` rules in
-  `examples/customer_sales/config/customer_sales/silver/customers.yml`.
+  `projects/customer_sales/config/customer_sales/silver/customers.yml`.
 - MERGE on `customer_id` → AUTO CDC keyed on `customer_id`, sequenced by the
   `_ingest_ts` lineage column (`target.cdc`).
 - Quarantine table `…customer_quarantine` → `silver.customers_quarantine`

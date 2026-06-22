@@ -1,8 +1,8 @@
 # Lakeflow Spark Declarative Pipeline for the customer_sales domain
 # (bronze→silver→gold). Source code:
-# examples/customer_sales/src/customer_sales_etl/transformations/*.py
+# projects/customer_sales/src/customer_sales_etl/transformations/*.py
 # (pyspark.pipelines). Paths below are relative to THIS file, so the whole
-# examples/customer_sales/ tree can be copied to an adopter repo root (where
+# projects/customer_sales/ tree can be copied to an adopter repo root (where
 # resources/ sits beside src/) as is.
 
 resources:
@@ -44,6 +44,6 @@ resources:
         # Where the framework finds this domain's layer YAMLs (config-driven
         # pipeline — see docs/FRAMEWORK.md). Deployed workspace files; in an
         # adopter repo this would be ${workspace.file_path}/config/<catalog>.
-        datalab.config_dir: ${workspace.file_path}/examples/customer_sales/config/customer_sales
+        datalab.config_dir: ${workspace.file_path}/projects/customer_sales/config/customer_sales
 
       permissions: ${var.pipeline_permissions}

@@ -5,14 +5,14 @@
 # ALIGNED with that block (it mirrors these paths) so the sync command and the
 # bundle deploy exclude the same dev-only surfaces.
 #
-# The deploy MUST ship: pyproject.toml + src/** + examples/** (the example
-# pipelines' code/config live under examples/; the example domain wheels are
+# The deploy MUST ship: pyproject.toml + src/** + projects/** (the example
+# pipelines' code/config live under projects/; the example domain wheels are
 # built by the databricks.yml `artifacts:`, and the framework wheel is installed
 # from the shared datalab_artifacts UC Volume — see AGENTS.md "Wheel delivery").
 
 # Dev-only surfaces — not needed at runtime
 tests/
-examples/*/tests/
+projects/*/tests/
 docs/
 design/
 

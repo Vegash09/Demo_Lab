@@ -24,13 +24,13 @@ import re
 import sys
 
 PROTECTED: list[tuple[str, str]] = [
-    (r"^databricks\.yml$|^rbac\.yml$|^(variables|targets)/.*\.ya?ml$|^(resources|examples/[^/]+/resources)/.*\.yml$",
+    (r"^databricks\.yml$|^rbac\.yml$|^(variables|targets)/.*\.ya?ml$|^(resources|projects/[^/]+/resources)/.*\.yml$",
      "Declarative Automation Bundle manifest / variables / targets / RBAC (deploy surface)"),
     (r"^pyproject\.toml$|^uv\.lock$",
      "dependency manifest (uv-managed; CI runs `uv sync --frozen`)"),
     (r"^\.databricksignore$",
      "controls which files ship to the workspace on deploy"),
-    (r"^(config|examples/[^/]+/config)/.*\.ya?ml$",
+    (r"^(config|projects/[^/]+/config)/.*\.ya?ml$",
      "dataset configs — the deployed pipeline definition (validate: make validate-configs)"),
     (r"^\.github/(workflows|actions)/.*",
      "CI/CD pipeline (GitHub OIDC federation, bundle deploy)"),

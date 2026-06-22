@@ -1,7 +1,7 @@
 """Local SparkSession for the sales example's tests.
 
 Deliberately self-contained (a copy of the root tests/conftest.py fixture):
-the examples/sales/ tree mirrors an adopter repo, so its tests carry their own
+the projects/sales/ tree mirrors an adopter repo, so its tests carry their own
 fixtures and run with nothing but the installed framework + this folder.
 """
 

@@ -14,7 +14,7 @@ Quick pointers:
 
 - **Pipelines are config-driven**: a target table is ONE YAML artifact
   (`config/<catalog>/<schema>/<table>.yml`; in this repo the example lives at
-  `examples/customer_sales/config/customer_sales/`) — author it with the
+  `projects/customer_sales/config/customer_sales/`) — author it with the
   `author-ldp-artifact` skill; full reference + SDP capability matrix in
   docs/FRAMEWORK.md. Folder paths mirror the UC namespace (docs/NAMING.md).
   Never hand-write `dp.*` wiring unless the matrix says the framework can't
@@ -27,11 +27,11 @@ Quick pointers:
 - The framework is an EXTERNAL dependency (the `datalab-framework` repo),
   consumed as a git dep + UC-Volume wheel. Domain business logic lives in the
   domain package (`src/<catalog>_etl/transforms/`, in this repo under
-  `examples/customer_sales/`) as pure, unit-tested `@transform` functions.
+  `projects/customer_sales/`) as pure, unit-tested `@transform` functions.
   Parameters come from the pipeline `configuration` mapping via
   `datalab.config.pipeline_conf` — never hardcode catalogs/schemas/paths.
 - Deploy = **Declarative Automation Bundle**: `databricks.yml` +
-  `examples/*/resources/*.yml` (adopters: `resources/*.yml`), targets `dev`
+  `projects/*/resources/*.yml` (adopters: `resources/*.yml`), targets `dev`
   (mode: development) / `stage` / `prod`. `make validate` before pushing
   bundle changes.
 - **MANDATORY branch-first protocol**: before editing ANY file, verify a

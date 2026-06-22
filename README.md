@@ -72,7 +72,7 @@ flowchart TD
     README --> GS["docs/GETTING_STARTED.md<br/>author your first table:<br/>empty folder → deployed pipeline"]
     README --> FWK["framework repo · docs/FRAMEWORK.md<br/>flowspec reference: artifact anatomy ·<br/>target kinds · dqx · capability matrix"]
     README --> NAM["docs/NAMING.md<br/>folder structure mirrors the UC namespace:<br/>catalog · schema · table"]
-    README --> EX["examples/customer_sales/<br/>complete worked domain to copy"]
+    README --> EX["projects/customer_sales/<br/>complete worked domain to copy"]
     README --> OVR["design/OVERVIEW.md<br/>customer-facing tour:<br/>driving medallion transformations"]
     README --> ARCH["docs/ARCHITECTURE.md<br/>system view · lanes · code layout · governance"]
     README --> CICD["docs/CICD.md<br/>workflows · OIDC setup · release flow"]
@@ -86,7 +86,7 @@ flowchart TD
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | you are authoring your first table on the framework — empty folder → deployed pipeline |
 | [framework repo: docs/FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) | you are adding a table or domain: artifact schema, generated graph, target kinds, data-quality semantics, the SDP capability matrix — the reusable framework's reference (separate repo) |
 | [docs/NAMING.md](docs/NAMING.md) | you are naming anything: folder paths mirror the UC namespace (catalog → schema → table), package/resource naming rules |
-| [examples/customer_sales/](examples/customer_sales/README.md) | you want a finished example to copy — complete worked domain, mirrors an adopter repo |
+| [projects/customer_sales/](projects/customer_sales/README.md) | you want a finished example to copy — complete worked domain, mirrors an adopter repo |
 | [design/OVERVIEW.md](design/OVERVIEW.md) | you want the customer-facing tour — how datalab drives transformations across bronze → silver → gold, with the architecture diagrams (shareable standalone: `design/datalab-customer-overview.html`) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | you need the system picture: CI/CD → workspace resources, the three authoring lanes, code organization, environments, RBAC/ABAC |
 | [docs/CICD.md](docs/CICD.md) | you are wiring a target or debugging a deploy: workflows, federation policies, GitHub Environments, release flow |
@@ -100,12 +100,12 @@ flowchart TD
 | Surface | Where | What |
 |---|---|---|
 | Framework | [`dediggibyte/datalab-framework`](https://github.com/dediggibyte/datalab-framework) (separate repo) | the REUSABLE library — Pydantic models, LDP generator, dqx engine, devtools, param helpers. Consumed here as a git dependency (local/CI, pinned in `pyproject.toml`) + a versioned UC-Volume wheel (serverless) |
-| Reference domains | `examples/customer_sales/` + `examples/sales/` | complete worked adoptions, each named after its base UC catalog and mirroring an adopter repo root — copy one to start your own domain. `customer_sales` is the full reference (all 3 lanes: pipeline + jobs + notebook); `sales` is pipeline-only (silver + gold over pre-existing `sales.bronze.*`) |
-| Dataset configs | `examples/customer_sales/config/customer_sales/` (adopters: `config/<catalog>/`) | ONE artifact per target table: column mappings + types, dqx rules, target kind — path mirrors `<catalog>.<schema>.<table>` |
-| Domain code | `examples/customer_sales/src/customer_sales_etl/` (adopters: `src/<catalog>_etl/`) | pure `@transform` functions, custom dqx checks, 3-line pipeline entrypoint |
-| Edge lanes | `examples/customer_sales/src/jobs/customer_sales/` + `examples/customer_sales/notebooks/customer_sales/` | python-file lane (headless exports) + notebook lane (human-gated triage) |
-| Deploy | `databricks.yml` + `examples/*/resources/` (adopters: `resources/`) | bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
-| Tests | `examples/*/tests/` (per-domain) | unit tests on a local SparkSession — no workspace needed. Framework unit tests live in the `datalab-framework` repo |
+| Reference domains | `projects/customer_sales/` + `projects/sales/` | complete worked adoptions, each named after its base UC catalog and mirroring an adopter repo root — copy one to start your own domain. `customer_sales` is the full reference (all 3 lanes: pipeline + jobs + notebook); `sales` is pipeline-only (silver + gold over pre-existing `sales.bronze.*`) |
+| Dataset configs | `projects/customer_sales/config/customer_sales/` (adopters: `config/<catalog>/`) | ONE artifact per target table: column mappings + types, dqx rules, target kind — path mirrors `<catalog>.<schema>.<table>` |
+| Domain code | `projects/customer_sales/src/customer_sales_etl/` (adopters: `src/<catalog>_etl/`) | pure `@transform` functions, custom dqx checks, 3-line pipeline entrypoint |
+| Edge lanes | `projects/customer_sales/src/jobs/customer_sales/` + `projects/customer_sales/notebooks/customer_sales/` | python-file lane (headless exports) + notebook lane (human-gated triage) |
+| Deploy | `databricks.yml` + `projects/*/resources/` (adopters: `resources/`) | bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
+| Tests | `projects/*/tests/` (per-domain) | unit tests on a local SparkSession — no workspace needed. Framework unit tests live in the `datalab-framework` repo |
 | CI/CD | `.github/` | ruff + pytest + config validation + `bundle validate` on PRs; OIDC deploys on merge/tags |
 | Agent harness | `.claude/`, `.cursor/`, `.codex/` + `.agents/skills/`, `.githooks/`, `.mcp.json` | rules + skills + PR-template/protected-file guards across three harnesses (`.codex` references the canonical guards; the 5 skills are authored once in `.agents/skills/` — read natively by Cursor + Codex — and copied to `.claude/skills/` via `make sync-skills`, and pushed to Databricks Genie via `make publish-genie-skills`), opt-in Databricks MCP config (read-only UC queries — [docs/AGENT_MCP.md](docs/AGENT_MCP.md)) |
 | Docs | `docs/` | the child docs mapped above |
@@ -136,7 +136,7 @@ stage on `v*-rc*` tags, prod on `v*` tags) is in
 ## The customer_sales example, end to end
 
 The reference pipeline is generated entirely from
-`examples/customer_sales/config/customer_sales/<schema>/<table>.yml` artifacts
+`projects/customer_sales/config/customer_sales/<schema>/<table>.yml` artifacts
 (an adopter repo keeps the same tree at `config/<catalog>/` — the path mirrors
 the UC namespace, see [docs/NAMING.md](docs/NAMING.md)):
 

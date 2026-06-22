@@ -285,7 +285,7 @@ Databricks secret stored in GitHub). Governance has three clear homes:
 Getting a new domain from an empty folder to a deployed pipeline is a copy-and-fill
 exercise:
 
-1. **Copy the worked example.** `examples/customer_sales/` is a complete adoption laid out
+1. **Copy the worked example.** `projects/customer_sales/` is a complete adoption laid out
    exactly like a real domain repo — config + domain package + jobs + notebook + resources
    + tests.
 2. **Point it at your catalog/schemas** via bundle variables (folder names mirror the
@@ -311,7 +311,7 @@ one small tested function). A new domain is a folder copy plus configuration.
 | System design, lanes, code layout, governance | [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) |
 | CI/CD, OIDC setup, release flow | [`docs/CICD.md`](../docs/CICD.md) |
 | Folder ↔ Unity Catalog naming convention | [`docs/NAMING.md`](../docs/NAMING.md) |
-| The complete worked example | [`examples/customer_sales/`](../examples/customer_sales/README.md) |
+| The complete worked example | [`projects/customer_sales/`](../projects/customer_sales/README.md) |
 | Editing / re-exporting these diagrams | [`docs/ARCHITECTURE.md` → Editing the design diagrams](../docs/ARCHITECTURE.md#editing-the-design-diagrams) |
 
 ---
