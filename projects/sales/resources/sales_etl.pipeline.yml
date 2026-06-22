@@ -25,12 +25,12 @@ resources:
         # Pins the Python runtime independently of DBR upgrades.
         environment_version: "4"
         dependencies:
-          # datalab FRAMEWORK wheel — installed from the shared datalab_artifacts
-          # catalog's framework.wheels UC Volume (one upload for all domains;
-          # make publish-wheel uploads datalab-<ver>, CI publishes before deploy).
-          # Bump var.datalab_version to roll it. Serverless does NOT honor an
+          # datalab FRAMEWORK wheel — installed from THIS project's own catalog
+          # volume sales.artifacts.wheels (make publish-wheel uploads datalab-<ver>
+          # into each project catalog; CI publishes before deploy). Bump
+          # var.datalab_version to roll it. Serverless does NOT honor an
           # `--editable` install of synced workspace files, so a wheel is the path.
-          - ${var.datalab_wheel}
+          - ${var.sales_datalab_wheel}
           # This domain's wheel — built by the bundle's sales_etl_wheel artifact
           # (uv build --package sales_etl). Relative to this resource file.
           - ../../../dist/sales_etl-*.whl

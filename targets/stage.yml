@@ -8,4 +8,3 @@ targets:
     variables:
       catalog: customer_sales_stage
       sales_catalog: sales_stage
-      datalab_artifacts_catalog: datalab_artifacts_stage
