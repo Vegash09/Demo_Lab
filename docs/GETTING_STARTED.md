@@ -200,8 +200,8 @@ dataset/flow the config will generate, locally.
    `datalab.config_dir: ${workspace.file_path}/config/finance`. Keep
    `serverless: true` and `environment_version`, and in
    `environment.dependencies` keep `${var.datalab_wheel}` (the framework wheel
-   from the shared Volume) while renaming the domain wheel to
-   `../../../dist/finance_etl-*.whl` — serverless does **not** honor `--editable`.
+   from your catalog's `artifacts.wheels` Volume) while renaming the domain wheel
+   to `../../../dist/finance_etl-*.whl` — serverless does **not** honor `--editable`.
 2. Copy `customer_sales_etl.job.yml` → `finance_etl.job.yml` (the scheduled refresh);
    point `pipeline_task.pipeline_id` at
    `${resources.pipelines.finance_etl.id}`.

@@ -41,8 +41,9 @@ databricks pipelines list-pipelines | head
   `configuration:` mapping → read in Python with
   `datalab.config.pipeline_conf`. Add new parameters in BOTH places.
 - The pipeline environment installs TWO wheels in `environment.dependencies`:
-  `${var.datalab_wheel}` (the framework, from the shared UC Volume) + the domain
-  wheel `../../../dist/<catalog>_etl-*.whl`. Serverless does NOT honor
+  `${var.datalab_wheel}` (the framework, from THIS project's catalog
+  `artifacts.wheels` Volume) + the domain wheel `../../../dist/<catalog>_etl-*.whl`.
+  Serverless does NOT honor
   `--editable`. The config artifacts (`config/**`) + synced workspace files must
   still ship, so never add them to `.databricksignore`.
 - `dev` target = `mode: development`: resource names get a `[dev <user>]`
@@ -72,7 +73,7 @@ target (full walkthrough: `docs/CICD.md`):
 | validate: unknown field `environment` / `environment_version` | CLI too old — upgrade to ≥ v0.294.0 (`databricks version`). |
 | validate complains about an unset variable | Override with `--var key=value` or set a default in `databricks.yml`. |
 | Pipeline fails: `Missing pipeline configuration 'datalab.*'` | Parameter not in the resource `configuration:` mapping — add it and redeploy. |
-| `ModuleNotFoundError: datalab` in a pipeline | The framework wheel didn't install — check `${var.datalab_wheel}` resolves (the version exists on the shared Volume; `make publish-wheel`) and the `environment.dependencies` block. |
+| `ModuleNotFoundError: datalab` in a pipeline | The framework wheel didn't install — check `${var.datalab_wheel}` resolves (the version exists in this project catalog's `artifacts.wheels` volume; `make publish-wheel`) and the `environment.dependencies` block. |
 | New pip dependency not visible in pipeline | Pipeline environments cache deps in development — full restart the pipeline, or bump and redeploy. |
 | Auto Loader path errors on first run | The landing volume (`${var.sales_landing_path}`) doesn't exist — create catalog/schema/volume or override the variable. |
 | CI `auth describe` fails / `TOKEN_SUBJECT_INVALID` | OIDC federation policy subject/audience doesn't match — copy the exact strings from the error into the policy. |

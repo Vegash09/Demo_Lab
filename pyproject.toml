@@ -4,8 +4,9 @@
 # is consumed two ways:
 #   * local dev / CI  → the `datalab` git dependency below, pinned to a release tag
 #     (resolved by uv into the shared venv so test/lint/validate-configs see it);
-#   * Databricks serverless → the versioned wheel from the shared datalab_artifacts
-#     UC Volume (var.datalab_wheel), listed in each resource's environment.
+#   * Databricks serverless → the versioned wheel from each project catalog's
+#     artifacts.wheels UC Volume (var.datalab_wheel / var.sales_datalab_wheel),
+#     listed in each resource's environment.
 #
 # KEEP IN LOCKSTEP: the `datalab` git tag below and the bundle's var.datalab_version
 # (the Volume wheel) must reference the same framework release.

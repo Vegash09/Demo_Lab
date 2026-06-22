@@ -97,12 +97,12 @@ destroy:  ## Tear down everything the bundle deployed to $(TARGET) (asks first)
 	databricks bundle destroy -t $(TARGET)
 
 # The datalab FRAMEWORK wheel is built HERE from the pinned git dependency
-# (pyproject.toml [tool.uv.sources].datalab) and uploaded to this target's shared
-# datalab_artifacts framework.wheels UC Volume — one upload serves every domain.
-# CI runs this in the deploy-dab action BEFORE `bundle deploy` (the version every
-# environment references via var.datalab_wheel must be on the Volume first). Bump
-# the git tag + var.datalab_version in lockstep when upgrading the framework.
-publish-wheel: install  ## Build the framework wheel from the pinned git dep + publish it to the shared artifacts Volume for $(TARGET) (APPLY=1 to upload)
+# (pyproject.toml [tool.uv.sources].datalab) and uploaded into the `artifacts.wheels`
+# UC Volume inside EACH project's own catalog (one upload per project catalog). CI
+# runs this in the deploy-dab action BEFORE `bundle deploy` (the version each domain
+# references via var.datalab_wheel / var.sales_datalab_wheel must be on its volume
+# first). Bump the git tag + var.datalab_version in lockstep when upgrading.
+publish-wheel: install  ## Build the framework wheel from the pinned git dep + publish it into each project catalog's artifacts.wheels Volume for $(TARGET) (APPLY=1)
 	$(UV) run --with databricks-sdk --with pip python scripts/publish_wheel.py \
 		--target $(TARGET) --build \
 		$(if $(APPLY),--apply,) \

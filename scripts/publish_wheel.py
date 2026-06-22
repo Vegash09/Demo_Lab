@@ -1,31 +1,31 @@
-"""Build + publish the common datalab FRAMEWORK wheel to the shared artifacts UC Volume.
+"""Build + publish the datalab FRAMEWORK wheel into each project catalog's volume.
 
 Distribution model: the framework lives in its OWN repo
 (``dediggibyte/datalab-framework``) and is consumed here two ways — a git
 dependency for local/CI (pinned in ``pyproject.toml`` ``[tool.uv.sources]``) and
-a versioned wheel (``datalab-<ver>-py3-none-any.whl``) that every pipeline/job
-environment — across ALL domains — installs from a single shared Volume,
-``/Volumes/<datalab_artifacts_catalog>/framework/wheels/`` (see
-variables/medallion.yml ``datalab_artifacts_catalog`` / ``datalab_wheel``).
+a versioned wheel (``datalab-<ver>-py3-none-any.whl``) installed by serverless
+pipeline/job environments. The wheel is NOT in a separate shared catalog — it
+lives in an ``artifacts.wheels`` UC Volume INSIDE EACH PROJECT'S OWN CATALOG
+(``customer_sales.artifacts.wheels``, ``sales.artifacts.wheels``; see
+variables/medallion.yml ``datalab_wheel`` / ``sales_datalab_wheel``).
 
 This repo (the adopter/reference bundle) BUILDS that wheel from the pinned git
-dependency and uploads it — one upload per target serves the customer_sales and
-sales pipelines alike. ``--build`` clones+builds ``datalab`` from the git ref in
-``pyproject.toml`` (``pip wheel "datalab @ git+<url>@<tag>" --no-deps``); without
-it the script just uploads a wheel already sitting in ``--dist-dir``.
+dependency and uploads it to each project catalog's volume. ``--build`` clones+
+builds ``datalab`` from the git ref in ``pyproject.toml`` (``pip wheel "datalab @
+git+<url>@<tag>" --no-deps``); without it the script just uploads a wheel already
+sitting in ``--dist-dir``.
 
     make publish-wheel TARGET=dev               # dry run (prints the build+upload plan)
     make publish-wheel TARGET=dev APPLY=1       # build from the git dep + upload via the SDK
 
 Runs under ``uv run --with databricks-sdk --with pip`` so neither the SDK nor pip
-enters uv.lock (the dev venv stays pyspark-only — see AGENTS.md). The Volume must
-already exist: ``make bootstrap-uc TARGET=<t>`` provisions the shared catalog +
-framework.wheels.
+enters uv.lock. The target volumes must already exist: ``make bootstrap-uc
+TARGET=<t>`` provisions each project catalog's ``artifacts.wheels`` volume.
 
-NOTE: the per-target artifacts catalog name comes from
-bootstrap_uc.ARTIFACTS_CATALOGS (the bundle defaults). If a target overrides it
-(the deploy `--var datalab_artifacts_catalog=...` escape hatch), pass
---artifacts-catalog to match, or the upload lands in the wrong catalog.
+NOTE: the per-target domain catalogs come from bootstrap_uc.CATALOGS (the bundle
+defaults). If a deploy overrides a domain catalog (the ``--var catalog=...``
+escape hatch), pass ``--catalog <name>`` (repeatable) to match, or the wheel
+lands in the wrong catalog.
 """
 
 from __future__ import annotations
@@ -36,11 +36,11 @@ import sys
 import tomllib
 from pathlib import Path
 
-# Single source of truth for the target -> shared artifacts catalog mapping
-# (scripts/ is on sys.path[0] when this file is run directly).
-from bootstrap_uc import ARTIFACTS_CATALOGS, FRAMEWORK_SCHEMA, FRAMEWORK_VOLUME
+# Single source of truth for the per-target domain catalogs + the wheel volume
+# location (scripts/ is on sys.path[0] when this file is run directly).
+from bootstrap_uc import ARTIFACTS_SCHEMA, CATALOGS, WHEELS_VOLUME
 
-ARTIFACTS_PATH = f"{FRAMEWORK_SCHEMA}/{FRAMEWORK_VOLUME}"  # <catalog>.framework.wheels Volume
+ARTIFACTS_PATH = f"{ARTIFACTS_SCHEMA}/{WHEELS_VOLUME}"  # <catalog>.artifacts.wheels Volume
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 
@@ -94,12 +94,14 @@ def wheel_path(version: str, dist_dir: str) -> Path:
     return built[-1] if built else Path(dist_dir) / f"datalab-{version}-py3-none-any.whl"
 
 
-def volume_dir(target: str, catalog_override: str = "") -> str:
-    """The single /Volumes/<catalog>/framework/wheels dir for ``target``.
+def target_catalogs(target: str, overrides: list[str]) -> list[str]:
+    """The project catalogs to publish the wheel into — explicit ``--catalog``
+    overrides, else the per-target domain catalogs from bootstrap_uc.CATALOGS."""
+    return overrides or [catalog for catalog, _ in CATALOGS[target]]
 
-    ``catalog_override`` matches a deploy `--var datalab_artifacts_catalog=...`
-    escape hatch; empty (the default) uses the per-target ARTIFACTS_CATALOGS name."""
-    catalog = catalog_override or ARTIFACTS_CATALOGS[target]
+
+def volume_dir(catalog: str) -> str:
+    """The single /Volumes/<catalog>/artifacts/wheels dir for one project catalog."""
     return f"/Volumes/{catalog}/{ARTIFACTS_PATH}"
 
 
@@ -115,7 +117,7 @@ def upload(local: Path, dest: str, profile: str | None) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=sorted(ARTIFACTS_CATALOGS), required=True)
+    parser.add_argument("--target", choices=sorted(CATALOGS), required=True)
     parser.add_argument(
         "--build",
         action="store_true",
@@ -132,9 +134,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--apply", action="store_true", help="upload (default: print plan only)")
     parser.add_argument("--profile", default="", help="Databricks CLI profile (default: ambient auth)")
     parser.add_argument(
-        "--artifacts-catalog",
-        default="",
-        help="override the shared artifacts catalog name (rare; matches deploy --var datalab_artifacts_catalog)",
+        "--catalog",
+        action="append",
+        default=[],
+        help="project catalog(s) to publish into (default: the target's domain catalogs); repeatable",
     )
     args = parser.parse_args(argv)
 
@@ -143,19 +146,21 @@ def main(argv: list[str] | None = None) -> None:
 
     version = args.version or _default_version()
     local = wheel_path(version, args.dist_dir)
-    dest = volume_dir(args.target, args.artifacts_catalog)
+    catalogs = target_catalogs(args.target, args.catalog)
 
     if not args.apply:
         print(f"-- dry run for target '{args.target}' — re-run with --apply (APPLY=1) to upload\n")
         print(f"   source: {_git_requirement()}")
         print(f"   wheel:  {local}" + ("" if local.exists() else "  (not built yet — pass --build)"))
-        print(f"   -> {dest}/{local.name}")
+        for catalog in catalogs:
+            print(f"   -> {volume_dir(catalog)}/{local.name}")
         return
 
     if not local.exists():
         raise SystemExit(f"wheel not found: {local} — run with --build (or build into --dist-dir first)")
-    upload(local, dest, args.profile or None)
-    print(f"published {local.name} to target '{args.target}'")
+    for catalog in catalogs:
+        upload(local, volume_dir(catalog), args.profile or None)
+    print(f"published {local.name} to {len(catalogs)} catalog(s) for '{args.target}': {', '.join(catalogs)}")
 
 
 if __name__ == "__main__":

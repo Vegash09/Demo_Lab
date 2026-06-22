@@ -26,15 +26,15 @@ under `projects/`.
 | Path | Used by | Mechanism |
 |---|---|---|
 | **git dependency** | local dev + CI | `[tool.uv.sources] datalab = { git=…, tag=vX.Y.Z }` in the root `pyproject.toml`; uv resolves it into the shared `.venv` so `make lint/test/validate-configs` exercise the framework |
-| **UC-Volume wheel** | Databricks serverless | `var.datalab_wheel` — an absolute `/Volumes/<datalab_artifacts_catalog>/framework/wheels/datalab-<ver>-py3-none-any.whl`, listed in every pipeline/job `environment.dependencies` |
+| **UC-Volume wheel** | Databricks serverless | `var.datalab_wheel` — an absolute `/Volumes/<your_catalog>/artifacts/wheels/datalab-<ver>-py3-none-any.whl` (the wheel lives in **your own catalog**, no separate catalog to provision), listed in every pipeline/job `environment.dependencies` |
 
 **Why a wheel and not `--editable`:** serverless pipeline/job environments do
 **not** honor an `--editable` install of the synced workspace files — the package
 never lands on the runtime path and the pipeline fails at import with
 `ModuleNotFoundError: No module named 'datalab'`. A versioned wheel from a UC
 Volume is the delivery mechanism. This repo BUILDS that wheel **from the pinned
-git dep** and PUBLISHES it to a shared `datalab_artifacts` catalog on every
-deploy (see below).
+git dep** and PUBLISHES it into each project catalog's own `artifacts.wheels`
+volume on every deploy (see below).
 
 ## Pin the framework version
 
@@ -54,28 +54,33 @@ Two places must reference the **same** framework release — keep them in lockst
 
    ```yaml
    datalab_version:
-     default: "0.3.0"        # → datalab-0.3.0-py3-none-any.whl on the shared Volume
+     default: "0.3.0"        # → datalab-0.3.0-py3-none-any.whl on each project catalog's artifacts.wheels volume
    ```
 
-`var.datalab_wheel` derives the full path from `var.datalab_artifacts_catalog` +
-`var.datalab_version`, so you never hand-write the wheel path. **Upgrading the
-framework = bump the git tag AND `datalab_version`, then `make lock` +
-`make publish-wheel`** (see "Upgrading the framework later").
+`var.datalab_wheel` derives the full path from `var.catalog` +
+`var.datalab_version`, so you never hand-write the wheel path (this repo's second
+domain mirrors the split: `var.sales_datalab_wheel` derives from
+`var.sales_catalog`). **Upgrading the framework = bump the git tag AND
+`datalab_version`, then `make lock` + `make publish-wheel`** (see "Upgrading the
+framework later").
 
 ## Publish the framework wheel from your repo
 
 `make publish-wheel` builds the framework wheel **from the pinned git dep** (via
-`pip wheel "datalab @ git+…@<tag>" --no-deps`) and uploads it to this target's
-shared `datalab_artifacts` catalog `framework.wheels` UC Volume — **one upload
-serves every domain** (one source of truth, not per-domain):
+`pip wheel "datalab @ git+…@<tag>" --no-deps`) and uploads it into **each project
+catalog's** `artifacts.wheels` UC Volume (`customer_sales.artifacts.wheels`,
+`sales.artifacts.wheels` in this repo) — **one upload per project catalog** (the
+wheel rides in the same catalog as the domain it serves, not a separate shared
+catalog):
 
 ```bash
 make publish-wheel TARGET=dev            # dry run — builds + prints what it would upload
-make publish-wheel TARGET=dev APPLY=1    # actually uploads to the shared Volume
+make publish-wheel TARGET=dev APPLY=1    # actually uploads into each project catalog's volume
 ```
 
-**Ordering constraint:** the wheel the version references must exist on the
-Volume **before** any pipeline first runs (or the env install fails). CI enforces
+**Ordering constraint:** the wheel the version references must exist in the
+project catalog's `artifacts.wheels` volume **before** any pipeline first runs
+(or the env install fails). CI enforces
 this — the `deploy-dab` action runs the publish step **before** `bundle deploy`
 on every deploy. `bundle deploy` (and CI) needs `uv` on PATH for this.
 
@@ -91,19 +96,19 @@ make bootstrap-uc TARGET=dev                                    # dry run — pr
 make bootstrap-uc TARGET=dev WAREHOUSE_ID=<sql-warehouse-id>    # applies it
 ```
 
-It creates, per target:
+It creates, per target — **no separate artifacts catalog**; the framework wheel
+rides in each domain's own catalog:
 
-- the **shared `datalab_artifacts` catalog** + `framework.wheels` UC Volume
-  (`scripts/bootstrap_uc.py` → `ARTIFACTS_CATALOGS`), granting **READ VOLUME** to
-  every pipeline/job run-as identity so they can install the wheel — the Volume
-  must be readable by every run across all domains or the install fails;
 - each **domain catalog** (`customer_sales` + `sales` in this repo →
-  `CATALOGS`): `bronze`/`silver`/`gold` schemas, the edge-lane
-  `landing`/`exports` volumes (volume catalogs only), and persona grants.
+  `CATALOGS`; just `<your_catalog>` for a single-domain adopter):
+  `bronze`/`silver`/`gold` schemas, the edge-lane `landing`/`exports` volumes
+  (volume catalogs only), persona grants, **and an `artifacts.wheels` UC Volume**
+  for the framework wheel — the deploy SP writes to it via its catalog-level ALL,
+  and the domain's pipeline/job run-as gets **READ VOLUME** so it can install the
+  wheel (the install fails if that read grant is missing).
 
-Keep the script's `CATALOGS` / `ARTIFACTS_CATALOGS` / `GROUPS` dicts in sync with
-the catalog vars in `targets/` and the group names in `rbac.yml` (see AGENTS.md
-"Change access").
+Keep the script's `CATALOGS` / `GROUPS` dicts in sync with the catalog vars in
+`targets/` and the group names in `rbac.yml` (see AGENTS.md "Change access").
 
 ## Lay out / copy a reference domain
 
@@ -147,14 +152,14 @@ Then wire the domain up in two places outside the copied folder:
    too so the local gates import it.
 
 2. **Wire each `resources/*.yml` environment** to install both wheels — the
-   shared framework wheel + this domain's wheel (paths relative to the resource
-   file):
+   framework wheel from this project's own catalog volume + this domain's wheel
+   (paths relative to the resource file):
 
    ```yaml
    environment:
      environment_version: "4"
      dependencies:
-       - ${var.datalab_wheel}                       # shared framework wheel (UC Volume)
+       - ${var.datalab_wheel}                       # framework wheel from THIS project's catalog volume
        - ../../../dist/<catalog>_etl-*.whl          # this domain's wheel (bundle-built)
    ```
 
@@ -175,8 +180,8 @@ make run                              # refresh the customer_sales_etl pipeline 
 ```
 
 `make deploy` builds the domain wheels (needs `uv` on PATH) and CI publishes the
-framework wheel before its deploy — so the first run finds both wheels on the
-Volume.
+framework wheel before its deploy — so the first run finds both wheels in the
+project catalog's `artifacts.wheels` volume.
 
 ## Upgrading the framework later
 
@@ -185,7 +190,7 @@ Volume.
 2. `make lock` (refreshes `uv.lock` — CI runs `uv sync --frozen` and fails on
    drift; commit both files).
 3. `make publish-wheel TARGET=<t> APPLY=1` — build the new version from the new
-   tag and upload it to the shared Volume.
+   tag and upload it into each project catalog's `artifacts.wheels` volume.
 4. Refresh the vendored `schemas/*.json` if the framework's models changed —
    they are generated **in the framework repo** (its
    `scripts/export_config_schema.py`) and copied here for editor/config

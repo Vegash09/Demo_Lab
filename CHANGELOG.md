@@ -30,6 +30,12 @@ bump both, then `make publish-wheel`.
 - Restored the CD publish path (`scripts/publish_wheel.py` + `make publish-wheel`,
   now building from the git dep) and fixed `make validate-connect` (its overlay
   installs the framework git dep + the editable domain, not the package-less root).
+- **Framework wheel now lives in each project's own catalog.** Replaced the shared
+  `datalab_artifacts` catalog with an `artifacts.wheels` UC Volume inside EACH
+  project catalog (`customer_sales.artifacts.wheels`, `sales.artifacts.wheels`);
+  `make publish-wheel` uploads into each, and each domain's pipelines install from
+  their own catalog (`var.datalab_wheel` / new `var.sales_datalab_wheel`). Removed
+  the `var.datalab_artifacts_catalog` variable and the shared catalog.
 
 ### Added
 - **`docs/ADOPTING.md`** — how to stand up your own repo on the framework: the two
