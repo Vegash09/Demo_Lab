@@ -92,9 +92,16 @@ idempotent (`CREATE … IF NOT EXISTS` / re-runnable `GRANT`) and run once per
 target before the first deploy:
 
 ```bash
-make bootstrap-uc TARGET=dev                                    # dry run — prints the SQL
-make bootstrap-uc TARGET=dev WAREHOUSE_ID=<sql-warehouse-id>    # applies it
+make bootstrap-uc TARGET=dev                                          # dry run — prints the SQL
+make bootstrap-uc TARGET=dev WAREHOUSE_ID=<id> PROFILE=<cli-profile>  # applies it
 ```
+
+`PROFILE=<cli-profile>` picks the workspace (the SDK otherwise uses your DEFAULT
+profile — set it to the one the bundle target deploys to). If your domain
+catalogs already exist, or your metastore uses **Default Storage** (where SQL
+`CREATE CATALOG` needs an explicit location), create the catalogs in the UI first
+and add `SKIP_CATALOGS=1` — bootstrap then just ensures the schemas, the
+`artifacts.wheels` volume, and grants.
 
 It creates, per target — **no separate artifacts catalog**; the framework wheel
 rides in each domain's own catalog:

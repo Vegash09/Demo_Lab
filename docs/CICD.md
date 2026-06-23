@@ -147,9 +147,12 @@ For each target (`dev`, `stage`, `prod`):
 4. **Unity Catalog bootstrap** (one time, before the first deploy):
    create the persona groups (`databricks groups create` or the account
    console — `dl_sales_readers`, `dl_sales_engineers` for stage/prod), then
-   `make bootstrap-uc TARGET=<target> WAREHOUSE_ID=<sql-warehouse-id>` to
-   create the catalog, medallion + landing/exports schemas, volumes, and
-   GRANTs. Dry-run first by omitting `WAREHOUSE_ID`. The SP also needs
+   `make bootstrap-uc TARGET=<target> WAREHOUSE_ID=<sql-warehouse-id> PROFILE=<cli-profile>`
+   to create the catalog, medallion + landing/exports schemas, the
+   `artifacts.wheels` volume, and GRANTs. `PROFILE` picks the workspace (the SDK
+   otherwise uses the DEFAULT profile); add `SKIP_CATALOGS=1` if the catalogs
+   already exist (or the metastore uses Default Storage). Dry-run first by
+   omitting `WAREHOUSE_ID`. The SP also needs
    CREATE/USE on the target catalog (step 1). Gotchas learned on the AWS
    workspace: UC grants need **account-level** groups (workspace-local SCIM
    groups are rejected) assigned to the workspace via
