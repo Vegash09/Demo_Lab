@@ -161,13 +161,17 @@ validate-connect:  ## Validate one dataset on a LIVE cluster via isolated Databr
 
 # One-time per target, BEFORE the first deploy. Out-of-band of the bundle so
 # `bundle destroy` never touches catalogs/schemas/volumes/grants. Dry run by
-# default; pass WAREHOUSE_ID=<sql-warehouse-id> to execute. `--with` keeps
-# databricks-sdk out of uv.lock (the dev venv stays pyspark-only).
-bootstrap-uc:  ## Print (or apply, with WAREHOUSE_ID=...) UC bootstrap SQL for $(TARGET)
+# default; pass WAREHOUSE_ID=<sql-warehouse-id> to execute. PROFILE=<cli-profile>
+# selects the workspace (the SDK otherwise uses the DEFAULT profile — set it to
+# the SAME workspace the bundle target deploys to). SKIP_CATALOGS=1 omits the
+# CREATE CATALOG statements when the domain catalogs already exist (e.g. created
+# via the UI on a Default-Storage metastore) — it still ensures schemas/volumes/
+# grants. `--with` keeps databricks-sdk out of uv.lock (dev venv stays pyspark-only).
+bootstrap-uc:  ## Print/apply UC bootstrap SQL for $(TARGET) (WAREHOUSE_ID=… to apply; PROFILE=… picks the workspace; SKIP_CATALOGS=1 if catalogs exist)
 	@if [ -n "$(WAREHOUSE_ID)" ]; then \
-		$(UV) run --with databricks-sdk python scripts/bootstrap_uc.py --target $(TARGET) --apply --warehouse-id $(WAREHOUSE_ID); \
+		$(UV) run --with databricks-sdk python scripts/bootstrap_uc.py --target $(TARGET) --apply --warehouse-id $(WAREHOUSE_ID) $(if $(PROFILE),--profile $(PROFILE),) $(if $(SKIP_CATALOGS),--skip-catalogs,); \
 	else \
-		$(UV) run python scripts/bootstrap_uc.py --target $(TARGET); \
+		$(UV) run python scripts/bootstrap_uc.py --target $(TARGET) $(if $(SKIP_CATALOGS),--skip-catalogs,); \
 	fi
 
 # ---- git --------------------------------------------------------------------
