@@ -614,7 +614,15 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   git-tracked files, drops the reference domains, writes the minimal domain,
   rewrites every repo-level file), or (B) generate from this **GitHub template
   repository** and run the `bootstrap-adopter-repo` skill in the clone. Then
-  extend with `author-ldp-artifact`. Wiring reference: `docs/ADOPTING.md`.
+  extend with `author-ldp-artifact`. Wiring reference: `docs/ADOPTING.md`
+  (incl. the onboarding checklist). **Cross-org:** both paths are org-agnostic,
+  but the new repo reads the PRIVATE framework via a **per-adopter read-only
+  deploy key** (`DATALAB_FRAMEWORK_DEPLOY_KEY`, repo/org-scoped — works across
+  orgs), and developers need their own read access to clone it locally. GitHub
+  OIDC is NOT this — it federates Actions→Databricks only, never repo→repo git
+  reads — so it cannot pull the framework into the wheel. Mechanics +
+  alternatives (PAT / GitHub App / vendored wheel): `docs/ADOPTING.md` →
+  "Accessing the private framework repo".
 - **Add a new domain pipeline** (e.g. finance): follow
   `docs/GETTING_STARTED.md` end to end — copy the `projects/customer_sales/` shape
   (config + `src/<catalog>_etl` + resources + `pyproject.toml`), register the
