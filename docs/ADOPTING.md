@@ -41,6 +41,71 @@ cd ../<customer>-datalab    # then run the bootstrap-adopter-repo skill
 (One-time, repo admin: `gh repo edit <owner>/datalab --template` enables the
 template flag.)
 
+**Creating it in another organization?** Both paths are org-agnostic — point them
+at any `<owner>` you can push to (`make new-adopter … OUT=…` then push, or
+`gh repo create <other-org>/<customer>-datalab --template <owner>/datalab`). Two
+things to know up front:
+
+1. **Generating needs read access to this template repo** (it is private). The
+   person running "Use this template" / `--template` must be able to read it.
+2. **Generating copies FILES only.** Actions secrets, GitHub Environments, the
+   OIDC federation policy, the **framework deploy key**, branch-protection rules,
+   and the "template" flag itself do **not** carry over — you set them up fresh in
+   the new repo (the checklist covers each). The new repo reads the private
+   framework across the org boundary with its own credential — see
+   [Accessing the private framework repo](#accessing-the-private-framework-repo-local--ci-cross-org).
+
+## Adopter onboarding checklist
+
+Copy this into the tracking issue for a new repo and fill the blanks. It covers
+both the generator inputs and the post-generation environment facts the generator
+cannot fill (those are the real gaps a first-timer hits). Step details are in the
+sections below.
+
+**Values to decide first**
+
+| Value | Used for | Default / where |
+|---|---|---|
+| `<catalog>` | package `<catalog>_etl`, pipeline, folders, catalog name (lowercase) | — (required) |
+| `<owner>/<repo>` | the new GitHub repo (any org you can push to) | — (required) |
+| `<host>` (+ stage/prod hosts if different) | Databricks workspace URL per target | — (one host fills all three targets) |
+| `<deploy-sp-app-id>` | CI/CD deploy service-principal application id (OIDC → Databricks) | — |
+| `<reader>/<engineer>/<admin>` groups | RBAC + UC grants | default `<catalog>_readers/_engineers/_admins` |
+| `<framework-tag>` | the `datalab` framework release to pin | default: this template's current pin |
+| `<warehouse-id>`, `<cli-profile>` | one-time UC bootstrap | — |
+| framework read-access credential | how this repo's CI **and** your devs clone the private framework | deploy key (default) / PAT / vendored wheel |
+
+**Steps**
+
+- [ ] **0. Prereqs** — read access to `dediggibyte/datalab-framework`; a Databricks
+  workspace + a deploy SP; `gh` + `databricks` CLI authenticated; `uv`; Java 17+.
+- [ ] **1. Generate** — `make new-adopter CATALOG=<catalog> OUT=../<catalog>-datalab
+  HOST=<host> DEPLOY_SP=<deploy-sp-app-id>` (add `*_GROUP=` / `FRAMEWORK_TAG=` to
+  override defaults). Leaving `HOST`/`DEPLOY_SP` blank writes clearly-marked
+  placeholders — fill them before deploy.
+- [ ] **2. Local gates** — `cd ../<catalog>-datalab && git init -b main && make lock
+  install && make validate-configs lint test`. *(`make lock install` clones the
+  private framework — your machine needs framework read access; see below.)*
+- [ ] **3. Stage/prod hosts** — if stage/prod are **different** workspaces, edit
+  `targets/stage.yml` / `targets/prod.yml` (the generator writes one `--host` into
+  all three).
+- [ ] **4. Create the GitHub repo** — `gh repo create <owner>/<repo> --source=.
+  --private --push` (or generate from the template in the target org).
+- [ ] **5. Framework access for CI** — the framework-repo admin adds a **per-adopter
+  read-only deploy key**; store its private half as the `DATALAB_FRAMEWORK_DEPLOY_KEY`
+  **repo-/org-level** secret (NOT per-environment).
+- [ ] **6. Databricks auth (OIDC)** — GitHub Environments `dev`/`stage`/`prod` with
+  `DATABRICKS_HOST` + `DATABRICKS_CLIENT_ID`; an OIDC federation policy on the SP
+  with subject `repo:<owner>/<repo>:environment:<target>` (one per target).
+- [ ] **7. UC bootstrap** — ensure the groups exist, then `make bootstrap-uc
+  TARGET=dev WAREHOUSE_ID=<warehouse-id> PROFILE=<cli-profile>` (`SKIP_CATALOGS=1`
+  if catalogs exist or the metastore uses Default Storage).
+- [ ] **8. Publish the framework wheel** — `make publish-wheel TARGET=dev APPLY=1`
+  (uploads into `<catalog>.artifacts.wheels`).
+- [ ] **9. Deploy + run** — `make deploy && make run`; confirm `bronze.events_raw`
+  materializes.
+- [ ] **10. Extend** — add real tables with the `author-ldp-artifact` skill.
+
 ## What this is / how the pieces relate
 
 The reusable framework was split out of this repo. Two repos now collaborate:
@@ -69,6 +134,100 @@ never lands on the runtime path and the pipeline fails at import with
 Volume is the delivery mechanism. This repo BUILDS that wheel **from the pinned
 git dep** and PUBLISHES it into each project catalog's own `artifacts.wheels`
 volume on every deploy (see below).
+
+## Accessing the private framework repo (local + CI, cross-org)
+
+`datalab` lives in the **private** `dediggibyte/datalab-framework` repo. **Every**
+place that resolves the git dep needs read access to that repo:
+
+| Where | Command | Why it clones the framework |
+|---|---|---|
+| your laptop | `make lock install` | `uv` resolves the git dep into `.venv` |
+| your laptop | `make publish-wheel` | builds the wheel via `pip wheel "datalab @ git+…"` |
+| CI | `uv sync --frozen` | lint/test/validate-configs import `datalab` |
+| CD | publish-wheel step **+** `bundle deploy` | builds + resolves the framework wheel |
+
+### Two different credentials — don't conflate them
+
+This is the crux of "can GitHub OIDC pull the framework into the wheel?" — **no.**
+Two unrelated auth concerns are in play:
+
+| Concern | Mechanism | Direction | Owned by |
+|---|---|---|---|
+| Read the framework **source** | read-only SSH **deploy key** (or PAT / GitHub App) | GitHub Actions **or a dev** → `github.com/dediggibyte/datalab-framework` | framework-repo admin mints one per adopter |
+| **Deploy** to Databricks | GitHub **OIDC** federation | GitHub Actions → **your own** Databricks workspace | each adopter (their own SP) |
+
+> **GitHub OIDC authenticates Actions to _Databricks_, not to GitHub.** It is a
+> cloud workload-identity federation — it cannot grant one GitHub repo read access
+> to another **private** GitHub repo. The built-in `GITHUB_TOKEN` is likewise
+> scoped to the adopter's own repo only. So neither OIDC nor `GITHUB_TOKEN` can
+> "take the framework from our repo and add it to the wheel" — the wheel build
+> (`pip wheel "datalab @ git+…"`) and `uv sync` both need a **git** credential:
+> a deploy key, a PAT, or a GitHub App token.
+
+### CI/CD access — works across orgs (deploy key)
+
+A deploy key is **repo-scoped, not org-scoped**, so the same mechanism this
+template uses works from any adopter org. Per adopter repo (the framework-repo
+admin does the first two):
+
+1. Generate a read-only keypair: `ssh-keygen -t ed25519 -f adopter_key -N "" -C "<repo> framework read"`.
+2. Add the **public** half (`adopter_key.pub`) as a **read-only deploy key** on
+   `dediggibyte/datalab-framework` (Settings → Deploy keys). GitHub requires each
+   deploy-key public key to be unique across repos, so **mint a fresh key per
+   adopter** — one repo can hold many deploy keys.
+3. In the adopter repo, store the **private** half as the
+   `DATALAB_FRAMEWORK_DEPLOY_KEY` Actions secret — **repo- or org-level, not
+   per-environment** (the CI `lint + test` job declares no `environment:`, so it
+   only sees repo/org secrets).
+
+The CI/CD workflows already carry the "Auth for the private datalab-framework git
+dependency" step (`common-ci-steps.yml` / `common-cd-steps.yml`): it loads the
+key and rewrites just that repo's HTTPS URL to SSH
+(`git config url."git@github.com:…".insteadOf "https://github.com/…"`) so `uv` and
+`pip wheel` clone over the key. Nothing to author — generating the repo copies
+these workflows; you only supply the secret. (Full mechanics + rotation:
+[CICD.md → Private framework dependency](CICD.md#private-framework-dependency-git-auth).)
+
+**Alternatives** when a deploy key doesn't fit the org's policy:
+
+- **Fine-grained PAT / machine user** with read on `datalab-framework`, stored as
+  the same secret and used by a credential-helper step instead of the SSH rewrite.
+- **GitHub App** installed on both orgs, minting short-lived tokens — best at
+  scale (no key to rotate per adopter).
+- **Decouple from source entirely** (below) if you can't grant any read access.
+
+### Local developer machines — yes, every dev
+
+`make lock install` (and `make publish-wheel`) clone the framework, so **each
+developer needs read access** to `dediggibyte/datalab-framework`. The clean way is
+to grant the dev team **Read** on that repo and let normal git auth handle it — no
+shared keys:
+
+- **HTTPS (simplest):** `gh auth login` + `gh auth setup-git` (or any credential
+  helper) authenticates the pinned `https://github.com/dediggibyte/datalab-framework.git`
+  URL directly.
+- **SSH:** add the same rewrite locally —
+  `git config --global url."git@github.com:dediggibyte/datalab-framework".insteadOf "https://github.com/dediggibyte/datalab-framework"` — with your own SSH key.
+
+Deploy keys are for machines/CI, not people; don't hand them to developers. A
+per-dev fine-grained PAT in the credential store also works.
+
+### If you can't share source access (decouple)
+
+To avoid giving an adopter org any read access to the framework source, deliver
+the framework as an **artifact** instead of a git dep:
+
+- hand them the built `datalab-<ver>-py3-none-any.whl` to upload into their
+  `<catalog>.artifacts.wheels` Volume (serverless already installs from there —
+  `var.datalab_wheel`), and
+- publish the same wheel to an index they can read (GitHub Packages / a private
+  PyPI) and point `[tool.uv.sources] datalab` at that index instead of git for
+  local dev + CI.
+
+Or, simplest of all, make `datalab-framework` **public** — then no credential is
+needed anywhere. These are policy choices; the deploy-key path above is the
+established default.
 
 ## Pin the framework version
 

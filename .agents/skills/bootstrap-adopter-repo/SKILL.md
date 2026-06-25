@@ -58,10 +58,23 @@ the generated repo too).
 - **Workspace groups** `<reader-group>` / `<engineer-group>` / `<admin-group>`.
 - **Framework version** `<framework-tag>` to pin (default: copy the current
   `[tool.uv.sources] datalab` tag in this repo's `pyproject.toml`).
+- **Framework read-access credential** — how the new repo's CI **and** the
+  developers clone the PRIVATE `dediggibyte/datalab-framework`. Default: a
+  per-adopter read-only SSH **deploy key** (repo-scoped, so it works across
+  orgs). Alternatives (PAT / GitHub App / vendored wheel) +
+  the OIDC-is-not-this distinction: `docs/ADOPTING.md` → "Accessing the private
+  framework repo".
 
 If the user has not decided some of these, use clearly-marked placeholders in
 the files and list them as TODOs at the end — never invent a workspace host or
 an SP id.
+
+**Another organization?** This skill and `make new-adopter` are org-agnostic —
+set `<owner>` to any org you can push to. Two caveats: generating from the
+template needs read access to THIS (private) repo, and it copies **files only** —
+Actions secrets, GitHub Environments, the OIDC policy, the framework deploy key,
+and branch protections do not carry over and are recreated in the new repo
+(steps 6–7). OIDC ≠ framework access (step 7).
 
 ## 2. Generate the repo from the template
 
@@ -170,12 +183,20 @@ something fails"). `make validate` needs the Databricks CLI authenticated
 
 ## 7. CI/CD, UC bootstrap, first deploy
 
-Detailed walkthrough: `docs/CICD.md` + `docs/ADOPTING.md`. In the new repo:
+Detailed walkthrough: `docs/CICD.md` + `docs/ADOPTING.md` ("Accessing the private
+framework repo" for the cross-org credential). In the new repo:
 
+- **Framework read access (a git credential, NOT OIDC).** CI (`uv sync`) and CD
+  (build the wheel + `bundle deploy`) clone the PRIVATE
+  `dediggibyte/datalab-framework`. For an adopter in another org, the
+  framework-repo admin mints a **per-adopter read-only deploy key**; store its
+  private half as the `DATALAB_FRAMEWORK_DEPLOY_KEY` secret at **repo/org level —
+  not per-environment** (the CI test job declares no `environment:`). OIDC cannot
+  do this: it federates Actions to Databricks, not to GitHub, so it can't grant
+  read on another private repo. Cross-org alternatives (PAT / GitHub App /
+  vendored wheel) are in `docs/ADOPTING.md`.
 - **GitHub Environments** `dev` / `stage` / `prod` with secrets
-  `DATABRICKS_HOST` + `DATABRICKS_CLIENT_ID`, plus the
-  `DATALAB_FRAMEWORK_DEPLOY_KEY` secret (read access to the private framework
-  repo so `uv sync` resolves `datalab` in CI).
+  `DATABRICKS_HOST` + `DATABRICKS_CLIENT_ID` (Databricks auth only).
 - **OIDC federation** on the deploy SP: subject
   `repo:<owner>/<customer-repo>:environment:<target>`, audience
   `<host>/oidc/v1/token`.
