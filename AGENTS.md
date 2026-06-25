@@ -608,6 +608,13 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   streaming source when the target has `cdc:`) to the table's artifact —
   never a job write. Names are checkpoint identities; the flow re-runs on
   full refresh by design. See "Backfills" in the framework repo's FRAMEWORK.md.
+- **Stand up a new adopter repo for a customer**: produce a minimal, root-level
+  single-domain adopter repo two ways — (A) one command, `make new-adopter
+  CATALOG=<c> OUT=../<c>-datalab` (`scripts/scaffold_adopter.py`: copies only
+  git-tracked files, drops the reference domains, writes the minimal domain,
+  rewrites every repo-level file), or (B) generate from this **GitHub template
+  repository** and run the `bootstrap-adopter-repo` skill in the clone. Then
+  extend with `author-ldp-artifact`. Wiring reference: `docs/ADOPTING.md`.
 - **Add a new domain pipeline** (e.g. finance): follow
   `docs/GETTING_STARTED.md` end to end — copy the `projects/customer_sales/` shape
   (config + `src/<catalog>_etl` + resources + `pyproject.toml`), register the

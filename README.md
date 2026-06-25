@@ -22,6 +22,11 @@ versioned **UC-Volume wheel** (serverless) this repo builds + publishes on deplo
 > Read it before editing. New here? **[docs/ADOPTING.md](docs/ADOPTING.md)** wires
 > your repo to the framework; **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**
 > authors your first table.
+>
+> Standing up a repo for **another customer**? This repo is a **GitHub template
+> repository** — generate from it and run the `bootstrap-adopter-repo` skill to
+> convert the clone into a minimal, root-level single-domain adopter repo
+> ([docs/ADOPTING.md](docs/ADOPTING.md#quick-start-generate-from-the-template)).
 
 ## Architecture at a glance
 
