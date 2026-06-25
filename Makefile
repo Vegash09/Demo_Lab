@@ -14,7 +14,7 @@ TARGET ?= dev
 .PHONY: help install lock lint fmt test validate-configs validate \
         deploy run destroy publish-wheel bootstrap-uc enable-githooks \
         commit-protected clean sync-skills check-skills publish-genie-skills \
-        spec-local dry-run-local run-local validate-connect design
+        spec-local dry-run-local run-local validate-connect design new-adopter
 
 help:  ## Show available targets
 	@printf "\ndatalab · make targets (TARGET=$(TARGET))\n\n"
@@ -188,6 +188,27 @@ commit-protected:  ## Commit staged changes past the protected-files guard (make
 		exit 1; \
 	fi
 	PROTECTED_EDIT_OK=1 git commit -m "$(MSG)"
+
+# ---- adopter scaffold -------------------------------------------------------
+# Generate a fresh, minimal single-domain adopter repo for a new customer from
+# THIS repo (deterministic; the bootstrap-adopter-repo skill is the guided
+# equivalent). Copies only git-TRACKED files (no secrets/state), drops the
+# reference domains, writes one minimal root-level domain renamed to CATALOG.
+# Required: CATALOG=<name> OUT=<dir>. Optional: HOST=, DEPLOY_SP=, READER_GROUP=,
+# ENGINEER_GROUP=, ADMIN_GROUP=, FRAMEWORK_TAG=, FORCE=1.
+new-adopter:  ## Generate a new adopter repo (CATALOG=<name> OUT=<dir>; optional HOST=, DEPLOY_SP=, *_GROUP=, FORCE=1)
+	@if [ -z "$(CATALOG)" ] || [ -z "$(OUT)" ]; then \
+		echo "ERROR: pass CATALOG and OUT:  make new-adopter CATALOG=acme OUT=../acme-datalab"; \
+		exit 1; \
+	fi
+	$(UV) run python scripts/scaffold_adopter.py --catalog $(CATALOG) --out $(OUT) \
+		$(if $(HOST),--host $(HOST),) \
+		$(if $(DEPLOY_SP),--deploy-sp $(DEPLOY_SP),) \
+		$(if $(READER_GROUP),--reader-group $(READER_GROUP),) \
+		$(if $(ENGINEER_GROUP),--engineer-group $(ENGINEER_GROUP),) \
+		$(if $(ADMIN_GROUP),--admin-group $(ADMIN_GROUP),) \
+		$(if $(FRAMEWORK_TAG),--framework-tag $(FRAMEWORK_TAG),) \
+		$(if $(FORCE),--force,)
 
 # ---- cleanup ----------------------------------------------------------------
 clean:  ## Remove .venv and caches

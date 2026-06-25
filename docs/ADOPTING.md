@@ -7,6 +7,40 @@ author your first **table** once the repo stands, follow
 [GETTING_STARTED.md](GETTING_STARTED.md); this doc wires your repo to the
 framework.
 
+## Quick start: stand up a new customer repo
+
+This repo doubles as the starting point for a new single-customer repo. Both
+paths produce the same thing — a clean **root-level single-domain** adopter repo
+(`config/<catalog>/`, `src/<catalog>_etl/`, `resources/*.yml`) with one minimal
+Auto Loader bronze table — then you extend it with the `author-ldp-artifact`
+skill. The rest of this doc is the reference for what that conversion does.
+
+**Option A — deterministic generator (one command).** Run from a clone of THIS
+repo; it copies only git-tracked files (never secrets/state/build output), drops
+the reference domains, writes the minimal domain, and rewrites every repo-level
+file:
+
+```bash
+make new-adopter CATALOG=<catalog> OUT=../<catalog>-datalab \
+    HOST=https://<workspace> DEPLOY_SP=<app-id>
+cd ../<catalog>-datalab && git init -b main && make lock install \
+    && make validate-configs lint test
+# then publish it:  gh repo create <owner>/<catalog>-datalab --source=. --private --push
+```
+
+**Option B — GitHub template + the `bootstrap-adopter-repo` skill.** This repo is
+a **GitHub template repository**; generate from it, then run the skill in the
+clone to do the same conversion (handy when you want an agent to customize as it
+goes):
+
+```bash
+gh repo create <owner>/<customer>-datalab --template <owner>/datalab --private --clone ../<customer>-datalab
+cd ../<customer>-datalab    # then run the bootstrap-adopter-repo skill
+```
+
+(One-time, repo admin: `gh repo edit <owner>/datalab --template` enables the
+template flag.)
+
 ## What this is / how the pieces relate
 
 The reusable framework was split out of this repo. Two repos now collaborate:
