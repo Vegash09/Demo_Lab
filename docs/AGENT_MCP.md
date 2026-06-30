@@ -104,11 +104,16 @@ changes. Treat it like the `omnigent/` pilot: opt-in, verify, throwaway.
 
 ## Adopter setup
 
-When you copy this framework into your own repo, the harness (`.mcp.json`,
-`.cursor/mcp.json`, the `query-databricks` skill, this doc, and the
-`.databricksignore` / protected-list rows) comes along **as-is**. Then point it
-at your workspace — either edit the two JSON files, or (Claude Code) export the
-env overrides the defaults already reference:
+When you stand up an adopter repo with `make configure-adopter` (in place) or
+`make new-adopter` (sibling), the configurator has **already** rewritten both
+JSON files to your SQL warehouse id + CLI profile — there is nothing to swap
+unless you left the warehouse id as a placeholder (`<sql-warehouse-id>`) at
+configure time, in which case fill it now. (If you instead copied the harness in
+by hand, the `.mcp.json` / `.cursor/mcp.json`, the `query-databricks` skill, this
+doc, and the `.databricksignore` / protected-list rows come along **as-is**, still
+pointing at this template's workspace — point them at yours.) Either way you can
+edit the two JSON files directly, or (Claude Code) export the env overrides the
+defaults already reference:
 
 | Value | This repo's default | Where it lives | Your source |
 |---|---|---|---|

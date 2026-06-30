@@ -14,7 +14,8 @@ TARGET ?= dev
 .PHONY: help install lock lint fmt test validate-configs validate \
         deploy run destroy publish-wheel bootstrap-uc enable-githooks \
         commit-protected clean sync-skills check-skills publish-genie-skills \
-        spec-local dry-run-local run-local validate-connect design new-adopter
+        spec-local dry-run-local run-local validate-connect design \
+        new-adopter configure-adopter
 
 help:  ## Show available targets
 	@printf "\ndatalab · make targets (TARGET=$(TARGET))\n\n"
@@ -190,19 +191,45 @@ commit-protected:  ## Commit staged changes past the protected-files guard (make
 	PROTECTED_EDIT_OK=1 git commit -m "$(MSG)"
 
 # ---- adopter scaffold -------------------------------------------------------
-# Generate a fresh, minimal single-domain adopter repo for a new customer from
-# THIS repo (deterministic; the bootstrap-adopter-repo skill is the guided
-# equivalent). Copies only git-TRACKED files (no secrets/state), drops the
-# reference domains, writes one minimal root-level domain renamed to CATALOG.
-# Required: CATALOG=<name> OUT=<dir>. Optional: HOST=, DEPLOY_SP=, READER_GROUP=,
+# Two ways to turn this reference repo into a customer's single-domain adopter.
+# Both run the SAME deterministic engine (scripts/scaffold_adopter.py), so the
+# adopter always matches the template structure (config/<catalog>/<schema>/, root
+# src/resources) and the workspace-specific surfaces are all repointed — host,
+# RBAC groups, deploy SP, AND the MCP grounding config (.mcp.json /
+# .cursor/mcp.json: SQL warehouse id + CLI profile, which the old flow ignored).
+# CATALOG must be the BASE catalog name — no _dev/_stage/_prod suffix (the bundle
+# appends those per target; the engine rejects a suffixed name). docs/ADOPTING.md.
+
+# configure-adopter: convert THIS clone (made from the GitHub template) in place,
+# PROMPTING for + confirming every workspace value. This is the path the
+# bootstrap-adopter-repo skill drives. Prefill any value to skip its prompt
+# (e.g. CATALOG=acme). --no-project: the script is stdlib-only, so it runs before
+# `make install` and without touching the (still reference) project env.
+configure-adopter:  ## Configure THIS template clone in place into an adopter (interactive; prefill CATALOG=, HOST=, WAREHOUSE_ID=, MCP_PROFILE=, *_GROUP=, DEPLOY_SP=)
+	$(UV) run --no-project python scripts/scaffold_adopter.py --in-place --interactive \
+		$(if $(CATALOG),--catalog $(CATALOG),) \
+		$(if $(HOST),--host $(HOST),) \
+		$(if $(WAREHOUSE_ID),--warehouse-id $(WAREHOUSE_ID),) \
+		$(if $(MCP_PROFILE),--mcp-profile $(MCP_PROFILE),) \
+		$(if $(DEPLOY_SP),--deploy-sp $(DEPLOY_SP),) \
+		$(if $(READER_GROUP),--reader-group $(READER_GROUP),) \
+		$(if $(ENGINEER_GROUP),--engineer-group $(ENGINEER_GROUP),) \
+		$(if $(ADMIN_GROUP),--admin-group $(ADMIN_GROUP),) \
+		$(if $(FRAMEWORK_TAG),--framework-tag $(FRAMEWORK_TAG),)
+
+# new-adopter: generate a fresh sibling repo from THIS repo (copies only
+# git-TRACKED files — no secrets/state). Required: CATALOG=<name> OUT=<dir>.
+# Optional: HOST=, WAREHOUSE_ID=, MCP_PROFILE=, DEPLOY_SP=, READER_GROUP=,
 # ENGINEER_GROUP=, ADMIN_GROUP=, FRAMEWORK_TAG=, FORCE=1.
-new-adopter:  ## Generate a new adopter repo (CATALOG=<name> OUT=<dir>; optional HOST=, DEPLOY_SP=, *_GROUP=, FORCE=1)
+new-adopter:  ## Generate a new adopter repo in a sibling dir (CATALOG=<name> OUT=<dir>; optional HOST=, WAREHOUSE_ID=, MCP_PROFILE=, DEPLOY_SP=, *_GROUP=, FORCE=1)
 	@if [ -z "$(CATALOG)" ] || [ -z "$(OUT)" ]; then \
 		echo "ERROR: pass CATALOG and OUT:  make new-adopter CATALOG=acme OUT=../acme-datalab"; \
 		exit 1; \
 	fi
 	$(UV) run python scripts/scaffold_adopter.py --catalog $(CATALOG) --out $(OUT) \
 		$(if $(HOST),--host $(HOST),) \
+		$(if $(WAREHOUSE_ID),--warehouse-id $(WAREHOUSE_ID),) \
+		$(if $(MCP_PROFILE),--mcp-profile $(MCP_PROFILE),) \
 		$(if $(DEPLOY_SP),--deploy-sp $(DEPLOY_SP),) \
 		$(if $(READER_GROUP),--reader-group $(READER_GROUP),) \
 		$(if $(ENGINEER_GROUP),--engineer-group $(ENGINEER_GROUP),) \

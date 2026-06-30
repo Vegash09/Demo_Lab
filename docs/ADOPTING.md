@@ -15,31 +15,44 @@ paths produce the same thing — a clean **root-level single-domain** adopter re
 Auto Loader bronze table — then you extend it with the `author-ldp-artifact`
 skill. The rest of this doc is the reference for what that conversion does.
 
-**Option A — deterministic generator (one command).** Run from a clone of THIS
-repo; it copies only git-tracked files (never secrets/state/build output), drops
-the reference domains, writes the minimal domain, and rewrites every repo-level
-file:
+Both options run the SAME deterministic engine (`scripts/scaffold_adopter.py`),
+so the adopter always matches the template structure and **every**
+workspace-specific surface is repointed in one shot — host/targets, RBAC groups,
+deploy SP, and the read-only MCP grounding config (`.mcp.json` /
+`.cursor/mcp.json`: SQL warehouse id + CLI profile). Never hand-edit the
+conversion — that is what drifts (a `config/<catalog>_databricks_prod` folder, an
+`.mcp.json` still on the template's warehouse). `<catalog>` is the **base** name —
+no `_dev`/`_stage`/`_prod` suffix (the bundle appends the env per target); the
+engine rejects a suffixed name.
 
-```bash
-make new-adopter CATALOG=<catalog> OUT=../<catalog>-datalab \
-    HOST=https://<workspace> DEPLOY_SP=<app-id>
-cd ../<catalog>-datalab && git init -b main && make lock install \
-    && make validate-configs lint test
-# then publish it:  gh repo create <owner>/<catalog>-datalab --source=. --private --push
-```
-
-**Option B — GitHub template + the `bootstrap-adopter-repo` skill.** This repo is
-a **GitHub template repository**; generate from it, then run the skill in the
-clone to do the same conversion (handy when you want an agent to customize as it
-goes):
+**Option A — GitHub template + `make configure-adopter` (convert in place).** This
+repo is a **GitHub template repository**; generate from it, then convert the clone
+in place. `configure-adopter` PROMPTS for and confirms every workspace value
+(catalog, host, SQL warehouse id, MCP CLI profile, RBAC groups, deploy SP,
+framework tag) before writing — or let the `bootstrap-adopter-repo` skill drive it
+with values you gather from the user:
 
 ```bash
 gh repo create <owner>/<customer>-datalab --template <owner>/datalab --private --clone ../<customer>-datalab
-cd ../<customer>-datalab    # then run the bootstrap-adopter-repo skill
+cd ../<customer>-datalab
+make configure-adopter             # interactive; prefill any value, e.g. CATALOG=<catalog> WAREHOUSE_ID=<id>
+make lock install && make validate-configs lint test
 ```
 
 (One-time, repo admin: `gh repo edit <owner>/datalab --template` enables the
 template flag.)
+
+**Option B — `make new-adopter` (fresh sibling repo).** Run from a clone of THIS
+repo; copies only git-tracked files (never secrets/state/build output) into a new
+sibling dir:
+
+```bash
+make new-adopter CATALOG=<catalog> OUT=../<catalog>-datalab \
+    HOST=https://<workspace> WAREHOUSE_ID=<id> MCP_PROFILE=<catalog>_dev DEPLOY_SP=<app-id>
+cd ../<catalog>-datalab && git init -b main && make lock install \
+    && make validate-configs lint test
+# then publish it:  gh repo create <owner>/<catalog>-datalab --source=. --private --push
+```
 
 **Creating it in another organization?** Both paths are org-agnostic — point them
 at any `<owner>` you can push to (`make new-adopter … OUT=…` then push, or
@@ -66,26 +79,30 @@ sections below.
 
 | Value | Used for | Default / where |
 |---|---|---|
-| `<catalog>` | package `<catalog>_etl`, pipeline, folders, catalog name (lowercase) | — (required) |
+| `<catalog>` | package `<catalog>_etl`, pipeline, folders, catalog name (lowercase, **base name — no `_dev`/`_stage`/`_prod`**) | — (required) |
 | `<owner>/<repo>` | the new GitHub repo (any org you can push to) | — (required) |
 | `<host>` (+ stage/prod hosts if different) | Databricks workspace URL per target | — (one host fills all three targets) |
 | `<deploy-sp-app-id>` | CI/CD deploy service-principal application id (OIDC → Databricks) | — |
 | `<reader>/<engineer>/<admin>` groups | RBAC + UC grants | default `<catalog>_readers/_engineers/_admins` |
 | `<framework-tag>` | the `datalab` framework release to pin | default: this template's current pin |
-| `<warehouse-id>`, `<cli-profile>` | one-time UC bootstrap | — |
+| `<warehouse-id>`, `<cli-profile>` | one-time UC bootstrap **and** the read-only MCP grounding config (`.mcp.json` / `.cursor/mcp.json`) | profile default `<catalog>_dev` |
 | framework read-access credential | how this repo's CI **and** your devs clone the private framework | deploy key (default) / PAT / vendored wheel |
 
 **Steps**
 
 - [ ] **0. Prereqs** — read access to `dediggibyte/datalab-framework`; a Databricks
   workspace + a deploy SP; `gh` + `databricks` CLI authenticated; `uv`; Java 17+.
-- [ ] **1. Generate** — `make new-adopter CATALOG=<catalog> OUT=../<catalog>-datalab
-  HOST=<host> DEPLOY_SP=<deploy-sp-app-id>` (add `*_GROUP=` / `FRAMEWORK_TAG=` to
-  override defaults). Leaving `HOST`/`DEPLOY_SP` blank writes clearly-marked
-  placeholders — fill them before deploy.
-- [ ] **2. Local gates** — `cd ../<catalog>-datalab && git init -b main && make lock
-  install && make validate-configs lint test`. *(`make lock install` clones the
-  private framework — your machine needs framework read access; see below.)*
+- [ ] **1. Configure** — in a template clone, `make configure-adopter` (interactive:
+  prompts for catalog, host, warehouse id, MCP profile, groups, deploy SP,
+  framework tag), OR a fresh sibling with `make new-adopter CATALOG=<catalog>
+  OUT=../<catalog>-datalab HOST=<host> WAREHOUSE_ID=<warehouse-id>
+  DEPLOY_SP=<deploy-sp-app-id>` (add `MCP_PROFILE=` / `*_GROUP=` / `FRAMEWORK_TAG=`
+  to override defaults). Blank `HOST`/`DEPLOY_SP`/`WAREHOUSE_ID` become
+  clearly-marked placeholders — fill them before deploy.
+- [ ] **2. Local gates** — `make lock install && make validate-configs lint test`
+  (sibling repos: `cd ../<catalog>-datalab && git init -b main` first). *(`make lock
+  install` clones the private framework — your machine needs framework read access;
+  see below.)*
 - [ ] **3. Stage/prod hosts** — if stage/prod are **different** workspaces, edit
   `targets/stage.yml` / `targets/prod.yml` (the generator writes one `--host` into
   all three).

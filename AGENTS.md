@@ -608,21 +608,32 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   streaming source when the target has `cdc:`) to the table's artifact —
   never a job write. Names are checkpoint identities; the flow re-runs on
   full refresh by design. See "Backfills" in the framework repo's FRAMEWORK.md.
-- **Stand up a new adopter repo for a customer**: produce a minimal, root-level
-  single-domain adopter repo two ways — (A) one command, `make new-adopter
-  CATALOG=<c> OUT=../<c>-datalab` (`scripts/scaffold_adopter.py`: copies only
-  git-tracked files, drops the reference domains, writes the minimal domain,
-  rewrites every repo-level file), or (B) generate from this **GitHub template
-  repository** and run the `bootstrap-adopter-repo` skill in the clone. Then
-  extend with `author-ldp-artifact`. Wiring reference: `docs/ADOPTING.md`
-  (incl. the onboarding checklist). **Cross-org:** both paths are org-agnostic,
-  but the new repo reads the PRIVATE framework via a **per-adopter read-only
-  deploy key** (`DATALAB_FRAMEWORK_DEPLOY_KEY`, repo/org-scoped — works across
-  orgs), and developers need their own read access to clone it locally. GitHub
-  OIDC is NOT this — it federates Actions→Databricks only, never repo→repo git
-  reads — so it cannot pull the framework into the wheel. Mechanics +
-  alternatives (PAT / GitHub App / vendored wheel): `docs/ADOPTING.md` →
-  "Accessing the private framework repo".
+- **Stand up a new adopter repo for a customer**: one deterministic engine
+  (`scripts/scaffold_adopter.py`) produces a minimal, root-level single-domain
+  adopter repo two ways — (A) **in place**, `make configure-adopter` inside a
+  clone made from this **GitHub template repository** (the
+  `bootstrap-adopter-repo` skill drives this; `--interactive` PROMPTS for and
+  confirms every workspace value, then converts the clone), or (B) **fresh
+  sibling**, `make new-adopter CATALOG=<c> OUT=../<c>-datalab` (copies only
+  git-tracked files into a new dir). Same engine, same result: drops the
+  reference domains, writes the minimal domain, rewrites every repo-level file,
+  and **repoints the workspace-specific surfaces** — host/targets, RBAC groups,
+  deploy SP, AND the read-only MCP grounding config (`.mcp.json` +
+  `.cursor/mcp.json`: SQL warehouse id + CLI profile, which the old flow left
+  pointing at the template's workspace). The engine **rejects** a `<catalog>` that
+  carries an env suffix (`_dev`/`_stage`/`_prod`) — the base name only, since the
+  bundle appends the env per target (`docs/NAMING.md`); that guard is what
+  prevents the `config/<catalog>_databricks_prod` drift. Never hand-edit the
+  conversion — drift is what hand-editing causes; `references/templates.md` is the
+  manual fallback. Then extend with `author-ldp-artifact`. Wiring reference:
+  `docs/ADOPTING.md` (incl. the onboarding checklist). **Cross-org:** both paths
+  are org-agnostic, but the new repo reads the PRIVATE framework via a
+  **per-adopter read-only deploy key** (`DATALAB_FRAMEWORK_DEPLOY_KEY`,
+  repo/org-scoped — works across orgs), and developers need their own read access
+  to clone it locally. GitHub OIDC is NOT this — it federates Actions→Databricks
+  only, never repo→repo git reads — so it cannot pull the framework into the
+  wheel. Mechanics + alternatives (PAT / GitHub App / vendored wheel):
+  `docs/ADOPTING.md` → "Accessing the private framework repo".
 - **Add a new domain pipeline** (e.g. finance): follow
   `docs/GETTING_STARTED.md` end to end — copy the `projects/customer_sales/` shape
   (config + `src/<catalog>_etl` + resources + `pyproject.toml`), register the
