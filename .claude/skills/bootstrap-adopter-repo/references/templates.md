@@ -3,10 +3,18 @@
 Ready-to-paste contents for a fresh single-domain adopter repo at the repo
 ROOT. Replace every placeholder before writing:
 
-- `<catalog>` — the base Unity Catalog catalog / domain name (e.g. `acme`).
-  The domain package is `<catalog>_etl`, the pipeline is `<catalog>_etl`.
+- `<catalog>` — the **base** Unity Catalog catalog / domain name (e.g. `acme`).
+  The domain package is `<catalog>_etl`, the pipeline is `<catalog>_etl`. BASE
+  name only — **no `_dev`/`_stage`/`_prod` suffix**: the bundle appends the
+  environment per target (`acme` → `acme` / `acme_stage` / `acme_prod`), so a
+  suffixed name yields `config/<catalog>_prod/` and a doubled `..._prod_prod`
+  catalog. (`docs/NAMING.md`.)
 - `<owner>` / `<customer-repo>` — the new repo's GitHub owner / name.
 - `<host>` — the customer's Databricks workspace URL.
+- `<warehouse-id>` — a SQL warehouse id in the customer's workspace (UC bootstrap
+  + the MCP grounding config).
+- `<cli-profile>` — the `databricks auth login` profile for the read-only MCP
+  grounding (default `<catalog>_dev`).
 - `<deploy-sp-app-id>` — the CI/CD deploy service principal application id.
 - `<reader-group>` / `<engineer-group>` / `<admin-group>` — workspace groups.
 - `<framework-tag>` — the pinned `datalab` framework release tag (keep the same
@@ -15,10 +23,10 @@ ROOT. Replace every placeholder before writing:
 These mirror `projects/customer_sales/` but with ROOT-relative paths and a
 single root `pyproject.toml`. Field reference: the framework `docs/FRAMEWORK.md`.
 
-> The `scripts/scaffold_adopter.py` generator (`make new-adopter`) writes all of
-> these automatically (Flow A). This doc is the human-readable reference for the
-> manual / GitHub-template flow (Flow B) — keep the two in sync when either
-> changes.
+> The `scripts/scaffold_adopter.py` engine writes all of these automatically —
+> both `make configure-adopter` (convert a template clone in place) and
+> `make new-adopter` (fresh sibling repo) call it. This doc is the human-readable
+> reference + manual fallback; keep the two in sync when either changes.
 
 ---
 
@@ -450,3 +458,22 @@ Rewrite `README.md` for the customer (title, intro, the `make run <catalog>_etl`
 quick start; drop the `projects/customer_sales` + `projects/sales` references).
 Reset `CHANGELOG.md`. The `docs/` are reusable framework guidance — keep them,
 but fix repo-specific references (workspace host, any `projects/...` paths).
+
+### `.mcp.json` and `.cursor/mcp.json` (the MCP grounding config)
+
+Both ship pointing at the TEMPLATE's read-only-query workspace — repoint them at
+the customer's, or the adopter's agents query the wrong workspace. Swap the CLI
+profile `diggi_dev_aws` → `<cli-profile>` and warehouse id `c1cdbe2406e5cf04` →
+`<warehouse-id>` in BOTH files. `.mcp.json` keeps its `${VAR:-default}` env
+override; `.cursor/mcp.json` holds the literals. A placeholder `<warehouse-id>`
+is fine for now (the MCP is opt-in/dev-time and `.mcp.json`'s env var overrides
+it) — fill it before relying on the grounding (`docs/AGENT_MCP.md`).
+
+```jsonc
+// .mcp.json — the two args that carry the workspace identity
+"--profile", "${DATABRICKS_CONFIG_PROFILE:-<cli-profile>}",
+"--meta",    "warehouse_id=${DATABRICKS_SQL_WAREHOUSE_ID:-<warehouse-id>}"
+// .cursor/mcp.json — same two values, as literals
+"--profile", "<cli-profile>",
+"--meta",    "warehouse_id=<warehouse-id>"
+```

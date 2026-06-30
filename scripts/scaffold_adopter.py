@@ -1,24 +1,48 @@
-"""Generate a minimal datalab adopter repo from this reference repo.
+"""Configure a minimal datalab adopter repo — deterministically, no per-run surgery.
 
-One deterministic command — no per-run agent surgery. It copies the repo-level
-scaffold (bundle manifest, variables/targets/rbac, scripts, schemas, CI, agent
-harness, docs, githooks), DROPS the reference domains (``projects/``) and design
-assets, writes ONE minimal root-level domain renamed to your catalog, and
-rewrites the repo-level files for the adopter layout (single-package
-``pyproject.toml``, root ``resources/``, single catalog).
+It DROPS the reference domains (``projects/``), design assets and the dev-time
+pilot (``omnigent/``), writes ONE minimal root-level domain renamed to your
+catalog, rewrites the repo-level files for the adopter layout (single-package
+``pyproject.toml``, root ``resources/``, single catalog) and repoints the
+workspace-specific surfaces at your workspace — including the MCP grounding
+config (``.mcp.json`` / ``.cursor/mcp.json``), which the old flow left pointing
+at the template's workspace.
 
+Two run modes:
+
+* ``--in-place`` — convert the CURRENT repo (a clone you made from the GitHub
+  template) into the adopter, editing it in place. This is the path the
+  ``bootstrap-adopter-repo`` skill / ``make configure-adopter`` drive.
+* ``--out <dir>`` — generate a fresh sibling repo from this one, copying only
+  git-tracked files (never secrets/state/build output). This is ``make
+  new-adopter``.
+
+Add ``--interactive`` to be PROMPTED for every workspace-specific value (catalog,
+host, SQL warehouse id, MCP CLI profile, RBAC groups, deploy SP, framework tag)
+with a confirmation step; otherwise pass them as flags (the agent/CI path).
+
+    # convert a template clone in place, prompting for everything:
+    python scripts/scaffold_adopter.py --in-place --interactive
+
+    # non-interactive (agent/CI), every value supplied:
+    python scripts/scaffold_adopter.py --in-place --yes --catalog acme \\
+        --host https://<workspace> --warehouse-id <id> --mcp-profile acme_dev \\
+        --deploy-sp <app-id> --reader-group acme_readers \\
+        --engineer-group acme_engineers --admin-group acme_admins
+
+    # fresh sibling repo:
     python scripts/scaffold_adopter.py --catalog acme --out ../acme-datalab \\
-        [--host https://<workspace>] [--deploy-sp <app-id>] \\
-        [--reader-group acme_readers] [--engineer-group acme_engineers] \\
-        [--admin-group acme_admins] [--framework-tag v0.3.0] [--force]
+        [--host …] [--deploy-sp …] [--warehouse-id …] [--mcp-profile …] [--force]
 
-Then, inside the generated repo:
+Then, inside the configured repo:
 
     git init -b main && make lock install && make validate-configs lint test
 
-This is the deterministic equivalent of the ``bootstrap-adopter-repo`` agent
-skill; the file templates here mirror that skill's
-``references/templates.md``. Stdlib only.
+The ``<catalog>`` must be the BASE catalog name (lowercase, no ``_dev`` /
+``_stage`` / ``_prod`` suffix — the bundle appends those per target; see
+``docs/NAMING.md``); a suffixed name is rejected. This is the deterministic
+engine behind the ``bootstrap-adopter-repo`` agent skill; the file templates
+here mirror that skill's ``references/templates.md``. Stdlib only.
 """
 
 from __future__ import annotations
@@ -33,13 +57,28 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Top-level TRACKED entries NOT copied into the adopter: the reference domains,
-# design assets, dev-time pilot, and the lockfile (regenerated for the single
-# package). We copy only git-TRACKED files, so secrets (.env), local state
+# Top-level TRACKED entries NOT copied into the adopter (sibling mode), and the
+# set REMOVED from the clone in --in-place mode: the reference domains, design
+# assets, dev-time pilot, and the lockfile (regenerated for the single package).
+# In sibling mode we copy only git-TRACKED files, so secrets (.env), local state
 # (.venv/.databricks), and build output (dist/) are excluded automatically.
 EXCLUDE_TOP = {"projects", "design", "omnigent", "uv.lock"}
 
 CATALOG_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+# The bundle appends these per target (targets/<env>.yml), so the BASE catalog
+# folder/var must not already carry one — `xflow_prod` would deploy
+# `xflow_prod_prod`. Reject by default; --allow-env-suffix overrides.
+ENV_SUFFIXES = ("_dev", "_stage", "_prod")
+
+# Canonical template repo. --in-place refuses to run against it (you would be
+# converting the template itself, not an adopter clone); --force overrides.
+TEMPLATE_SLUG = "dediggibyte/datalab"
+
+# The template's own MCP grounding workspace, hardcoded in .mcp.json and
+# .cursor/mcp.json. patch_mcp swaps these for the adopter's so the read-only
+# Databricks queries hit the customer's workspace (AGENTS.md "Databricks MCP").
+TEMPLATE_MCP_PROFILE = "diggi_dev_aws"
+TEMPLATE_WAREHOUSE_ID = "c1cdbe2406e5cf04"
 
 
 # --------------------------------------------------------------------------- #
@@ -437,6 +476,53 @@ def framework_tag(default: str = "main") -> str:
     return src.get("tag") or src.get("rev") or src.get("branch") or default
 
 
+def check_catalog(catalog: str, allow_suffix: bool) -> tuple[bool, str]:
+    """Validate a base catalog name. Returns (ok, error-message-if-not)."""
+    catalog = catalog.strip()
+    if not catalog:
+        return False, "a catalog name is required"
+    if not CATALOG_RE.match(catalog):
+        return False, "use lowercase letters/digits/underscores, starting with a letter"
+    if not allow_suffix and catalog.endswith(ENV_SUFFIXES):
+        return False, (
+            f"'{catalog}' looks like it includes an environment suffix — pass the BASE "
+            "name only (the bundle appends _stage/_prod per target; see docs/NAMING.md). "
+            "Re-run with --allow-env-suffix only if the base catalog truly ends this way."
+        )
+    return True, ""
+
+
+def repo_slug(path: Path) -> str:
+    """`<owner>/<repo>` from the git origin of `path` (empty if none)."""
+    try:
+        url = subprocess.run(
+            ["git", "-C", str(path), "remote", "get-url", "origin"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return ""
+    url = url.removesuffix(".git")
+    if url.startswith("git@") and ":" in url:  # git@github.com:owner/repo
+        url = url.split(":", 1)[1]
+    parts = [p for p in url.replace("https://", "").split("/") if p]
+    return "/".join(parts[-2:]) if len(parts) >= 2 else ""
+
+
+def drop_reference_material(out: Path) -> None:
+    """In-place: delete the reference-only top-level entries from the clone.
+
+    The adopter keeps the framework scaffold (scripts/, schemas/, .github/, the
+    agent harness, docs/) but not the reference domains, design assets, dev-time
+    pilot, or the multi-package lockfile (regenerated by `make lock`).
+    """
+    for rel in sorted(EXCLUDE_TOP):
+        target = out / rel
+        if target.is_dir():
+            shutil.rmtree(target)
+        elif target.exists():
+            target.unlink()
+
+
 def copy_scaffold(out: Path) -> None:
     """Copy every git-TRACKED file except the reference/dev-only top-level set.
 
@@ -561,6 +647,31 @@ def patch_databricksignore(out: Path) -> None:
     path.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
 
+def patch_mcp(out: Path, ctx: dict[str, str]) -> None:
+    """Repoint the read-only Databricks MCP grounding config at the adopter.
+
+    Both `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) ship with the
+    template's CLI profile + dev SQL warehouse baked in; left untouched, an
+    adopter's agents would query the TEMPLATE's workspace. Swap in the adopter's
+    profile + warehouse id. The MCP is opt-in/dev-time, so a placeholder
+    warehouse id is fine — `.mcp.json` keeps its `${VAR:-default}` env override,
+    and the literal doubles as a visible TODO in `.cursor/mcp.json`.
+    """
+    profile, warehouse = ctx["@@MCP_PROFILE@@"], ctx["@@WAREHOUSE_ID@@"]
+    # `.mcp.json` is the canonical file — fail loudly if its template literals
+    # drift; `.cursor/mcp.json` mirrors it best-effort.
+    mcp = out / ".mcp.json"
+    if mcp.exists():
+        text = require_replace(mcp.read_text(encoding="utf-8"), TEMPLATE_MCP_PROFILE, profile, ".mcp.json")
+        text = require_replace(text, TEMPLATE_WAREHOUSE_ID, warehouse, ".mcp.json")
+        mcp.write_text(text, encoding="utf-8")
+    cursor = out / ".cursor" / "mcp.json"
+    if cursor.exists():
+        text = cursor.read_text(encoding="utf-8")
+        text = text.replace(TEMPLATE_MCP_PROFILE, profile).replace(TEMPLATE_WAREHOUSE_ID, warehouse)
+        cursor.write_text(text, encoding="utf-8")
+
+
 def write_domain(out: Path, ctx: dict[str, str], subst) -> None:
     cat = ctx["@@CATALOG@@"]
     files = {
@@ -602,45 +713,131 @@ def write_repo_level(out: Path, subst) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Interactive prompting (the user CONFIRMS every workspace-specific value)
+# --------------------------------------------------------------------------- #
+
+def _prompt(label: str, default: str = "") -> str:
+    suffix = f" [{default}]" if default else ""
+    try:
+        resp = input(f"  {label}{suffix}: ").strip()
+    except EOFError:
+        resp = ""
+    return resp or default
+
+
+def confirm(question: str) -> bool:
+    try:
+        return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
+
+
+def gather_interactive(args, default_tag: str) -> dict[str, str]:
+    """Prompt for every workspace-specific value, seeded by any flags passed."""
+    print("\nConfigure this datalab adopter repo. Press Enter to accept the [default].\n")
+    while True:
+        catalog = _prompt("Base catalog / domain (lowercase, no _dev/_stage/_prod)", args.catalog)
+        ok, msg = check_catalog(catalog, args.allow_env_suffix)
+        if ok:
+            break
+        print(f"    ! {msg}\n")
+    resolved = {
+        "catalog": catalog,
+        "host": _prompt("Databricks workspace host (https://…)", args.host),
+        "warehouse_id": _prompt("SQL warehouse id (read-only MCP grounding)", args.warehouse_id),
+        "mcp_profile": _prompt("Databricks CLI profile for MCP auth", args.mcp_profile or f"{catalog}_dev"),
+        "reader_group": _prompt("Reader group", args.reader_group or f"{catalog}_readers"),
+        "engineer_group": _prompt("Engineer group", args.engineer_group or f"{catalog}_engineers"),
+        "admin_group": _prompt("Admin group", args.admin_group or f"{catalog}_admins"),
+        "deploy_sp": _prompt("CI/CD deploy service-principal app id", args.deploy_sp),
+        "framework_tag": _prompt("datalab framework tag to pin", args.framework_tag or default_tag),
+    }
+    print("\n  Summary:")
+    for key, value in resolved.items():
+        print(f"    {key:14} {value}")
+    if not confirm("\nApply this configuration?"):
+        raise SystemExit("scaffold: aborted at confirmation")
+    return resolved
+
+
+# --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--catalog", required=True, help="base catalog / domain name (lowercase)")
-    parser.add_argument("--out", required=True, help="output directory for the new repo")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--catalog", default="", help="base catalog / domain name (lowercase, no env suffix)")
+    parser.add_argument("--out", default="", help="output dir for a fresh sibling repo (omit with --in-place)")
+    parser.add_argument("--in-place", action="store_true", help="convert THIS repo (a template clone) in place")
+    parser.add_argument("--interactive", action="store_true", help="prompt for + confirm every workspace value")
     parser.add_argument("--host", default="https://<your-workspace-host>", help="Databricks workspace URL")
+    parser.add_argument("--warehouse-id", default="<sql-warehouse-id>", help="SQL warehouse id for the MCP grounding config")
+    parser.add_argument("--mcp-profile", default="", help="Databricks CLI profile for MCP auth (default: <catalog>_dev)")
     parser.add_argument("--deploy-sp", default="<deploy-sp-app-id>", help="CI/CD deploy SP application id")
     parser.add_argument("--reader-group", default="", help="reader group (default: <catalog>_readers)")
     parser.add_argument("--engineer-group", default="", help="engineer group (default: <catalog>_engineers)")
     parser.add_argument("--admin-group", default="", help="admin group (default: <catalog>_admins)")
     parser.add_argument("--framework-tag", default="", help="datalab framework tag (default: this repo's pin)")
-    parser.add_argument("--force", action="store_true", help="overwrite a non-empty --out")
+    parser.add_argument("--allow-env-suffix", action="store_true", help="permit a catalog ending in _dev/_stage/_prod")
+    parser.add_argument("--force", action="store_true", help="overwrite a non-empty --out; or bypass the in-place template guard")
+    parser.add_argument("--yes", "-y", action="store_true", help="skip the in-place destructive confirmation (agent/CI)")
     args = parser.parse_args(argv)
 
-    catalog = args.catalog.strip()
-    if not CATALOG_RE.match(catalog):
-        parser.error("--catalog must be lowercase letters/digits/underscores, starting with a letter")
+    if args.in_place and args.out:
+        parser.error("--in-place and --out are mutually exclusive")
+    if not args.in_place and not args.out:
+        parser.error("pass --out <dir> for a fresh sibling repo, or --in-place to convert this clone")
 
-    out = Path(args.out).expanduser().resolve()
-    if out == REPO_ROOT:
-        parser.error("--out must not be this repo")
-    if out.exists() and any(out.iterdir()):
-        if not args.force:
-            parser.error(f"{out} exists and is not empty (use --force to overwrite)")
-        shutil.rmtree(out)
-    out.mkdir(parents=True, exist_ok=True)
+    # Resolve the target dir + guard early, before any prompting.
+    if args.in_place:
+        out = REPO_ROOT
+        slug = repo_slug(out)
+        if slug == TEMPLATE_SLUG and not args.force:
+            parser.error(
+                f"refusing to convert the template repo in place (origin {slug}). Run this inside "
+                "a repo generated from the template, or pass --force."
+            )
+    else:
+        out = Path(args.out).expanduser().resolve()
+        if out == REPO_ROOT:
+            parser.error("--out must not be this repo (use --in-place to convert it)")
 
-    tag = args.framework_tag or framework_tag()
+    default_tag = args.framework_tag or framework_tag()
+    if args.interactive:
+        if not sys.stdin.isatty():
+            parser.error("--interactive needs a terminal; pass values as flags for non-interactive use")
+        r = gather_interactive(args, default_tag)
+    else:
+        ok, msg = check_catalog(args.catalog, args.allow_env_suffix)
+        if not ok:
+            parser.error(f"--catalog: {msg}")
+        cat = args.catalog.strip()
+        r = {
+            "catalog": cat,
+            "host": args.host,
+            "warehouse_id": args.warehouse_id,
+            "mcp_profile": args.mcp_profile or f"{cat}_dev",
+            "reader_group": args.reader_group or f"{cat}_readers",
+            "engineer_group": args.engineer_group or f"{cat}_engineers",
+            "admin_group": args.admin_group or f"{cat}_admins",
+            "deploy_sp": args.deploy_sp,
+            "framework_tag": default_tag,
+        }
+
+    catalog, tag = r["catalog"], r["framework_tag"]
     ctx = {
         "@@CATALOG@@": catalog,
-        "@@HOST@@": args.host,
+        "@@HOST@@": r["host"],
         "@@FRAMEWORK_TAG@@": tag,
         "@@DATALAB_VERSION@@": tag.lstrip("v"),
-        "@@READER_GROUP@@": args.reader_group or f"{catalog}_readers",
-        "@@ENGINEER_GROUP@@": args.engineer_group or f"{catalog}_engineers",
-        "@@ADMIN_GROUP@@": args.admin_group or f"{catalog}_admins",
-        "@@DEPLOY_SP@@": args.deploy_sp,
+        "@@READER_GROUP@@": r["reader_group"],
+        "@@ENGINEER_GROUP@@": r["engineer_group"],
+        "@@ADMIN_GROUP@@": r["admin_group"],
+        "@@DEPLOY_SP@@": r["deploy_sp"],
+        "@@WAREHOUSE_ID@@": r["warehouse_id"],
+        "@@MCP_PROFILE@@": r["mcp_profile"],
     }
 
     def subst(text: str) -> str:
@@ -648,8 +845,24 @@ def main(argv: list[str] | None = None) -> int:
             text = text.replace(key, value)
         return text
 
-    print(f"scaffold: generating '{catalog}' adopter repo at {out}")
-    copy_scaffold(out)
+    if args.in_place:
+        print(f"scaffold: configuring '{catalog}' adopter IN PLACE at {out}")
+        print("  removing: " + ", ".join(sorted(EXCLUDE_TOP)) + "; rewriting repo-level files")
+        if not (args.yes or args.interactive):  # interactive already confirmed via the summary
+            if not sys.stdin.isatty():
+                parser.error("--in-place needs --yes (or --interactive) for non-interactive use")
+            if not confirm("Proceed? This rewrites the current repo in place."):
+                raise SystemExit("scaffold: aborted")
+        drop_reference_material(out)
+    else:
+        if out.exists() and any(out.iterdir()):
+            if not args.force:
+                parser.error(f"{out} exists and is not empty (use --force to overwrite)")
+            shutil.rmtree(out)
+        out.mkdir(parents=True, exist_ok=True)
+        print(f"scaffold: generating '{catalog}' adopter repo at {out}")
+        copy_scaffold(out)
+
     write_domain(out, ctx, subst)
     write_repo_level(out, subst)
     patch_makefile(out, catalog)
@@ -657,15 +870,24 @@ def main(argv: list[str] | None = None) -> int:
     patch_rbac(out, ctx)
     patch_ci(out)
     patch_databricksignore(out)
+    patch_mcp(out, ctx)
 
     print("scaffold: done. Next:")
-    rel = args.out
-    print(f"  cd {rel} && git init -b main && make lock install")
-    print("  make validate-configs lint test")
-    print("  # set the real workspace host (targets/*.yml), groups (rbac.yml),")
-    print("  # deploy SP (scripts/bootstrap_uc.py) + CI secrets — see docs/ADOPTING.md")
-    if "<" in args.host or "<" in args.deploy_sp:
-        print("  NOTE: --host / --deploy-sp left as placeholders; fill them before deploy.")
+    if args.in_place:
+        print("  make lock install && make validate-configs lint test")
+    else:
+        print(f"  cd {args.out} && git init -b main && make lock install")
+        print("  make validate-configs lint test")
+    print("  # left to set before deploy: workspace host (targets/*.yml), groups (rbac.yml),")
+    print("  # deploy SP (scripts/bootstrap_uc.py), warehouse id + MCP profile")
+    print("  # (.mcp.json / .cursor/mcp.json), CI secrets — see docs/ADOPTING.md")
+    todos = [
+        label
+        for label, value in (("host", r["host"]), ("deploy SP", r["deploy_sp"]), ("warehouse id", r["warehouse_id"]))
+        if "<" in value
+    ]
+    if todos:
+        print(f"  NOTE: still placeholders — fill before deploy: {', '.join(todos)}.")
     return 0
 
 

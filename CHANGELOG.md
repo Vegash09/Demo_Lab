@@ -19,7 +19,25 @@ bump both, then `make publish-wheel`.
 
 ## [Unreleased]
 
+### Added
+- **In-place, interactive adopter configurator** (`make configure-adopter`). The
+  GitHub-template flow now converts a clone in place by driving the deterministic
+  engine (`scripts/scaffold_adopter.py --in-place`) instead of hand-editing —
+  PROMPTING for and confirming every workspace-specific value (base catalog, host,
+  SQL warehouse id, MCP CLI profile, RBAC groups, deploy SP, framework tag). The
+  `bootstrap-adopter-repo` skill now drives this engine rather than describing
+  manual surgery (`references/templates.md` is the fallback).
+
 ### Changed
+- **Adopter generation now repoints the MCP grounding config and guards the
+  catalog name.** Both `make configure-adopter` (in place) and `make new-adopter`
+  (sibling) rewire `.mcp.json` + `.cursor/mcp.json` to the customer's SQL warehouse
+  id + CLI profile (previously left pointing at the template's `diggi_dev_aws` /
+  warehouse), and **reject** a `<catalog>` carrying an env suffix
+  (`_dev`/`_stage`/`_prod`) — the fix for adopter repos that landed as
+  `config/<catalog>_databricks_prod` instead of `config/<catalog>/`. New flags:
+  `--in-place`, `--interactive`, `--warehouse-id`, `--mcp-profile`,
+  `--allow-env-suffix`, `--yes`.
 - **Completed the framework split.** The reusable framework now lives in its own
   repo, [`dediggibyte/datalab-framework`](https://github.com/dediggibyte/datalab-framework),
   consumed here as a **git dependency** (local/CI, pinned in `pyproject.toml`
