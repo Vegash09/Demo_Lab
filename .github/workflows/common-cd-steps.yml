@@ -55,25 +55,43 @@ jobs:
       - uses: actions/checkout@v4
         if: steps.gate.outputs.enabled == 'true'
 
-      - name: Auth for the private datalab-framework git dependency
+      - name: Check framework App credentials are configured
         # The deploy clones the PRIVATE datalab-framework repo: the deploy-dab
         # publish step builds the framework wheel from the pinned git dep
         # (`pip wheel "datalab @ git+…"`) and `bundle deploy` resolves it too. Same
-        # read-only SSH deploy key CI uses (DATALAB_FRAMEWORK_DEPLOY_KEY) — see docs/CICD.md.
+        # datalab-framework reader GitHub App CI uses — see docs/CICD.md.
         if: steps.gate.outputs.enabled == 'true'
         env:
-          DEPLOY_KEY: ${{ secrets.DATALAB_FRAMEWORK_DEPLOY_KEY }}
+          APP_ID:  ${{ vars.DATALAB_FRAMEWORK_APP_ID }}
+          APP_KEY: ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
         run: |
-          if [ -z "$DEPLOY_KEY" ]; then
-            echo "::error title=Missing DATALAB_FRAMEWORK_DEPLOY_KEY::The deploy must clone the PRIVATE dediggibyte/datalab-framework repo to build the framework wheel, but the DATALAB_FRAMEWORK_DEPLOY_KEY secret is not set. See docs/CICD.md."
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error title=Missing framework App credentials::The deploy must mint a token from the datalab-framework reader GitHub App to clone the PRIVATE dediggibyte/datalab-framework repo, but the DATALAB_FRAMEWORK_APP_ID variable and/or DATALAB_FRAMEWORK_APP_PRIVATE_KEY secret is not set. See docs/CICD.md."
             exit 1
           fi
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/datalab_framework
-          chmod 600 ~/.ssh/datalab_framework
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host github.com\n  IdentityFile ~/.ssh/datalab_framework\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-          git config --global url."git@github.com:dediggibyte/datalab-framework".insteadOf "https://github.com/dediggibyte/datalab-framework"
+
+      - name: Mint a read-only token for datalab-framework (GitHub App)
+        # Short-lived installation token (~1h, auto-revoked in a post step),
+        # scoped to just dediggibyte/datalab-framework (Contents: read-only).
+        if: steps.gate.outputs.enabled == 'true'
+        id: framework_token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id:       ${{ vars.DATALAB_FRAMEWORK_APP_ID }}
+          private-key:  ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+          owner:        dediggibyte
+          repositories: datalab-framework
+
+      - name: Route the private framework clone over HTTPS with the token
+        # Both `pip wheel "datalab @ git+https://…"` (publish step) and
+        # `bundle deploy` resolve the framework git dep through this rewrite.
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          FRAMEWORK_TOKEN: ${{ steps.framework_token.outputs.token }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${FRAMEWORK_TOKEN}@github.com/dediggibyte/datalab-framework".insteadOf \
+            "https://github.com/dediggibyte/datalab-framework"
 
       - name: Configure Databricks CLI (OIDC)
         if: steps.gate.outputs.enabled == 'true'

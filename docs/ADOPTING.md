@@ -62,7 +62,7 @@ things to know up front:
 1. **Generating needs read access to this template repo** (it is private). The
    person running "Use this template" / `--template` must be able to read it.
 2. **Generating copies FILES only.** Actions secrets, GitHub Environments, the
-   OIDC federation policy, the **framework deploy key**, branch-protection rules,
+   OIDC federation policy, the **framework App id/key**, branch-protection rules,
    and the "template" flag itself do **not** carry over — you set them up fresh in
    the new repo (the checklist covers each). The new repo reads the private
    framework across the org boundary with its own credential — see
@@ -86,7 +86,7 @@ sections below.
 | `<reader>/<engineer>/<admin>` groups | RBAC + UC grants | default `<catalog>_readers/_engineers/_admins` |
 | `<framework-tag>` | the `datalab` framework release to pin | default: this template's current pin |
 | `<warehouse-id>`, `<cli-profile>` | one-time UC bootstrap **and** the read-only MCP grounding config (`.mcp.json` / `.cursor/mcp.json`) | profile default `<catalog>_dev` |
-| framework read-access credential | how this repo's CI **and** your devs clone the private framework | deploy key (default) / PAT / vendored wheel |
+| framework read-access credential | how this repo's CI **and** your devs clone the private framework | GitHub App (default) / PAT / vendored wheel |
 
 **Steps**
 
@@ -108,9 +108,10 @@ sections below.
   all three).
 - [ ] **4. Create the GitHub repo** — `gh repo create <owner>/<repo> --source=.
   --private --push` (or generate from the template in the target org).
-- [ ] **5. Framework access for CI** — the framework-repo admin adds a **per-adopter
-  read-only deploy key**; store its private half as the `DATALAB_FRAMEWORK_DEPLOY_KEY`
-  **repo-/org-level** secret (NOT per-environment).
+- [ ] **5. Framework access for CI** — set two **repo-/org-level** (NOT
+  per-environment) entries from the shared **datalab-framework reader GitHub App**
+  (installed on `dediggibyte/datalab-framework`): the `DATALAB_FRAMEWORK_APP_ID`
+  **variable** and the `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` **secret**. See below.
 - [ ] **6. Databricks auth (OIDC)** — GitHub Environments `dev`/`stage`/`prod` with
   `DATABRICKS_HOST` + `DATABRICKS_CLIENT_ID`; an OIDC federation policy on the SP
   with subject `repo:<owner>/<repo>:environment:<target>` (one per target).
@@ -171,7 +172,7 @@ Two unrelated auth concerns are in play:
 
 | Concern | Mechanism | Direction | Owned by |
 |---|---|---|---|
-| Read the framework **source** | read-only SSH **deploy key** (or PAT / GitHub App) | GitHub Actions **or a dev** → `github.com/dediggibyte/datalab-framework` | framework-repo admin mints one per adopter |
+| Read the framework **source** | read-only **GitHub App** token (or PAT / vendored wheel) | GitHub Actions **or a dev** → `github.com/dediggibyte/datalab-framework` | framework-repo admin runs one App; adopters store its id/key |
 | **Deploy** to Databricks | GitHub **OIDC** federation | GitHub Actions → **your own** Databricks workspace | each adopter (their own SP) |
 
 > **GitHub OIDC authenticates Actions to _Databricks_, not to GitHub.** It is a
@@ -180,39 +181,41 @@ Two unrelated auth concerns are in play:
 > scoped to the adopter's own repo only. So neither OIDC nor `GITHUB_TOKEN` can
 > "take the framework from our repo and add it to the wheel" — the wheel build
 > (`pip wheel "datalab @ git+…"`) and `uv sync` both need a **git** credential:
-> a deploy key, a PAT, or a GitHub App token.
+> a GitHub App token, a PAT, or a vendored wheel.
 
-### CI/CD access — works across orgs (deploy key)
+### CI/CD access — works across orgs (GitHub App)
 
-A deploy key is **repo-scoped, not org-scoped**, so the same mechanism this
-template uses works from any adopter org. Per adopter repo (the framework-repo
-admin does the first two):
+One **GitHub App** ("datalab-framework reader"), owned by the framework's org and
+installed on `dediggibyte/datalab-framework` with **Contents: read-only**, serves
+**every** adopter — its short-lived tokens are minted for that installation no
+matter which repo or org the workflow runs in. The framework-repo admin sets the
+App up once (Create App → Contents: read-only → Install on `datalab-framework` →
+generate a private key + note the App ID). Then per adopter repo, set two
+**repo- or org-level, NOT per-environment** entries (the CI `lint + test` job
+declares no `environment:`, so it only sees repo/org variables and secrets):
 
-1. Generate a read-only keypair: `ssh-keygen -t ed25519 -f adopter_key -N "" -C "<repo> framework read"`.
-2. Add the **public** half (`adopter_key.pub`) as a **read-only deploy key** on
-   `dediggibyte/datalab-framework` (Settings → Deploy keys). GitHub requires each
-   deploy-key public key to be unique across repos, so **mint a fresh key per
-   adopter** — one repo can hold many deploy keys.
-3. In the adopter repo, store the **private** half as the
-   `DATALAB_FRAMEWORK_DEPLOY_KEY` Actions secret — **repo- or org-level, not
-   per-environment** (the CI `lint + test` job declares no `environment:`, so it
-   only sees repo/org secrets).
+1. `DATALAB_FRAMEWORK_APP_ID` — an Actions **variable** (the numeric App ID).
+2. `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` — an Actions **secret** (the .pem body).
 
-The CI/CD workflows already carry the "Auth for the private datalab-framework git
-dependency" step (`common-ci-steps.yml` / `common-cd-steps.yml`): it loads the
-key and rewrites just that repo's HTTPS URL to SSH
-(`git config url."git@github.com:…".insteadOf "https://github.com/…"`) so `uv` and
-`pip wheel` clone over the key. Nothing to author — generating the repo copies
-these workflows; you only supply the secret. (Full mechanics + rotation:
+The CI/CD workflows already carry the token flow (`common-ci-steps.yml` /
+`common-cd-steps.yml`): `actions/create-github-app-token@v2` mints a token scoped
+to `datalab-framework`, then a
+`git config url."https://x-access-token:<token>@github.com/…".insteadOf
+"https://github.com/…"` rewrite so `uv` and `pip wheel` clone over HTTPS. Nothing
+to author — generating the repo copies these workflows; you only supply the two
+values. (Full mechanics + rotation:
 [CICD.md → Private framework dependency](CICD.md#private-framework-dependency-git-auth).)
 
-**Alternatives** when a deploy key doesn't fit the org's policy:
+**Alternatives** when a GitHub App doesn't fit the org's policy:
 
-- **Fine-grained PAT / machine user** with read on `datalab-framework`, stored as
-  the same secret and used by a credential-helper step instead of the SSH rewrite.
-- **GitHub App** installed on both orgs, minting short-lived tokens — best at
-  scale (no key to rotate per adopter).
-- **Decouple from source entirely** (below) if you can't grant any read access.
+- **Fine-grained PAT / machine user** with read on `datalab-framework`, stored as a
+  secret and used by a credential-helper step in place of the App-token step.
+- **Decouple from source entirely** (below) if you can't grant any read access —
+  deliver the framework as a vendored wheel.
+
+(Deploy keys were the previous default; some orgs disable deploy keys org-wide,
+which silently invalidates them — the App is immune to that and needs no per-adopter
+key.)
 
 ### Local developer machines — yes, every dev
 
@@ -227,8 +230,8 @@ shared keys:
 - **SSH:** add the same rewrite locally —
   `git config --global url."git@github.com:dediggibyte/datalab-framework".insteadOf "https://github.com/dediggibyte/datalab-framework"` — with your own SSH key.
 
-Deploy keys are for machines/CI, not people; don't hand them to developers. A
-per-dev fine-grained PAT in the credential store also works.
+The App token is for CI, not people; don't hand its private key to developers.
+A per-dev fine-grained PAT in the credential store also works.
 
 ### If you can't share source access (decouple)
 
@@ -243,7 +246,7 @@ the framework as an **artifact** instead of a git dep:
   local dev + CI.
 
 Or, simplest of all, make `datalab-framework` **public** — then no credential is
-needed anywhere. These are policy choices; the deploy-key path above is the
+needed anywhere. These are policy choices; the GitHub App path above is the
 established default.
 
 ## Pin the framework version

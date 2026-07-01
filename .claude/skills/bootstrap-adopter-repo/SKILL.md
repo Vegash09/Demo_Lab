@@ -72,9 +72,10 @@ human-readable record of what it writes — and the manual fallback.
 - **Framework version** `<framework-tag>` to pin (default: copy the current
   `[tool.uv.sources] datalab` tag in this repo's `pyproject.toml`).
 - **Framework read-access credential** — how the new repo's CI **and** the
-  developers clone the PRIVATE `dediggibyte/datalab-framework`. Default: a
-  per-adopter read-only SSH **deploy key** (repo-scoped, so it works across
-  orgs). Alternatives (PAT / GitHub App / vendored wheel) +
+  developers clone the PRIVATE `dediggibyte/datalab-framework`. Default: the shared
+  read-only **datalab-framework reader GitHub App** (installed on that repo; works
+  across orgs) — set `DATALAB_FRAMEWORK_APP_ID` (variable) +
+  `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` (secret). Alternatives (PAT / vendored wheel) +
   the OIDC-is-not-this distinction: `docs/ADOPTING.md` → "Accessing the private
   framework repo".
 
@@ -85,7 +86,7 @@ an SP id.
 **Another organization?** This skill and `make new-adopter` are org-agnostic —
 set `<owner>` to any org you can push to. Two caveats: generating from the
 template needs read access to THIS (private) repo, and it copies **files only** —
-Actions secrets, GitHub Environments, the OIDC policy, the framework deploy key,
+Actions secrets, GitHub Environments, the OIDC policy, the framework App id/key,
 and branch protections do not carry over and are recreated in the new repo
 (step 5). OIDC ≠ framework access (step 5).
 
@@ -185,10 +186,11 @@ framework repo" for the cross-org credential). In the new repo:
 
 - **Framework read access (a git credential, NOT OIDC).** CI (`uv sync`) and CD
   (build the wheel + `bundle deploy`) clone the PRIVATE
-  `dediggibyte/datalab-framework`. For an adopter in another org, the
-  framework-repo admin mints a **per-adopter read-only deploy key**; store its
-  private half as the `DATALAB_FRAMEWORK_DEPLOY_KEY` secret at **repo/org level —
-  not per-environment** (the CI test job declares no `environment:`). OIDC cannot
+  `dediggibyte/datalab-framework`. For an adopter in another org, reuse the shared
+  **datalab-framework reader GitHub App** (installed on that repo); set the
+  `DATALAB_FRAMEWORK_APP_ID` **variable** + `DATALAB_FRAMEWORK_APP_PRIVATE_KEY`
+  **secret** at **repo/org level — not per-environment** (the CI test job declares
+  no `environment:`). OIDC cannot
   do this: it federates Actions to Databricks, not to GitHub, so it can't grant
   read on another private repo. Cross-org alternatives (PAT / GitHub App /
   vendored wheel) are in `docs/ADOPTING.md`.

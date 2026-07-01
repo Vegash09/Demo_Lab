@@ -68,24 +68,40 @@ repo (`[tool.uv.sources]`, a `git+https://…@<tag>` URL). Both CI (`uv sync
 that git dep, and `bundle deploy` resolves it) must clone it — and the built-in
 `GITHUB_TOKEN` is scoped to THIS repo only, so it cannot.
 
-This repo authenticates with a **read-only SSH deploy key** — no PAT to rotate,
-not tied to a person, scoped to exactly one repo:
+This repo authenticates with a **read-only GitHub App** ("datalab-framework
+reader") that mints a **short-lived installation token** (≈1 h, auto-revoked at
+job end) in each run — no SSH deploy key, no PAT to rotate, not tied to a person,
+scoped to exactly one repo. (Deploy keys were the old mechanism; some orgs disable
+deploy keys entirely, which silently breaks them — the App avoids that.)
 
-- the key's **public** half is a read-only **deploy key** on
-  `dediggibyte/datalab-framework` (Settings → Deploy keys);
-- the key's **private** half is the Actions secret **`DATALAB_FRAMEWORK_DEPLOY_KEY`**
-  on this repo. It must be **repo- or org-scoped**, **not** per-environment — the CI
-  `lint + test` job declares no `environment:`, so it only sees repo/org secrets.
+Set up once (org owner):
 
-The "Auth for the private datalab-framework git dependency" step in
-`common-ci-steps.yml` / `common-cd-steps.yml` loads the key, adds `github.com` to
-`known_hosts`, and rewrites just that repo's URL to ssh
-(`git config url."git@github.com:dediggibyte/datalab-framework".insteadOf
-"https://github.com/dediggibyte/datalab-framework"`) so uv clones it over the key.
-It fails fast with an actionable error when the secret is missing.
+1. Create a **GitHub App** owned by the `dediggibyte` org (Settings → Developer
+   settings → GitHub Apps → New): **Repository permissions → Contents: Read-only**
+   (Metadata: Read-only is implicit); no webhook.
+2. **Install** it on `dediggibyte/datalab-framework` only (Only select
+   repositories).
+3. Generate a **private key** (.pem, downloaded once) and note the **App ID**.
+4. On this repo (and each adopter repo), set:
+   - **`DATALAB_FRAMEWORK_APP_ID`** — an Actions **variable** (the numeric App ID);
+   - **`DATALAB_FRAMEWORK_APP_PRIVATE_KEY`** — an Actions **secret** (the .pem body).
 
-To rotate: generate a new keypair, then replace the deploy key on
-`datalab-framework` and the `DATALAB_FRAMEWORK_DEPLOY_KEY` secret here.
+   Both must be **repo- or org-scoped**, **not** per-environment — the CI
+   `lint + test` job declares no `environment:`, so it only sees repo/org
+   variables and secrets.
+
+In `common-ci-steps.yml` / `common-cd-steps.yml`, the flow is three steps:
+fail fast if the App id/key are missing → `actions/create-github-app-token@v2`
+mints a token scoped to `owner: dediggibyte`, `repositories: datalab-framework` →
+a `git config url."https://x-access-token:<token>@github.com/dediggibyte/datalab-framework".insteadOf
+"https://github.com/dediggibyte/datalab-framework"` rewrite so uv (and `pip wheel`
+/ `bundle deploy` in CD) clone the framework over HTTPS with the token. The App is
+installed on `datalab-framework`, so the same App id/key work from **any** consumer
+repo — including cross-org adopters (the token is minted for the
+`datalab-framework` installation regardless of where the run executes).
+
+To rotate: generate a new private key on the App (revoking the old), then replace
+the `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` secret. The App ID is unchanged.
 
 ## OIDC trust chain
 

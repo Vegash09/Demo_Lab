@@ -35,24 +35,42 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Auth for the private datalab-framework git dependency
+      - name: Check framework App credentials are configured
         # uv resolves `datalab` from the PRIVATE dediggibyte/datalab-framework repo.
-        # We use a read-only SSH DEPLOY KEY — no PAT to rotate, scoped to that one
-        # repo: load it, then rewrite just that repo's https URL to ssh so uv's git
-        # clone authenticates with the key. See docs/CICD.md.
+        # We authenticate with a short-lived token minted from the datalab-framework
+        # reader GitHub App (App id + private key) — no SSH deploy key, no PAT to
+        # rotate. Fail fast with an actionable message before the token step. See
+        # docs/CICD.md.
         env:
-          DEPLOY_KEY: ${{ secrets.DATALAB_FRAMEWORK_DEPLOY_KEY }}
+          APP_ID:  ${{ vars.DATALAB_FRAMEWORK_APP_ID }}
+          APP_KEY: ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
         run: |
-          if [ -z "$DEPLOY_KEY" ]; then
-            echo "::error title=Missing DATALAB_FRAMEWORK_DEPLOY_KEY::uv must clone the PRIVATE dediggibyte/datalab-framework repo to resolve 'datalab', but the DATALAB_FRAMEWORK_DEPLOY_KEY secret (the read-only deploy key's private half) is not set. See docs/CICD.md."
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error title=Missing framework App credentials::CI must mint a token from the datalab-framework reader GitHub App to clone the PRIVATE dediggibyte/datalab-framework repo, but the DATALAB_FRAMEWORK_APP_ID variable and/or DATALAB_FRAMEWORK_APP_PRIVATE_KEY secret is not set. See docs/CICD.md."
             exit 1
           fi
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/datalab_framework
-          chmod 600 ~/.ssh/datalab_framework
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host github.com\n  IdentityFile ~/.ssh/datalab_framework\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-          git config --global url."git@github.com:dediggibyte/datalab-framework".insteadOf "https://github.com/dediggibyte/datalab-framework"
+
+      - name: Mint a read-only token for datalab-framework (GitHub App)
+        # Short-lived installation token (~1h, auto-revoked in a post step),
+        # scoped to just dediggibyte/datalab-framework. The App is installed on
+        # that repo with Contents: read-only.
+        id: framework_token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id:       ${{ vars.DATALAB_FRAMEWORK_APP_ID }}
+          private-key:  ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+          owner:        dediggibyte
+          repositories: datalab-framework
+
+      - name: Route the private framework clone over HTTPS with the token
+        # uv's git clone of `datalab @ git+https://…/datalab-framework` picks up
+        # this rewrite; the token replaces the SSH deploy key.
+        env:
+          FRAMEWORK_TOKEN: ${{ steps.framework_token.outputs.token }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${FRAMEWORK_TOKEN}@github.com/dediggibyte/datalab-framework".insteadOf \
+            "https://github.com/dediggibyte/datalab-framework"
 
       - name: Sync dependencies (frozen — fails fast if uv.lock drifted)
         run: uv sync --frozen

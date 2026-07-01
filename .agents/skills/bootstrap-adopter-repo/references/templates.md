@@ -443,9 +443,11 @@ DEPLOY_SP = "<deploy-sp-app-id>"
 - Ruff step: `uv run ruff check scripts projects` → `uv run ruff check scripts src`.
 - The config-validation loop `for d in config projects/*/config` already matches
   the root `config/` — leave it (or simplify to `config`).
-- Keep the "Auth for the private datalab-framework git dependency" step. The
-  adopter repo must add the `DATALAB_FRAMEWORK_DEPLOY_KEY` secret and have read
-  access to the (private) framework repo, or `uv sync` fails in CI.
+- Keep the GitHub App token steps ("Mint a read-only token for datalab-framework"
+  + the HTTPS `insteadOf` rewrite). The adopter repo must set the
+  `DATALAB_FRAMEWORK_APP_ID` variable + `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` secret
+  (from the shared datalab-framework reader GitHub App) and have read access to the
+  (private) framework repo, or `uv sync` fails in CI.
 
 ### `.databricksignore`
 
