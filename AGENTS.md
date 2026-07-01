@@ -628,7 +628,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   manual fallback. Then extend with `author-ldp-artifact`. Wiring reference:
   `docs/ADOPTING.md` (incl. the onboarding checklist). **Cross-org:** both paths
   are org-agnostic, but the new repo reads the PRIVATE framework via the shared
-  **datalab-framework reader GitHub App** — set `DATALAB_FRAMEWORK_APP_ID`
+  **datalab-framework reader GitHub App** — set `DATALAB_FRAMEWORK_APP_CLIENT_ID`
   (repo/org **variable**) + `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` (repo/org **secret**),
   both repo/org-scoped, NOT per-environment; CI mints a short-lived token from it
   (`actions/create-github-app-token`, works across orgs since the App is installed

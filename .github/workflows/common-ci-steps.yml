@@ -21,16 +21,18 @@ jobs:
     name: "lint + unit test"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        # Exact pin: setup-uv publishes no floating `v8` major tag (only v8.x.y);
+        # v8.2.0 is the latest and runs on Node 24. Bump on new releases.
+        uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       - name: Set up Java (local Spark for unit tests)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -38,15 +40,15 @@ jobs:
       - name: Check framework App credentials are configured
         # uv resolves `datalab` from the PRIVATE dediggibyte/datalab-framework repo.
         # We authenticate with a short-lived token minted from the datalab-framework
-        # reader GitHub App (App id + private key) — no SSH deploy key, no PAT to
+        # reader GitHub App (client id + private key) — no SSH deploy key, no PAT to
         # rotate. Fail fast with an actionable message before the token step. See
         # docs/CICD.md.
         env:
-          APP_ID:  ${{ vars.DATALAB_FRAMEWORK_APP_ID }}
-          APP_KEY: ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+          CLIENT_ID: ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
+          APP_KEY:   ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
         run: |
-          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
-            echo "::error title=Missing framework App credentials::CI must mint a token from the datalab-framework reader GitHub App to clone the PRIVATE dediggibyte/datalab-framework repo, but the DATALAB_FRAMEWORK_APP_ID variable and/or DATALAB_FRAMEWORK_APP_PRIVATE_KEY secret is not set. See docs/CICD.md."
+          if [ -z "$CLIENT_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error title=Missing framework App credentials::CI must mint a token from the datalab-framework reader GitHub App to clone the PRIVATE dediggibyte/datalab-framework repo, but the DATALAB_FRAMEWORK_APP_CLIENT_ID variable and/or DATALAB_FRAMEWORK_APP_PRIVATE_KEY secret is not set. See docs/CICD.md."
             exit 1
           fi
 
@@ -57,7 +59,7 @@ jobs:
         id: framework_token
         uses: actions/create-github-app-token@v3
         with:
-          app-id:       ${{ vars.DATALAB_FRAMEWORK_APP_ID }}
+          client-id:    ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
           private-key:  ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
           owner:        dediggibyte
           repositories: datalab-framework
@@ -119,7 +121,7 @@ jobs:
       DATABRICKS_HOST:      ${{ secrets.DATABRICKS_HOST }}
       DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure Databricks CLI (OIDC)
         uses: ./.github/actions/databricks-setup

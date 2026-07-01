@@ -51,7 +51,9 @@ runs:
     # NOT build artifacts, which is why the validate-only CI job doesn't need it.)
     # Mirrors the CI test job's uv setup.
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      # Exact pin: setup-uv publishes no floating `v8` major tag (only v8.x.y);
+      # v8.2.0 is the latest and runs on Node 24. Bump on new releases.
+      uses: astral-sh/setup-uv@v8.2.0
       with:
         enable-cache: true
         cache-dependency-glob: "uv.lock"

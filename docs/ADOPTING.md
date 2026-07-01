@@ -110,7 +110,7 @@ sections below.
   --private --push` (or generate from the template in the target org).
 - [ ] **5. Framework access for CI** — set two **repo-/org-level** (NOT
   per-environment) entries from the shared **datalab-framework reader GitHub App**
-  (installed on `dediggibyte/datalab-framework`): the `DATALAB_FRAMEWORK_APP_ID`
+  (installed on `dediggibyte/datalab-framework`): the `DATALAB_FRAMEWORK_APP_CLIENT_ID`
   **variable** and the `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` **secret**. See below.
 - [ ] **6. Databricks auth (OIDC)** — GitHub Environments `dev`/`stage`/`prod` with
   `DATABRICKS_HOST` + `DATABRICKS_CLIENT_ID`; an OIDC federation policy on the SP
@@ -190,11 +190,11 @@ installed on `dediggibyte/datalab-framework` with **Contents: read-only**, serve
 **every** adopter — its short-lived tokens are minted for that installation no
 matter which repo or org the workflow runs in. The framework-repo admin sets the
 App up once (Create App → Contents: read-only → Install on `datalab-framework` →
-generate a private key + note the App ID). Then per adopter repo, set two
+generate a private key + note the **Client ID**). Then per adopter repo, set two
 **repo- or org-level, NOT per-environment** entries (the CI `lint + test` job
 declares no `environment:`, so it only sees repo/org variables and secrets):
 
-1. `DATALAB_FRAMEWORK_APP_ID` — an Actions **variable** (the numeric App ID).
+1. `DATALAB_FRAMEWORK_APP_CLIENT_ID` — an Actions **variable** (the App's Client ID, `Iv23li…`).
 2. `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` — an Actions **secret** (the .pem body).
 
 The CI/CD workflows already carry the token flow (`common-ci-steps.yml` /

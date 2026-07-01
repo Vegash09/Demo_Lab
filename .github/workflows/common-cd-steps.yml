@@ -52,7 +52,7 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.gate.outputs.enabled == 'true'
 
       - name: Check framework App credentials are configured
@@ -62,11 +62,11 @@ jobs:
         # datalab-framework reader GitHub App CI uses — see docs/CICD.md.
         if: steps.gate.outputs.enabled == 'true'
         env:
-          APP_ID:  ${{ vars.DATALAB_FRAMEWORK_APP_ID }}
-          APP_KEY: ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+          CLIENT_ID: ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
+          APP_KEY:   ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
         run: |
-          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
-            echo "::error title=Missing framework App credentials::The deploy must mint a token from the datalab-framework reader GitHub App to clone the PRIVATE dediggibyte/datalab-framework repo, but the DATALAB_FRAMEWORK_APP_ID variable and/or DATALAB_FRAMEWORK_APP_PRIVATE_KEY secret is not set. See docs/CICD.md."
+          if [ -z "$CLIENT_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error title=Missing framework App credentials::The deploy must mint a token from the datalab-framework reader GitHub App to clone the PRIVATE dediggibyte/datalab-framework repo, but the DATALAB_FRAMEWORK_APP_CLIENT_ID variable and/or DATALAB_FRAMEWORK_APP_PRIVATE_KEY secret is not set. See docs/CICD.md."
             exit 1
           fi
 
@@ -77,7 +77,7 @@ jobs:
         id: framework_token
         uses: actions/create-github-app-token@v3
         with:
-          app-id:       ${{ vars.DATALAB_FRAMEWORK_APP_ID }}
+          client-id:    ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
           private-key:  ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
           owner:        dediggibyte
           repositories: datalab-framework

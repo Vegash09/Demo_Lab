@@ -81,9 +81,11 @@ Set up once (org owner):
    (Metadata: Read-only is implicit); no webhook.
 2. **Install** it on `dediggibyte/datalab-framework` only (Only select
    repositories).
-3. Generate a **private key** (.pem, downloaded once) and note the **App ID**.
+3. Generate a **private key** (.pem, downloaded once) and note the **Client ID**
+   (App → General → About, the `Iv23li…` string under the App ID — the action's
+   preferred identifier; the numeric App ID is deprecated).
 4. On this repo (and each adopter repo), set:
-   - **`DATALAB_FRAMEWORK_APP_ID`** — an Actions **variable** (the numeric App ID);
+   - **`DATALAB_FRAMEWORK_APP_CLIENT_ID`** — an Actions **variable** (the App's Client ID);
    - **`DATALAB_FRAMEWORK_APP_PRIVATE_KEY`** — an Actions **secret** (the .pem body).
 
    Both must be **repo- or org-scoped**, **not** per-environment — the CI
@@ -91,17 +93,18 @@ Set up once (org owner):
    variables and secrets.
 
 In `common-ci-steps.yml` / `common-cd-steps.yml`, the flow is three steps:
-fail fast if the App id/key are missing → `actions/create-github-app-token@v2`
-mints a token scoped to `owner: dediggibyte`, `repositories: datalab-framework` →
+fail fast if the client id / key are missing → `actions/create-github-app-token@v3`
+(`client-id:` input) mints a token scoped to `owner: dediggibyte`,
+`repositories: datalab-framework` →
 a `git config url."https://x-access-token:<token>@github.com/dediggibyte/datalab-framework".insteadOf
 "https://github.com/dediggibyte/datalab-framework"` rewrite so uv (and `pip wheel`
 / `bundle deploy` in CD) clone the framework over HTTPS with the token. The App is
-installed on `datalab-framework`, so the same App id/key work from **any** consumer
+installed on `datalab-framework`, so the same client id / key work from **any** consumer
 repo — including cross-org adopters (the token is minted for the
 `datalab-framework` installation regardless of where the run executes).
 
 To rotate: generate a new private key on the App (revoking the old), then replace
-the `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` secret. The App ID is unchanged.
+the `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` secret. The Client ID is unchanged.
 
 ## OIDC trust chain
 

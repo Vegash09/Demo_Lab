@@ -74,7 +74,7 @@ human-readable record of what it writes — and the manual fallback.
 - **Framework read-access credential** — how the new repo's CI **and** the
   developers clone the PRIVATE `dediggibyte/datalab-framework`. Default: the shared
   read-only **datalab-framework reader GitHub App** (installed on that repo; works
-  across orgs) — set `DATALAB_FRAMEWORK_APP_ID` (variable) +
+  across orgs) — set `DATALAB_FRAMEWORK_APP_CLIENT_ID` (variable) +
   `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` (secret). Alternatives (PAT / vendored wheel) +
   the OIDC-is-not-this distinction: `docs/ADOPTING.md` → "Accessing the private
   framework repo".
@@ -188,7 +188,7 @@ framework repo" for the cross-org credential). In the new repo:
   (build the wheel + `bundle deploy`) clone the PRIVATE
   `dediggibyte/datalab-framework`. For an adopter in another org, reuse the shared
   **datalab-framework reader GitHub App** (installed on that repo); set the
-  `DATALAB_FRAMEWORK_APP_ID` **variable** + `DATALAB_FRAMEWORK_APP_PRIVATE_KEY`
+  `DATALAB_FRAMEWORK_APP_CLIENT_ID` **variable** + `DATALAB_FRAMEWORK_APP_PRIVATE_KEY`
   **secret** at **repo/org level — not per-environment** (the CI test job declares
   no `environment:`). OIDC cannot
   do this: it federates Actions to Databricks, not to GitHub, so it can't grant
