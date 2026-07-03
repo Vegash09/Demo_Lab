@@ -51,7 +51,7 @@ variables:
   # per-domain `<catalog>_etl` wheels are still bundle-built (local).
   datalab_version:
     description: Version of the datalab framework wheel installed from each project catalog's artifacts.wheels volume.
-    default: "0.5.0"
+    default: "0.6.0"
   datalab_wheel:
     description: UC Volume path of the framework wheel in the customer_sales catalog (var.catalog).
     default: /Volumes/${var.catalog}/artifacts/wheels/datalab-${var.datalab_version}-py3-none-any.whl
