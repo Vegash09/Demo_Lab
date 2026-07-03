@@ -1,10 +1,13 @@
 """Generated-graph contract of the sales example.
 
 capture_graph registers every LDP object the config tree would create — locally,
-with no Databricks — so this pins the full dataset/flow shape (4 silver CDC
-tables + quarantines, 3 gold MVs). capture records registrations without running
-the query bodies, so sales_by_category's products read is never executed here
-(its join logic is covered by test_sales_transforms.category_rollup).
+with no Databricks — so this pins the full dataset/flow shape: 4 silver AUTO CDC
+SCD1 tables + quarantines, one SCD2 history table (customers_history), one
+snapshot-CDC table (product_catalog, quarantine as MV), 3 hand-written gold MVs
+and 2 template-expanded gold MVs (revenue_by_state / revenue_by_country).
+capture records registrations without running the query bodies, so
+sales_by_category's products read is never executed here (its join logic is
+covered by test_sales_transforms.category_rollup).
 """
 
 from pathlib import Path
@@ -54,9 +57,34 @@ def test_sales_graph_shape(configured_spark):
         "cat.gold.sales_by_category",
     } <= names
 
+    # SCD2 history table (AUTO CDC, scd_type 2) over the same bronze source
+    assert {
+        "customers_history__input",
+        "customers_history__valid",
+        "cat.silver.customers_history",
+        "customers_history__cdc_flow",
+        "cat.silver.customers_history_quarantine",
+    } <= names
+
+    # snapshot CDC (cdc_from_snapshot, pattern A) — quarantine materializes as an MV
+    assert {
+        "product_catalog__input",
+        "product_catalog__valid",
+        "cat.silver.product_catalog",
+        "product_catalog__snapshot_cdc_flow",
+        "cat.silver.product_catalog_quarantine",
+    } <= names
+
+    # 2 template-expanded gold MVs (templates/revenue_rollup.yml, sql source)
+    assert {"cat.gold.revenue_by_state", "cat.gold.revenue_by_country"} <= names
+
     kinds = {name: kind for kind, name in captured if kind != "Flow"}
     assert kinds["cat.silver.orders"] == "StreamingTable"
     assert kinds["orders__cdc_flow"] == "auto_cdc_flow"
+    assert kinds["customers_history__cdc_flow"] == "auto_cdc_flow"
+    assert kinds["product_catalog__snapshot_cdc_flow"] == "auto_cdc_from_snapshot_flow"
+    assert kinds["cat.silver.product_catalog_quarantine"] == "MaterializedView"
     assert kinds["cat.gold.daily_sales"] == "MaterializedView"
     assert kinds["cat.gold.sales_by_category"] == "MaterializedView"
+    assert kinds["cat.gold.revenue_by_state"] == "MaterializedView"
     assert kinds["orders__valid"] == "TemporaryView"

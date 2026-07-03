@@ -1,0 +1,86 @@
+name: "CI/CD"
+
+# ONE workflow for every target (was three near-identical ci-cd-{dev,stage,prod}
+# files that had to be kept in sync by hand). The params job derives the target
+# from the trigger; common-ci-steps / common-cd-steps do the real work.
+#
+#   pull_request -> main        CI only, against dev
+#   push to main                CI + deploy dev (auto-approve: dev is disposable,
+#                               mode: development — a full refresh restores STs/MVs)
+#   tag vX.Y.Z-rcN              CI + deploy stage
+#   tag vX.Y.Z                  CI + deploy prod (destructive changes need a human)
+#   workflow_dispatch           CI for the chosen target; deploys stage/prod only
+#                               (dev deploys ride the next main push, as before)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Bundle target"
+        required: true
+        default: dev
+        type: choice
+        options: [dev, stage, prod]
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  params:
+    name: "derive target"
+    runs-on: ubuntu-latest
+    outputs:
+      target:       ${{ steps.derive.outputs.target }}
+      deploy:       ${{ steps.derive.outputs.deploy }}
+      auto-approve: ${{ steps.derive.outputs.auto-approve }}
+    steps:
+      - name: Derive target + deploy flags from the trigger
+        id: derive
+        env:
+          EVENT:  ${{ github.event_name }}
+          REF:    ${{ github.ref }}
+          CHOICE: ${{ inputs.target }}
+        run: |
+          case "$EVENT/$REF" in
+            workflow_dispatch/*)      target="$CHOICE"
+                                      # dev deploys ride the main-push trigger; manual
+                                      # dispatch deploys only the gated targets.
+                                      [ "$CHOICE" = "dev" ] && deploy=false || deploy=true ;;
+            pull_request/*)           target=dev;   deploy=false ;;
+            push/refs/heads/main)     target=dev;   deploy=true ;;
+            push/refs/tags/v*-rc*)    target=stage; deploy=true ;;
+            push/refs/tags/v*)        target=prod;  deploy=true ;;
+            *) echo "unexpected trigger $EVENT on $REF" >&2; exit 1 ;;
+          esac
+          [ "$target" = "dev" ] && auto="true" || auto="false"
+          {
+            echo "target=$target"
+            echo "deploy=$deploy"
+            echo "auto-approve=$auto"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::target=$target deploy=$deploy auto-approve=$auto"
+
+  ci:
+    needs: params
+    uses: ./.github/workflows/common-ci-steps.yml
+    with:
+      target: ${{ needs.params.outputs.target }}
+    secrets: inherit
+
+  deploy:
+    needs: [params, ci]
+    if: needs.params.outputs.deploy == 'true'
+    uses: ./.github/workflows/common-cd-steps.yml
+    with:
+      target: ${{ needs.params.outputs.target }}
+      # --auto-approve lets CI apply destructive changes (e.g. deleting a renamed
+      # pipeline) non-interactively — dev only; stage/prod fail loudly on a
+      # destructive plan so a human reviews the deletion. See docs/CICD.md.
+      auto-approve: ${{ needs.params.outputs.auto-approve == 'true' }}
+    secrets: inherit

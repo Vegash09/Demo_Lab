@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../../../../../schemas/template_instance.schema.json
+#
+# Template instances: two gold rollup MVs expanded from ONE template
+# (config/sales/templates/revenue_rollup.yml). Each parameter set validates and
+# generates exactly like a hand-written artifact; the instance file's own name
+# is free (it does not name one table).
+schema_version: 1
+template: revenue_rollup
+parameter_sets:
+  - { table: revenue_by_state, dimension: state }
+  - { table: revenue_by_country, dimension: country }

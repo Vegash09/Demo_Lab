@@ -14,9 +14,10 @@ resources:
           interval: 1
           unit: DAYS
 
-      # email_notifications:
-      #   on_failure:
-      #     - data-platform@your-org.com
+      # Failure alerting — recipients come from var.alert_emails (default [] =
+      # no mail; stage/prod set real addresses in targets/<env>.yml).
+      email_notifications:
+        on_failure: ${var.alert_emails}
 
       tasks:
         - task_key: refresh_customer_sales_etl

@@ -1,3 +1,4 @@
+<?xml version='1.0' encoding='utf-8'?>
 <mxfile host="app.diagrams.net" agent="Cursor" version="29.6.1">
   <diagram name="End-to-end implementation" id="impl">
     <mxGraphModel dx="2455" dy="1345" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="2480" pageHeight="1480" math="0" shadow="0">
@@ -10,16 +11,16 @@
         <mxCell id="subtitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=12;fontStyle=2" value="ONE YAML artifact per table → Pydantic models → datalab.framework.generate → pyspark.pipelines datasets · databrickslabs/dqx quality + quarantine · AUTO CDC · DAB deploy via GitHub OIDC · runs on Databricks / OSS spark-pipelines / Databricks Connect" vertex="1">
           <mxGeometry height="20" width="2140" x="40" y="58" as="geometry" />
         </mxCell>
-        <mxCell id="eng" parent="1" style="shape=mxgraph.bootstrap.user;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalLabelPosition=bottom;verticalAlign=top;" value="Data engineer&#xa;(authors artifacts)" vertex="1">
+        <mxCell id="eng" parent="1" style="shape=mxgraph.bootstrap.user;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalLabelPosition=bottom;verticalAlign=top;" value="Data engineer&#10;(authors artifacts)" vertex="1">
           <mxGeometry height="60" width="50" x="150" y="100" as="geometry" />
         </mxCell>
-        <mxCell id="analyst" parent="1" style="shape=mxgraph.bootstrap.user;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalLabelPosition=bottom;verticalAlign=top;" value="Analyst / reader&#xa;(consumes gold)" vertex="1">
+        <mxCell id="analyst" parent="1" style="shape=mxgraph.bootstrap.user;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalLabelPosition=bottom;verticalAlign=top;" value="Analyst / reader&#10;(consumes gold)" vertex="1">
           <mxGeometry height="60" width="50" x="820" y="100" as="geometry" />
         </mxCell>
-        <mxCell id="steward" parent="1" style="shape=mxgraph.bootstrap.user;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalLabelPosition=bottom;verticalAlign=top;" value="Steward&#xa;(quarantine triage)" vertex="1">
+        <mxCell id="steward" parent="1" style="shape=mxgraph.bootstrap.user;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalLabelPosition=bottom;verticalAlign=top;" value="Steward&#10;(quarantine triage)" vertex="1">
           <mxGeometry height="60" width="50" x="1060" y="100" as="geometry" />
         </mxCell>
-        <mxCell id="dev" parent="1" style="shape=mxgraph.bootstrap.user;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalLabelPosition=bottom;verticalAlign=top;" value="Developer&#xa;(CI/CD)" vertex="1">
+        <mxCell id="dev" parent="1" style="shape=mxgraph.bootstrap.user;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalLabelPosition=bottom;verticalAlign=top;" value="Developer&#10;(CI/CD)" vertex="1">
           <mxGeometry height="60" width="50" x="1720" y="100" as="geometry" />
         </mxCell>
         <mxCell id="legend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;fontSize=11;fontStyle=1;arcSize=0;" value="Legend" vertex="1">
@@ -46,100 +47,100 @@
         <mxCell id="config_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=3;" value="Config — the deployed pipeline definition  ·  config/&lt;catalog&gt;/&lt;schema&gt;/&lt;table&gt;.yml + domain.yml  (Pydantic-validated; make validate-configs)" vertex="1">
           <mxGeometry height="205" width="1260" x="40" y="210" as="geometry" />
         </mxCell>
-        <mxCell id="cfg_bronze" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=4;" value="bronze/customers_raw.yml&#xa;&#xa;source: cloud_files (Auto Loader)&#xa;columns: source→target + try_cast&#xa;table-level dqx checks" vertex="1">
+        <mxCell id="cfg_bronze" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=4;" value="bronze/customers_raw.yml&#10;&#10;source: cloud_files (Auto Loader)&#10;columns: source→target + try_cast&#10;table-level dqx checks" vertex="1">
           <mxGeometry height="150" width="290" x="70" y="250" as="geometry" />
         </mxCell>
-        <mxCell id="cfg_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=4;" value="silver/customers.yml&#xa;&#xa;target.cdc → AUTO CDC (SCD1)&#xa;keys + sequence_by&#xa;per-column dqx → quarantine" vertex="1">
+        <mxCell id="cfg_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=4;" value="silver/customers.yml&#10;&#10;target.cdc → AUTO CDC (SCD1/SCD2)&#10;or cdc_from_snapshot (full dumps)&#10;keys + sequence_by&#10;per-column dqx → quarantine" vertex="1">
           <mxGeometry height="150" width="290" x="380" y="250" as="geometry" />
         </mxCell>
-        <mxCell id="cfg_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=4;" value="gold/customer_metrics.yml&#xa;&#xa;target: materialized_view&#xa;transform steps (registry names)&#xa;business aggregates" vertex="1">
+        <mxCell id="cfg_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=4;" value="gold/customer_metrics.yml&#10;&#10;target: materialized_view&#10;transform steps (registry names) or sql source&#10;templates + parameter_sets (N tables, 1 spec)" vertex="1">
           <mxGeometry height="150" width="290" x="690" y="250" as="geometry" />
         </mxCell>
-        <mxCell id="cfg_domain" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8dc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=4;" value="domain.yml&#xa;&#xa;imports: [transforms, checks]&#xa;config_dir pointer&#xa;schemas/*.json (editor validation)" vertex="1">
+        <mxCell id="cfg_domain" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8dc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=4;" value="domain.yml&#10;&#10;imports: [transforms, checks]&#10;operational_metadata stamp columns&#10;config_dir pointer&#10;schemas/*.json — GENERATED from the&#10;pinned framework (make sync-schemas)" vertex="1">
           <mxGeometry height="150" width="290" x="1000" y="250" as="geometry" />
         </mxCell>
-        <mxCell id="framework_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=4;" value="Framework — src/datalab/  (reusable, zero domain code — lifts into any project untouched)" vertex="1">
+        <mxCell id="framework_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=4;" value="Framework — the external datalab dependency (datalab-framework repo · git tag + UC-Volume wheel · zero domain code — lifts into any project untouched)" vertex="1">
           <mxGeometry height="200" width="1260" x="40" y="440" as="geometry" />
         </mxCell>
-        <mxCell id="fw_models" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="framework/models.py + loader.py&#xa;&#xa;Pydantic config contract&#xa;registry: @transform / @check_function&#xa;@snapshot_source" vertex="1">
+        <mxCell id="fw_models" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="framework/models.py + loader.py&#10;&#10;Pydantic config contract&#10;registry: @transform / @check_function&#10;@snapshot_source" vertex="1">
           <mxGeometry height="145" width="290" x="70" y="478" as="geometry" />
         </mxCell>
-        <mxCell id="fw_generate" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="framework/generator.py — generate()&#xa;&#xa;routes on datalab.profile&#xa;  databricks → dp.* datasets&#xa;  local → batch materialized views&#xa;(compat.py guards OSS gaps)" vertex="1">
+        <mxCell id="fw_generate" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="framework/generator.py — generate()&#10;&#10;routes on datalab.profile&#10;  databricks → dp.* datasets&#10;  local → batch materialized views&#10;(compat.py guards OSS gaps)" vertex="1">
           <mxGeometry height="145" width="290" x="380" y="478" as="geometry" />
         </mxCell>
-        <mxCell id="fw_dq" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="framework/dq.py (DQX adapter)&#xa;readers.py / writers.py&#xa;&#xa;valid + quarantine split&#xa;mocked WorkspaceClient locally" vertex="1">
+        <mxCell id="fw_dq" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="framework/dq.py (DQX adapter)&#10;readers.py / writers.py&#10;&#10;valid + quarantine split&#10;mocked WorkspaceClient locally" vertex="1">
           <mxGeometry height="145" width="290" x="690" y="478" as="geometry" />
         </mxCell>
-        <mxCell id="fw_params" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="config.py — pipeline_conf(), fqn()&#xa;params.py — cli_params / notebook_params&#xa;&#xa;parameterization contract&#xa;(no hardcoded catalogs/paths)" vertex="1">
+        <mxCell id="fw_params" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="config.py — pipeline_conf(), fqn()&#10;params.py — cli_params / notebook_params&#10;&#10;parameterization contract&#10;(no hardcoded catalogs/paths)" vertex="1">
           <mxGeometry height="145" width="290" x="1000" y="478" as="geometry" />
         </mxCell>
         <mxCell id="domain_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=4;" value="Domain — src/customer_sales_etl/  (pure, unit-tested; declared to the framework via domain.yml imports)" vertex="1">
           <mxGeometry height="185" width="1260" x="40" y="665" as="geometry" />
         </mxCell>
-        <mxCell id="dom_pipeline" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="transformations/pipeline.py (3 lines)&#xa;&#xa;binds active SparkSession&#xa;calls datalab.framework.generate&#xa;(one file runs on Databricks + OSS)" vertex="1">
+        <mxCell id="dom_pipeline" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="transformations/pipeline.py (3 lines)&#10;&#10;binds active SparkSession&#10;calls datalab.framework.generate&#10;(one file runs on Databricks + OSS)" vertex="1">
           <mxGeometry height="128" width="290" x="70" y="703" as="geometry" />
         </mxCell>
-        <mxCell id="dom_transforms" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="transforms/&#xa;&#xa;@transform('customer_sales.*')&#xa;pure DataFrame functions&#xa;params via pipeline_conf" vertex="1">
+        <mxCell id="dom_transforms" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="transforms/&#10;&#10;@transform('customer_sales.*')&#10;pure DataFrame functions&#10;params via pipeline_conf" vertex="1">
           <mxGeometry height="128" width="290" x="380" y="703" as="geometry" />
         </mxCell>
-        <mxCell id="dom_checks" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="checks/&#xa;&#xa;@check_function custom dqx&#xa;@snapshot_source walkers&#xa;(named in domain.yml imports)" vertex="1">
+        <mxCell id="dom_checks" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="checks/&#10;&#10;@check_function custom dqx&#10;@snapshot_source walkers&#10;(named in domain.yml imports)" vertex="1">
           <mxGeometry height="128" width="290" x="690" y="703" as="geometry" />
         </mxCell>
-        <mxCell id="dom_edge" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="src/jobs/  ·  notebooks/&#xa;&#xa;spark_python_task entry points&#xa;notebook_task (human-gated)&#xa;own their writes (never SDP tables)" vertex="1">
+        <mxCell id="dom_edge" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="src/jobs/  ·  notebooks/&#10;&#10;spark_python_task entry points&#10;notebook_task (human-gated)&#10;own their writes (never SDP tables)" vertex="1">
           <mxGeometry height="128" width="290" x="1000" y="703" as="geometry" />
         </mxCell>
         <mxCell id="pipeline_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#36b;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=2;" value="Lakeflow SDP pipeline: customer_sales_etl  ·  serverless · environment_version 4 · from pyspark import pipelines as dp" vertex="1">
           <mxGeometry height="255" width="1260" x="40" y="875" as="geometry" />
         </mxCell>
-        <mxCell id="landing" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;arcSize=3;" value="Landing volume&#xa;/Volumes/&lt;catalog&gt;/&#xa;  landing/sales/customers/&#xa;&#xa;Auto Loader source" vertex="1">
+        <mxCell id="landing" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;arcSize=3;" value="Landing volume&#10;/Volumes/&lt;catalog&gt;/&#10;  landing/sales/customers/&#10;&#10;Auto Loader source" vertex="1">
           <mxGeometry height="95" width="190" x="70" y="925" as="geometry" />
         </mxCell>
-        <mxCell id="t_bronze" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde9d9;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;fontStyle=1;arcSize=3;" value="bronze.customers_raw&#xa;&#xa;@dp.table (streaming)&#xa;cloud_files ingest" vertex="1">
+        <mxCell id="t_bronze" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde9d9;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;fontStyle=1;arcSize=3;" value="bronze.customers_raw&#10;&#10;@dp.table (streaming)&#10;cloud_files ingest" vertex="1">
           <mxGeometry height="95" width="210" x="290" y="925" as="geometry" />
         </mxCell>
-        <mxCell id="t_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcdcf0;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;fontStyle=1;arcSize=3;" value="silver.customers&#xa;&#xa;create_streaming_table +&#xa;create_auto_cdc_flow (SCD1)&#xa;dqx gate (valid rows)" vertex="1">
+        <mxCell id="t_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcdcf0;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;fontStyle=1;arcSize=3;" value="silver.customers&#10;&#10;create_streaming_table +&#10;create_auto_cdc_flow (SCD1)&#10;dqx gate (valid rows)" vertex="1">
           <mxGeometry height="95" width="240" x="530" y="925" as="geometry" />
         </mxCell>
-        <mxCell id="t_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;fontStyle=1;arcSize=3;" value="gold.customer_metrics&#xa;&#xa;@dp.materialized_view&#xa;business aggregates" vertex="1">
+        <mxCell id="t_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;fontStyle=1;arcSize=3;" value="gold.customer_metrics&#10;&#10;@dp.materialized_view&#10;business aggregates" vertex="1">
           <mxGeometry height="95" width="210" x="800" y="925" as="geometry" />
         </mxCell>
-        <mxCell id="t_quar" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#c0392b;align=left;verticalAlign=top;fontSize=9;arcSize=3;" value="silver.customers_quarantine&#xa;dqx error rows + _errors evidence" vertex="1">
+        <mxCell id="t_quar" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#c0392b;align=left;verticalAlign=top;fontSize=9;arcSize=3;" value="silver.customers_quarantine&#10;dqx error rows + _errors evidence" vertex="1">
           <mxGeometry height="80" width="240" x="530" y="1035" as="geometry" />
         </mxCell>
-        <mxCell id="t_metrics" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;arcSize=3;" value="customers_dq_metrics (optional MV)&#xa;quality metrics" vertex="1">
+        <mxCell id="t_metrics" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;arcSize=3;" value="customers_dq_metrics (optional MV)&#10;quality metrics" vertex="1">
           <mxGeometry height="80" width="210" x="800" y="1035" as="geometry" />
         </mxCell>
-        <mxCell id="pipe_note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef6ff;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;fontStyle=2;arcSize=3;" value="Single-writer invariant — SDP owns&#xa;these UC tables. AUTO CDC replaces&#xa;hand-written MERGE. backfill: once-&#xa;flows re-run on full refresh.&#xa;Dataset fns return a DataFrame —&#xa;no .write / .saveAsTable / .collect." vertex="1">
+        <mxCell id="pipe_note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef6ff;strokeColor=#36b;align=left;verticalAlign=top;fontSize=9;fontStyle=2;arcSize=3;" value="Single-writer invariant — SDP owns&#10;these UC tables. AUTO CDC replaces&#10;hand-written MERGE. backfill: once-&#10;flows re-run on full refresh.&#10;Dataset fns return a DataFrame —&#10;no .write / .saveAsTable / .collect." vertex="1">
           <mxGeometry height="190" width="240" x="1040" y="925" as="geometry" />
         </mxCell>
         <mxCell id="edge_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=2;" value="Edge lanes — read-only on SDP tables (single-writer invariant)  ·  resources/*.job.yml" vertex="1">
           <mxGeometry height="165" width="1260" x="40" y="1155" as="geometry" />
         </mxCell>
-        <mxCell id="job_refresh" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="customer_sales_etl_refresh&#xa;&#xa;pipeline_task — daily trigger&#xa;(paused in dev mode)" vertex="1">
+        <mxCell id="job_refresh" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="customer_sales_etl_refresh&#10;&#10;pipeline_task — daily trigger&#10;(paused in dev mode)" vertex="1">
           <mxGeometry height="110" width="380" x="70" y="1193" as="geometry" />
         </mxCell>
-        <mxCell id="job_export" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="customer_sales_export&#xa;&#xa;spark_python_task (python-file lane)&#xa;weekly CSV → exports volume" vertex="1">
+        <mxCell id="job_export" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="customer_sales_export&#10;&#10;spark_python_task (python-file lane)&#10;weekly CSV → exports volume" vertex="1">
           <mxGeometry height="110" width="380" x="470" y="1193" as="geometry" />
         </mxCell>
-        <mxCell id="nb_quar" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="customer_sales_quarantine_report&#xa;&#xa;notebook_task — on-demand triage&#xa;(human-gated; no trigger)" vertex="1">
+        <mxCell id="nb_quar" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="customer_sales_quarantine_report&#10;&#10;notebook_task — on-demand triage&#10;(human-gated; no trigger)" vertex="1">
           <mxGeometry height="110" width="410" x="870" y="1193" as="geometry" />
         </mxCell>
         <mxCell id="cicd_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#666666;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=1;" value="CI/CD  ·  Deploy  ·  Execution profiles  ·  Source of truth" vertex="1">
           <mxGeometry height="1110" width="840" x="1340" y="210" as="geometry" />
         </mxCell>
-        <mxCell id="profiles" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=3;" value="Execution profiles  ·  datalab.profile&#xa;&#xa;• databricks — deploy + run (default)&#xa;• local — OSS spark-pipelines (make run-local):&#xa;     batch MVs only; no AUTO CDC dedup / dqx&#xa;     (deliberate OSS fidelity gaps)&#xa;• connect — make validate-connect&#xa;     (isolated databricks-connect overlay; out of uv.lock)" vertex="1">
+        <mxCell id="profiles" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=3;" value="Execution profiles  ·  datalab.profile&#10;&#10;• databricks — deploy + run (default)&#10;• local — OSS spark-pipelines (make run-local):&#10;     batch MVs only; no AUTO CDC dedup / dqx&#10;     (deliberate OSS fidelity gaps)&#10;• connect — make validate-connect&#10;     (isolated databricks-connect overlay; out of uv.lock)" vertex="1">
           <mxGeometry height="200" width="760" x="1380" y="250" as="geometry" />
         </mxCell>
-        <mxCell id="github" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=3;" value="GitHub Actions  ·  auth = GitHub OIDC (no client secret)&#xa;&#xa;• ci-cd-{dev,stage,prod}.yml&#xa;• common-ci-steps: ruff + validate-configs + pytest&#xa;     (local Spark) + bundle validate&#xa;     (+ advisory spark-pipelines dry-run)&#xa;• common-cd-steps → deploy-dab (validate + deploy)&#xa;Releases: main→dev · vX.Y.Z-rcN→stage · vX.Y.Z→prod" vertex="1">
+        <mxCell id="github" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=3;" value="GitHub Actions  ·  auth = GitHub OIDC (no client secret)&#10;&#10;• ci-cd.yml — ONE workflow, target derived from trigger&#10;• framework-bump.yml — bot PR: full lockstep bump&#10;     (tag + var.datalab_version + uv.lock + schemas) · dependabot&#10;• common-ci-steps: ruff + drift checks (skills · schemas ·&#10;     lockstep · domains · sync-lists) + validate-configs + pytest&#10;     + bundle validate + adopter-scaffold smoke test&#10;• common-cd-steps → deploy-dab (publish wheel + validate + deploy)&#10;Releases: main→dev · vX.Y.Z-rcN→stage · vX.Y.Z→prod" vertex="1">
           <mxGeometry height="210" width="760" x="1380" y="470" as="geometry" />
         </mxCell>
-        <mxCell id="bundle" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#0056b3;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=3;" value="Declarative Automation Bundle (DAB)&#xa;&#xa;databricks.yml — variables (catalog/schemas/paths)&#xa;rbac.yml — RBAC: group + level string vars +&#xa;     complex pipeline/job permissions (per-target)&#xa;resources/*.yml — 1 pipeline + 3 jobs&#xa;targets: dev (mode development) / stage / prod&#xa;deps: --editable ${workspace.file_path} (uv)" vertex="1">
+        <mxCell id="bundle" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#0056b3;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=3;" value="Declarative Automation Bundle (DAB)&#10;&#10;databricks.yml — variables (catalog/schemas/paths)&#10;rbac.yml — RBAC: group + level string vars +&#10;     complex pipeline/job permissions (per-target)&#10;resources/*.yml — 2 pipelines + 3 jobs&#10;targets: dev (mode development) / stage / prod&#10;deps: datalab wheel from each catalog's artifacts.wheels&#10;     Volume + the domain's &lt;catalog&gt;_etl wheel (uv build)" vertex="1">
           <mxGeometry height="210" width="760" x="1380" y="700" as="geometry" />
         </mxCell>
-        <mxCell id="bootstrap" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef0d9;strokeColor=#fc8d59;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=4;" value="UC bootstrap (out-of-band of bundle lifecycle)&#xa;&#xa;make bootstrap-uc TARGET=&lt;dev|stage|prod&gt;&#xa;scripts/bootstrap_uc.py — schemas · volumes&#xa;(landing/exports) · UC GRANTs (reader/engineer)&#xa;so bundle destroy never touches governance state" vertex="1">
+        <mxCell id="bootstrap" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef0d9;strokeColor=#fc8d59;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=4;" value="UC bootstrap (out-of-band of bundle lifecycle)&#10;&#10;make bootstrap-uc TARGET=&lt;dev|stage|prod&gt;&#10;scripts/bootstrap_uc.py — schemas · volumes&#10;(landing/exports) · UC GRANTs (reader/engineer)&#10;so bundle destroy never touches governance state" vertex="1">
           <mxGeometry height="170" width="760" x="1380" y="930" as="geometry" />
         </mxCell>
-        <mxCell id="docs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#d81b60;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=5;" value="Source of truth — agent-readable&#xa;&#xa;AGENTS.md / CLAUDE.md / .cursor/rules — project context&#xa;docs/{FRAMEWORK,ARCHITECTURE,NAMING,CICD,GETTING_STARTED,MIGRATION}.md&#xa;design/01_*.drawio — design spec (multi-page)&#xa;design/02_*.drawio — THIS diagram&#xa;.claude + .cursor — hooks (protected-files, branch-guard),&#xa;     skills (author-ldp-artifact, maintain-design-diagram)" vertex="1">
+        <mxCell id="docs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#d81b60;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=5;" value="Source of truth — agent-readable&#10;&#10;AGENTS.md / CLAUDE.md / .cursor/rules — project context&#10;docs/{FRAMEWORK,ARCHITECTURE,NAMING,CICD,GETTING_STARTED,MIGRATION}.md&#10;design/01_*.drawio — design spec (multi-page)&#10;design/02_*.drawio — THIS diagram&#10;.claude + .cursor — hooks (protected-files, branch-guard),&#10;     skills (author-ldp-artifact, maintain-design-diagram)" vertex="1">
           <mxGeometry height="180" width="760" x="1380" y="1120" as="geometry" />
         </mxCell>
         <mxCell id="e_eng_cfg" edge="1" parent="1" source="eng" target="cfg_bronze" style="endArrow=classic;html=1;strokeColor=#1976d2;fontSize=9;fontColor=#1976d2" value="author-ldp-artifact (NL → YAML)">
@@ -202,16 +203,16 @@
         <mxCell id="e_profiles_gen" edge="1" parent="1" source="profiles" target="fw_generate" style="endArrow=classic;html=1;dashed=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="selects generator path">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="sales_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef4ff;strokeColor=#3366bb;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;fontSize=12;fontStyle=1;arcSize=2;" value="Second domain — Lakeflow SDP pipeline: sales_etl  (pipeline-only · over pre-existing sales.bronze.* · var.sales_catalog)" vertex="1">
+        <mxCell id="sales_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef4ff;strokeColor=#3366bb;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;fontSize=12;fontStyle=1;arcSize=2;" value="Second domain — Lakeflow SDP pipeline: sales_etl  (pipeline-only · over pre-existing sales.bronze.* · var.sales_catalog · operational_metadata stamps)" vertex="1">
           <mxGeometry x="40" y="1335" width="1260" height="135" as="geometry" />
         </mxCell>
-        <mxCell id="s_bronze" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde9d9;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="sales.bronze.* (pre-existing)&#xa;orders · order_items&#xa;customers · products" vertex="1">
+        <mxCell id="s_bronze" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde9d9;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="sales.bronze.* (pre-existing)&#10;orders · order_items&#10;customers · products" vertex="1">
           <mxGeometry x="70" y="1380" width="290" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="s_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcdcf0;strokeColor=#3366bb;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="silver.{customers, products,&#xa;orders, order_items}&#xa;AUTO CDC SCD1 + dqx&#xa;(per-table _quarantine)" vertex="1">
+        <mxCell id="s_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcdcf0;strokeColor=#3366bb;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="silver — AUTO CDC SCD1 + dqx&#10;{customers, products, orders, order_items}&#10;+ customers_history (SCD2) · product_catalog&#10;(snapshot CDC) · per-table _quarantine" vertex="1">
           <mxGeometry x="430" y="1380" width="300" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="s_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="gold MVs&#xa;daily_sales · revenue_per_customer&#xa;sales_by_category (joins products)" vertex="1">
+        <mxCell id="s_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="gold MVs&#10;daily_sales · revenue_per_customer&#10;sales_by_category · templated (sql source):&#10;revenue_by_state · revenue_by_country" vertex="1">
           <mxGeometry x="800" y="1380" width="340" height="78" as="geometry" />
         </mxCell>
         <mxCell id="e_s_bronze_silver" edge="1" parent="1" source="s_bronze" target="s_silver" style="endArrow=classic;html=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="AUTO CDC">

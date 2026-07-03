@@ -10,9 +10,23 @@ lifts into any project untouched.
 
 ```
 projects/
-  customer_sales/   the complete worked example: config-driven pipeline, edge
-                    jobs, notebook triage, tests, ABAC SQL — start here
+  customer_sales/   the complete worked example: config-driven pipeline (Auto
+                    Loader bronze → AUTO CDC silver → gold), edge jobs, notebook
+                    triage, tests, ABAC SQL — start here
+  sales/            pipeline-only adoption over pre-existing bronze tables —
+                    and the framework's feature showcase: AUTO CDC SCD1 + SCD2
+                    (customers_history), snapshot CDC (product_catalog),
+                    domain-wide operational_metadata, config templates +
+                    `sql`-source gold rollups (revenue_by_state/_country), dqx
+                    built-ins (is_valid_email)
 ```
+
+Two capabilities have **no deployed example on purpose**: fan-in `sources:` and
+`backfill:` need second physical sources (extra landing paths / archive tables)
+that this demo workspace doesn't have, and a broken dev refresh is worse than a
+doc'd gap — their shapes live in the framework repo's
+[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)
+("Fan-in" / "Backfills").
 
 ## How an example maps to YOUR repo
 

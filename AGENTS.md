@@ -45,9 +45,15 @@ Bundle).
   copy it to start a real domain (`docs/GETTING_STARTED.md`). The bundle
   deploys it, so it doubles as the framework's integration test; the framework
   does not depend on it. A second domain, `projects/sales/`, is a
-  pipeline-only adoption — silver (AUTO CDC SCD1 + dqx) + gold MVs over
-  pre-existing `sales.bronze.*` tables, no edge jobs/notebooks — and deploys
-  from the same bundle.
+  pipeline-only adoption over pre-existing `sales.bronze.*` tables (no edge
+  jobs/notebooks) that doubles as the FEATURE SHOWCASE: AUTO CDC SCD1 + SCD2
+  (`customers_history`), snapshot CDC (`product_catalog`,
+  `cdc_from_snapshot`), domain-wide `operational_metadata:` stamps, config
+  templates + `sql`-source gold rollups (`revenue_by_state`/`_country`) and
+  dqx built-ins (`is_valid_email`) — and deploys from the same bundle.
+  Fan-in `sources:` and `backfill:` deliberately have NO deployed example
+  (they need second physical sources this demo workspace lacks; shapes live
+  in the framework repo's FRAMEWORK.md).
 - **Folder names mirror the UC namespace** (`docs/NAMING.md`): the domain
   folder is the BASE CATALOG name (`customer_sales`; stage/prod append
   `_stage`/`_prod` via bundle variables), config subfolders are the SCHEMA
@@ -70,21 +76,25 @@ Bundle).
 
 ```
 Developer ──push/PR──▶ GitHub Actions ──OIDC──▶ Declarative Automation Bundle
-                       ci-cd-{dev,stage,prod}    (databricks.yml + projects/*/resources/*.yml)
-                       common-ci / common-cd                │ deploys
-                                                            ▼
+                       ci-cd.yml (ONE workflow;  (databricks.yml + projects/*/resources/*.yml)
+                       target derived from the              │ deploys
+                       trigger) → common-ci / common-cd     ▼
+                       + framework-bump.yml (bot) + dependabot
                   ┌──────────── Lakeflow SDP pipeline: customer_sales_etl ──────────┐
 landing volume ─▶ │ bronze.customers_raw ─▶ silver.customers (AUTO CDC, SCD1) ─▶ gold │
 (Auto Loader)     │        dqx checks ────▶ silver.customers_quarantine              │
                   └───────────────────────────────────────────────────────────────┘
                   refreshed daily by job customer_sales_etl_refresh (pipeline_task)
 
-                  ┌──────────── Lakeflow SDP pipeline: sales_etl (pipeline-only) ─────┐
-sales.bronze.*  ─▶│ orders · order_items · customers · products                       │
-(pre-existing)    │   ─▶ silver (AUTO CDC SCD1 + dqx, per-table _quarantine)          │
-                  │   ─▶ gold MVs: daily_sales · revenue_per_customer · sales_by_category │
-                  └───────────────────────────────────────────────────────────────────┘
-                  on-demand (no scheduled refresh job yet)
+                  ┌──────────── Lakeflow SDP pipeline: sales_etl (pipeline-only showcase) ─┐
+sales.bronze.*  ─▶│ orders · order_items · customers · products                            │
+(pre-existing)    │   ─▶ silver (AUTO CDC SCD1 + dqx, per-table _quarantine)               │
+                  │      + customers_history (SCD2) · product_catalog (snapshot CDC)       │
+                  │   ─▶ gold MVs: daily_sales · revenue_per_customer · sales_by_category  │
+                  │      + templated (sql source): revenue_by_state · revenue_by_country   │
+                  │   domain-wide operational_metadata stamps (_loaded_at, _record_source) │
+                  └────────────────────────────────────────────────────────────────────────┘
+                  on-demand (no scheduled refresh job yet; make run PIPELINE=sales_etl)
 
   edge jobs (read-only on pipeline tables): customer_sales_export ─▶ exports volume (weekly CSV)
                                             customer_sales_quarantine_report (on-demand triage notebook)
@@ -115,17 +125,27 @@ projects/                 REFERENCE domains — each named after its base UC cat
     resources/            This domain's bundle resources (pipeline + 3 jobs; relative paths move as is)
     tests/                The domain's own unit + contract tests (run with make test)
     sql/abac/             Display-only column-mask/row-filter SQL — admin-applied, never run by CI/agents
-  sales/                  Second reference domain (pipeline-only): config/sales/ + src/sales_etl + resources +
-                          tests; silver (AUTO CDC SCD1 + dqx) → gold MVs over pre-existing sales.bronze.* tables
+  sales/                  Second reference domain (pipeline-only, the feature showcase): config/sales/
+                          (incl. templates/) + src/sales_etl + resources + tests; silver (AUTO CDC SCD1 +
+                          SCD2 + snapshot CDC + dqx) → gold MVs (incl. templated sql-source rollups) over
+                          pre-existing sales.bronze.* tables; domain-wide operational_metadata stamps
 scripts/validate_connect.py  Databricks Connect validation entry (make validate-connect; out-of-lock)
-schemas/                  JSON schemas for editor validation of domain.yml and <table>.yml —
-                          VENDORED from the datalab-framework repo (regenerate there + copy over; no make schema here)
-scripts/bootstrap_uc.py   One-time UC bootstrap per target: each domain catalog (customer_sales + sales) schemas/volumes/GRANTs, incl. its artifacts.wheels Volume holding the framework wheel (make bootstrap-uc)
-scripts/publish_wheel.py  Build the FRAMEWORK wheel FROM the pinned git dep + upload it into EACH project catalog's artifacts.wheels UC Volume (make publish-wheel; CI runs it in deploy-dab before bundle deploy)
+schemas/                  JSON schemas for editor validation (all 4: domain / table / template / template-instance) —
+                          GENERATED from the PINNED framework's Pydantic models by scripts/sync_schemas.py
+                          (make sync-schemas; make check-schemas gates CI — never hand-edit or hand-copy)
+scripts/domains.py        THE domain registry: which domains this repo deploys; per-target catalogs/groups are
+                          RESOLVED from variables/ + targets/ + rbac.yml (make check-domains gates CI).
+                          Adding a domain = one DOMAINS entry here (+ the usual config/src/resources/vars)
+scripts/bootstrap_uc.py   One-time UC bootstrap per target: every registry domain catalog's schemas/volumes/GRANTs, incl. its artifacts.wheels Volume holding the framework wheel (make bootstrap-uc; catalogs/groups come from scripts/domains.py)
+scripts/publish_wheel.py  Build the FRAMEWORK wheel FROM the pinned git dep + upload it into EACH registry catalog's artifacts.wheels UC Volume (make publish-wheel; CI runs it in deploy-dab before bundle deploy; --catalog-for <domain>=<catalog> mirrors --var catalog overrides)
+scripts/check_lockstep.py  Assert the framework pin agrees everywhere: pyproject git tag == var.datalab_version == uv.lock (make check-lockstep; CI gate)
+scripts/bump_framework.py  Rewrite the pin at every site — driven by `make bump-framework VERSION=x.y.z` (edits + lock + schema regen + lockstep check); the framework-bump workflow opens this as a bot PR on new framework tags
+scripts/check_sync_lists.py  Assert databricks.yml sync.exclude == .databricksignore (make check-sync-lists; CI gate)
 pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.sources] (datalab → git tag) + [tool.uv.workspace]; root is package=false (builds nothing); each projects/<domain> is a workspace member building its own <catalog>_etl wheel
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
-.github/                  Workflows (ci-cd-*, common-*, pr-template-check) + composite actions
+.github/                  Workflows (ci-cd — one workflow, target from trigger; framework-bump bot;
+                          common-*; pr-template-check) + dependabot.yml + composite actions
 .claude/ .cursor/ .codex/  Agent harness (3): hooks, skills, rules. Skills authored ONCE in .agents/skills/
 .agents/skills/            (the cross-tool standard, read natively by Cursor + Codex); .claude/skills is a
                            GENERATED copy for Claude Code (make sync-skills; check-skills guards drift). Genie
@@ -379,8 +399,15 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   (`make bootstrap-uc` provisions + grants it) or the install fails. The framework version lives in TWO
   lockstep places HERE — the `datalab` git tag in `pyproject.toml`
   `[tool.uv.sources]` and `variables/medallion.yml` `datalab_version` (the Volume
-  filename); bump both + `make publish-wheel` to upgrade (CHANGELOG.md; the
-  framework's own `__version__` lives in the datalab-framework repo).
+  filename). **Upgrade with `make bump-framework VERSION=x.y.z`** — one command
+  that rewrites both, re-locks, regenerates the vendored `schemas/` and asserts
+  the lockstep; CI enforces the agreement (`make check-lockstep` +
+  `make check-schemas`), and the scheduled `framework-bump.yml` workflow opens
+  this bump as a bot PR when the framework releases a new tag. Then
+  `make publish-wheel APPLY=1` (record it in CHANGELOG.md; the framework's own
+  `__version__` lives in the datalab-framework repo). A target can soak-test a
+  newer framework by overriding `datalab_version` in its `targets/<env>.yml`
+  (publish to that target first).
   `environment_version: "4"` pins Python 3.12 + preinstalled libs. Extra framework
   runtime libs are declared in the framework repo (folded into its wheel) — but
   environments cache dependencies; trigger a full restart (or publish a new
@@ -408,7 +435,8 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `databricks bundle deploy` refuses destructive actions — deleting a
   renamed/removed pipeline and its STs/MVs — unless given `--auto-approve`. The
   `deploy-dab` action takes an `auto-approve` input (default `false`);
-  `ci-cd-dev.yml` passes `true` because dev is disposable (`mode: development` —
+  `ci-cd.yml`'s params job sets it `true` only for dev because dev is disposable
+  (`mode: development` —
   a full refresh restores every ST/MV), while `stage`/`prod` omit it so a human
   reviews any deletion. That is why a renamed pipeline resource (e.g.
   `sales_etl` → `customer_sales_etl`) self-heals on the next dev deploy but
@@ -549,11 +577,14 @@ change:
    intent changes).
 3. **The framework is an external dependency — change it in the
    `datalab-framework` repo, not here** (its `docs/FRAMEWORK.md` is the doc of
-   record for framework behavior). When you BUMP the framework version in this
-   repo (the `datalab` git tag in `pyproject.toml` + `var.datalab_version` in
-   lockstep, then `make lock` + `make publish-wheel`), refresh the VENDORED
-   `schemas/*.json` (copy them from the framework repo's regenerated output —
-   there is no `make schema` here) and record the bump in `CHANGELOG.md`.
+   record for framework behavior). To BUMP the framework version in this repo,
+   run `make bump-framework VERSION=x.y.z` — it rewrites the `datalab` git tag
+   in `pyproject.toml` + `var.datalab_version` in lockstep, re-locks, and
+   REGENERATES `schemas/*.json` from the newly pinned models
+   (`make sync-schemas` — never hand-copy them; `make check-schemas` +
+   `make check-lockstep` gate CI). Then `make publish-wheel APPLY=1` and record
+   the bump in `CHANGELOG.md`. The scheduled `framework-bump.yml` workflow opens
+   this bump as a bot PR automatically on new framework release tags.
 4. If you change the protected set itself, update **all three** in one commit:
    `.claude/hooks/protected_files_guard.py`, `.githooks/pre-commit`, and the
    table below.
@@ -578,6 +609,8 @@ change:
 | `^\.cursor/(rules\|hooks)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks (skills are read from `.agents/skills`) |
 | `^\.codex/hooks\.json$`, `^\.agents/skills/.*` | Codex hooks.json + `.agents/skills` (the canonical authored agent-skills source) |
 | `^scripts/sync_skills\.py$` | agent-skills sync generator (canonical `.agents/skills` → `.claude/skills` copy) |
+| `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check |
+| `^schemas/.*\.json$` | vendored editor schemas — GENERATED from the pinned framework (`make sync-schemas`), never hand-edited |
 | `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) |
 | `^\.githooks/.*` | git pre-commit guard |
 | `^Makefile$` | developer + CI entrypoints |
@@ -641,8 +674,11 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   `docs/GETTING_STARTED.md` end to end — copy the `projects/customer_sales/` shape
   (config + `src/<catalog>_etl` + resources + `pyproject.toml`), register the
   domain as a `[tool.uv.workspace]` member (it builds its own `<catalog>_etl`
-  wheel), point `datalab.config_dir` at the new config dir, and list
-  `${var.datalab_wheel}` + the domain wheel in the resource
+  wheel), declare its catalog variables in `variables/medallion.yml` +
+  `targets/*.yml`, add ONE entry to `scripts/domains.py` `DOMAINS` (bootstrap +
+  wheel publish resolve catalogs/groups through the registry — `make
+  check-domains` verifies), point `datalab.config_dir` at the new config dir, and
+  list the domain's `<catalog>_datalab_wheel` + its own wheel in the resource
   `environment.dependencies`. The framework (the external `datalab` dependency) is not touched.
 - **Change quality rules**: edit the column's `quality:` list (or the
   table-level `quality.checks`) in the table's artifact — dqx metadata,
@@ -685,10 +721,10 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
 - **Change access (RBAC/ABAC)**: workspace-resource permissions → `rbac.yml`
   (group + permission-level string vars; per-target overrides in its own
   `targets:` block, per-environment via `DATALAB_*_GROUP` repo variables → the
-  `deploy-dab` `--var`); data grants → `scripts/bootstrap_uc.py` (provisions the
-  customer_sales and sales catalogs, each with its artifacts.wheels Volume for the
-  framework wheel; keep its CATALOGS/GROUPS dicts in sync with the catalog vars
-  in targets/ and the group names in `rbac.yml`), re-run
+  `deploy-dab` `--var`); data grants → `scripts/bootstrap_uc.py` (provisions
+  every registry domain catalog, each with its artifacts.wheels Volume for the
+  framework wheel; catalogs/groups are RESOLVED from targets/ + rbac.yml via
+  `scripts/domains.py` — nothing to keep in sync by hand), re-run
   `make bootstrap-uc`; row/column
   policies → add display-only SQL under the domain's `sql/abac/` following
   the conventions in `docs/ARCHITECTURE.md` — never execute them from CI or

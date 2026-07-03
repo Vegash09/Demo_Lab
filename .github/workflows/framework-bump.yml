@@ -1,0 +1,167 @@
+name: "Bot · framework version bump"
+
+# Watches dediggibyte/datalab-framework for a new vX.Y.Z release tag and opens a
+# ready-to-review PR that performs the FULL lockstep bump via `make
+# bump-framework`: pyproject.toml git tag + var.datalab_version + uv.lock +
+# regenerated schemas/. Dependabot cannot do this (it neither understands
+# [tool.uv.sources] git tags nor multi-file lockstep), hence a bespoke bot.
+#
+# The PR is created with the default GITHUB_TOKEN, so GitHub does NOT trigger
+# the CI/CD workflow on it (an anti-recursion rule for bot-created PRs). To
+# compensate, this workflow runs the full CI quality gates itself before opening
+# the PR; a maintainer can still trigger CI by pushing to the branch or
+# closing/reopening the PR. After merge, the dev deploy publishes the new wheel
+# to each project catalog's artifacts.wheels Volume automatically (deploy-dab).
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # daily, off the top of the hour
+  workflow_dispatch:
+
+permissions:
+  contents: write        # push the bump branch
+  pull-requests: write   # open the bump PR
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Java (local Spark for the pre-PR test run)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Mint a read-only token for datalab-framework (GitHub App)
+        id: framework_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id:    ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
+          private-key:  ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+          owner:        dediggibyte
+          repositories: datalab-framework
+
+      - name: Route the private framework clone over HTTPS with the token
+        env:
+          FRAMEWORK_TOKEN: ${{ steps.framework_token.outputs.token }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${FRAMEWORK_TOKEN}@github.com/dediggibyte/datalab-framework".insteadOf \
+            "https://github.com/dediggibyte/datalab-framework"
+
+      - name: Compare the pinned tag with the framework's latest release tag
+        id: versions
+        run: |
+          current=$(uv run --no-project python -c 'import tomllib,pathlib;print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["tool"]["uv"]["sources"]["datalab"]["tag"])')
+          latest=$(git ls-remote --tags --refs https://github.com/dediggibyte/datalab-framework.git 'v*' \
+                   | awk -F/ '{print $NF}' \
+                   | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+                   | sort -V | tail -1)
+          echo "current=$current latest=$latest"
+          if [ -z "$latest" ]; then
+            echo "::warning::no vX.Y.Z tags found on datalab-framework — nothing to do."
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+          elif [ "$latest" = "$current" ] || [ "$(printf '%s\n' "$latest" "$current" | sort -V | tail -1)" = "$current" ]; then
+            echo "::notice::pin $current is current (latest framework tag: $latest)."
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "bump=true"            >> "$GITHUB_OUTPUT"
+            echo "current=$current"     >> "$GITHUB_OUTPUT"
+            echo "latest=$latest"       >> "$GITHUB_OUTPUT"
+            echo "version=${latest#v}"  >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip if a bump PR for this version is already open
+        id: existing
+        if: steps.versions.outputs.bump == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: chore/bump-datalab-framework-${{ steps.versions.outputs.version }}
+        run: |
+          open=$(gh pr list --head "$BRANCH" --state open --json number --jq length)
+          if [ "$open" != "0" ]; then
+            echo "::notice::PR from $BRANCH already open — nothing to do."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the lockstep bump (make bump-framework)
+        if: steps.versions.outputs.bump == 'true' && steps.existing.outputs.proceed == 'true'
+        run: make bump-framework VERSION=${{ steps.versions.outputs.version }}
+
+      - name: Pre-validate the bump (the CI gates, since bot PRs don't trigger CI)
+        if: steps.versions.outputs.bump == 'true' && steps.existing.outputs.proceed == 'true'
+        run: |
+          make lint
+          make validate-configs
+          make test
+          make check-lockstep
+          make check-schemas
+
+      - name: Open the bump PR
+        if: steps.versions.outputs.bump == 'true' && steps.existing.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.versions.outputs.version }}
+          LATEST:  ${{ steps.versions.outputs.latest }}
+          CURRENT: ${{ steps.versions.outputs.current }}
+        run: |
+          BRANCH="chore/bump-datalab-framework-$VERSION"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add pyproject.toml uv.lock variables/medallion.yml schemas/
+          git commit -m "chore: bump datalab framework $CURRENT -> $LATEST (tag + var.datalab_version + lock + schemas)"
+          git push -u origin "$BRANCH"
+
+          # Body must satisfy pr-template-check (marker + required ## headings).
+          cat > /tmp/pr-body.md <<EOF
+          <!-- datalab-pr-template: v1 -->
+          ## Summary
+
+          Automated framework bump: [datalab-framework $LATEST](https://github.com/dediggibyte/datalab-framework/releases/tag/$LATEST) was released; this PR moves the pin from $CURRENT in full lockstep. Review the framework's [CHANGELOG](https://github.com/dediggibyte/datalab-framework/blob/$LATEST/CHANGELOG.md) for behavioral changes before merging.
+
+          ## Change type
+
+          - [x] Framework version bump (datalab git tag + var.datalab_version)
+          - [x] Dependencies
+
+          ## Changes
+
+          - \`pyproject.toml\`: datalab git tag $CURRENT -> $LATEST
+          - \`variables/medallion.yml\`: datalab_version -> $VERSION
+          - \`uv.lock\`: re-resolved
+          - \`schemas/*.json\`: regenerated from the $LATEST models
+
+          ## Test plan
+
+          - [x] \`make lint\` passes (ran in the bump workflow)
+          - [x] \`make test\` passes (unit tests, local Spark — ran in the bump workflow)
+          - [x] \`make validate-configs\`, \`make check-lockstep\`, \`make check-schemas\` pass (ran in the bump workflow)
+          - [ ] Dev pipeline refresh after merge (\`make run\`)
+
+          ## Deployment / rollout notes
+
+          The dev deploy publishes datalab-$VERSION to each project catalog's artifacts.wheels Volume before \`bundle deploy\` (deploy-dab). Pipeline/job environments cache dependencies — trigger a full restart if the new version doesn't show up.
+
+          ## Checklist
+
+          - [x] Protected-file changes are intentional and captured in \`AGENTS.md\` (version pin bump only — the documented lockstep flow)
+          - [x] Pipeline code uses \`pyspark.pipelines\` only (no \`dlt\` imports, no writes in dataset functions)
+          - [x] Dependencies: \`pyproject.toml\` updated via \`uv lock\` (uv.lock committed)
+          - [x] No secrets committed (\`.env\` stays out of git)
+
+          ---
+          NOTE: bot-created PRs do not trigger the CI/CD workflow (GITHUB_TOKEN anti-recursion). The gates above already ran inside the bump workflow; push any commit to this branch (or close/reopen) to run CI proper.
+          EOF
+          gh pr create --title "chore: bump datalab framework $CURRENT -> $LATEST" \
+            --body-file /tmp/pr-body.md --base main --head "$BRANCH"

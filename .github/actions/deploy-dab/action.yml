@@ -26,7 +26,11 @@ inputs:
   # why the permission GROUP NAMES are plain string variables in rbac.yml that
   # the complex defaults reference.
   catalog:
-    description: "Unity Catalog catalog override for this target."
+    description: "Unity Catalog catalog override for the customer_sales domain (overrides var.catalog)."
+    required: false
+    default: ""
+  sales-catalog:
+    description: "Unity Catalog catalog override for the sales domain (overrides var.sales_catalog)."
     required: false
     default: ""
   sales-landing-path:
@@ -39,6 +43,10 @@ inputs:
     default: ""
   engineer-group:
     description: "Workspace group granted manage access (overrides var.engineer_group)."
+    required: false
+    default: ""
+  admin-group:
+    description: "Workspace group granted admin access (overrides var.admin_group; referenced by prod's restated complex vars)."
     required: false
     default: ""
 
@@ -70,14 +78,24 @@ runs:
     # `--with databricks-sdk` / `--with pip` keep the SDK + pip out of uv.lock.
     - name: Publish datalab framework wheel to each project catalog's volume
       shell: bash
+      env:
+        IN_CATALOG:       ${{ inputs.catalog }}
+        IN_SALES_CATALOG: ${{ inputs.sales-catalog }}
       run: |
         # Build the FRAMEWORK wheel from the pinned git dep (pyproject
         # [tool.uv.sources].datalab) into an isolated dir, then upload — never
         # touches the bundle's dist/ (which `bundle deploy` fills with the example
         # wheels right after). `--with pip` builds the wheel, `--with databricks-sdk`
         # uploads it; neither enters uv.lock.
-        uv run --with databricks-sdk --with pip python scripts/publish_wheel.py \
-          --target "${{ inputs.target }}" --build --apply
+        #
+        # When a domain catalog is overridden below (--var catalog / sales_catalog),
+        # --catalog-for repoints THAT domain's upload to the same catalog, so the
+        # wheel always lands where the deployed pipeline environment will look for
+        # it (var.datalab_wheel / var.sales_datalab_wheel derive from the same vars).
+        PUBLISH_ARGS=(--target "${{ inputs.target }}" --build --apply)
+        [ -n "$IN_CATALOG" ]       && PUBLISH_ARGS+=(--catalog-for "customer_sales=$IN_CATALOG")
+        [ -n "$IN_SALES_CATALOG" ] && PUBLISH_ARGS+=(--catalog-for "sales=$IN_SALES_CATALOG")
+        uv run --with databricks-sdk --with pip python scripts/publish_wheel.py "${PUBLISH_ARGS[@]}"
 
     # Validate and deploy in one step so the quoted --var argument array
     # (group names may contain spaces) doesn't have to cross a step boundary.
@@ -87,16 +105,20 @@ runs:
         GIT_SHA: ${{ github.sha }}
         CI: "true"
         IN_CATALOG:        ${{ inputs.catalog }}
+        IN_SALES_CATALOG:  ${{ inputs.sales-catalog }}
         IN_LANDING_PATH:   ${{ inputs.sales-landing-path }}
         IN_READER_GROUP:   ${{ inputs.reader-group }}
         IN_ENGINEER_GROUP: ${{ inputs.engineer-group }}
+        IN_ADMIN_GROUP:    ${{ inputs.admin-group }}
         AUTO_APPROVE:      ${{ inputs.auto-approve }}
       run: |
         ARGS=(-t "${{ inputs.target }}" -p "${{ inputs.profile }}")
         [ -n "$IN_CATALOG" ]        && ARGS+=(--var "catalog=$IN_CATALOG")
+        [ -n "$IN_SALES_CATALOG" ]  && ARGS+=(--var "sales_catalog=$IN_SALES_CATALOG")
         [ -n "$IN_LANDING_PATH" ]   && ARGS+=(--var "sales_landing_path=$IN_LANDING_PATH")
         [ -n "$IN_READER_GROUP" ]   && ARGS+=(--var "reader_group=$IN_READER_GROUP")
         [ -n "$IN_ENGINEER_GROUP" ] && ARGS+=(--var "engineer_group=$IN_ENGINEER_GROUP")
+        [ -n "$IN_ADMIN_GROUP" ]    && ARGS+=(--var "admin_group=$IN_ADMIN_GROUP")
 
         databricks bundle validate "${ARGS[@]}"
 

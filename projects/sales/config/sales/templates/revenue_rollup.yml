@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../../../../schemas/template_config.schema.json
+#
+# Template: revenue_rollup — recognized revenue grouped by ONE customer
+# dimension. Reference example for `template:` + `parameter_sets:` (author one
+# spec, expand N tables) combined with the `sql` source kind (a batch SQL query
+# over same-pipeline datasets, referenced by their SHORT names). Instances:
+# gold/revenue_rollups.yml.
+schema_version: 1
+parameters:
+  - name: table
+  - name: dimension # customer column to roll up by (state, country, …)
+spec:
+  name: "${param.table}"
+  comment: "Recognized revenue and order count by customer ${param.dimension} (templated rollup)."
+  source:
+    kind: sql
+    # Same-pipeline datasets (silver.orders / silver.customers) by short name;
+    # cancelled/returned orders count as orders but not as revenue — the same
+    # recognition rule as the sales.daily_sales transform.
+    query: |
+      SELECT c.${param.dimension}                AS ${param.dimension},
+             COUNT(DISTINCT o.order_id)          AS num_orders,
+             ROUND(SUM(CASE WHEN o.order_status IN ('cancelled', 'returned')
+                            THEN 0.0 ELSE o.total_amount END), 2) AS gross_revenue
+      FROM orders o
+      JOIN customers c USING (customer_id)
+      GROUP BY c.${param.dimension}
+  target:
+    kind: materialized_view

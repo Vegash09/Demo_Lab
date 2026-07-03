@@ -278,7 +278,7 @@ include:
 
 # Dev-only surfaces kept OUT of the deployed workspace files (DAB ignores
 # .databricksignore; sync.exclude is the bundle-effective mechanism). Keep this
-# aligned with .databricksignore.
+# aligned with .databricksignore — `make check-sync-lists` (CI) enforces it.
 sync:
   exclude:
     - tests
@@ -289,6 +289,7 @@ sync:
     - .codex
     - .agents
     - .githooks
+    - .mcp.json
     - Makefile
     - uv.lock
     - .markdownlint.json
@@ -579,8 +580,8 @@ def patch_makefile(out: Path, catalog: str) -> None:
     )
     text = require_replace(
         text,
-        "databricks bundle run customer_sales_etl",
-        f"databricks bundle run {catalog}_etl",
+        "PIPELINE ?= customer_sales_etl",
+        f"PIPELINE ?= {catalog}_etl",
         "Makefile",
     )
     text = text.replace("datalab.sales_landing_path=file://", "datalab.landing_path=file://")
@@ -588,30 +589,35 @@ def patch_makefile(out: Path, catalog: str) -> None:
 
 
 def patch_bootstrap_uc(out: Path, catalog: str, ctx: dict[str, str]) -> None:
+    """bootstrap_uc.py only carries the deploy SP now — the per-target catalogs
+    and groups are RESOLVED from the bundle files through scripts/domains.py."""
     path = out / "scripts" / "bootstrap_uc.py"
     text = path.read_text(encoding="utf-8")
-    catalogs = (
-        "CATALOGS = {\n"
-        f'    "dev":   [("{catalog}",       True)],\n'
-        f'    "stage": [("{catalog}_stage", True)],\n'
-        f'    "prod":  [("{catalog}_prod",  True)],\n'
-        "}"
-    )
-    reader, engineer = ctx["@@READER_GROUP@@"], ctx["@@ENGINEER_GROUP@@"]
-    groups = (
-        "GROUPS = {\n"
-        f'    "dev":   {{"reader": "{reader}", "engineer": "{engineer}"}},\n'
-        f'    "stage": {{"reader": "{reader}", "engineer": "{engineer}"}},\n'
-        f'    "prod":  {{"reader": "{reader}", "engineer": "{engineer}"}},\n'
-        "}"
-    )
-    text, n1 = re.subn(r"^CATALOGS = \{.*?^\}", catalogs, text, count=1, flags=re.M | re.S)
-    text, n2 = re.subn(r"^GROUPS = \{.*?^\}", groups, text, count=1, flags=re.M | re.S)
-    text, n3 = re.subn(
+    text, n = re.subn(
         r'^DEPLOY_SP = ".*?"', f'DEPLOY_SP = "{ctx["@@DEPLOY_SP@@"]}"', text, count=1, flags=re.M
     )
-    if not (n1 and n2 and n3):
-        raise SystemExit("scaffold: could not patch scripts/bootstrap_uc.py constants")
+    if not n:
+        raise SystemExit("scaffold: could not patch scripts/bootstrap_uc.py DEPLOY_SP")
+    path.write_text(text, encoding="utf-8")
+
+
+def patch_domains(out: Path, catalog: str) -> None:
+    """Rewrite the domain registry to the adopter's single root-level domain.
+
+    Everything per-target (catalog names, groups) resolves from the rewritten
+    variables/ + targets/ + rbac.yml, so this is the ONLY registry edit needed."""
+    path = out / "scripts" / "domains.py"
+    text = path.read_text(encoding="utf-8")
+    registry = (
+        "DOMAINS: dict[str, dict] = {\n"
+        f'    "{catalog}": {{"catalog_var": "catalog", "edge_volumes": True}},\n'
+        "}"
+    )
+    text, n = re.subn(
+        r"^DOMAINS: dict\[str, dict\] = \{.*?^\}", registry, text, count=1, flags=re.M | re.S
+    )
+    if not n:
+        raise SystemExit("scaffold: could not patch scripts/domains.py DOMAINS")
     path.write_text(text, encoding="utf-8")
 
 
@@ -630,20 +636,129 @@ def patch_rbac(out: Path, ctx: dict[str, str]) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+CI_TEMPLATE_ONLY_MARKER = (
+    "  # --- template-only below: stripped from generated adopters by scaffold_adopter.py ---"
+)
+
+
 def patch_ci(out: Path) -> None:
     path = out / ".github" / "workflows" / "common-ci-steps.yml"
     text = path.read_text(encoding="utf-8")
     text = require_replace(
         text, "ruff check scripts projects", "ruff check scripts src", "common-ci-steps.yml"
     )
+    # Strip the template-only trailing jobs (the scaffold smoke test exercises
+    # the TEMPLATE layout — its Makefile anchors don't exist in an adopter).
+    if CI_TEMPLATE_ONLY_MARKER not in text:
+        raise SystemExit("scaffold: template-only marker missing in common-ci-steps.yml")
+    text = text.split(CI_TEMPLATE_ONLY_MARKER)[0].rstrip() + "\n"
+    path.write_text(text, encoding="utf-8")
+
+
+def patch_cd(out: Path, catalog: str) -> None:
+    """Repoint the CD plumbing at the adopter's single domain.
+
+    The template forwards sales-domain overrides (sales-catalog,
+    sales_landing_path) that don't exist in an adopter's variables — the day
+    someone set the matching Actions variable, `bundle deploy` would fail on an
+    unknown --var. Drop them, rename the landing override to the adopter's
+    `landing_path` variable, and point the wheel-publish override at the
+    adopter's domain."""
+    cd = out / ".github" / "workflows" / "common-cd-steps.yml"
+    text = cd.read_text(encoding="utf-8")
+    text = require_replace(
+        text,
+        "          sales-catalog:      ${{ vars.DATALAB_SALES_CATALOG || '' }}\n",
+        "",
+        "common-cd-steps.yml",
+    )
+    text = require_replace(
+        text,
+        "sales-landing-path: ${{ vars.DATALAB_SALES_LANDING_PATH || '' }}",
+        "landing-path:       ${{ vars.DATALAB_LANDING_PATH || '' }}",
+        "common-cd-steps.yml",
+    )
+    cd.write_text(text, encoding="utf-8")
+
+    action = out / ".github" / "actions" / "deploy-dab" / "action.yml"
+    text = action.read_text(encoding="utf-8")
+    text = require_replace(
+        text,
+        """  sales-catalog:
+    description: "Unity Catalog catalog override for the sales domain (overrides var.sales_catalog)."
+    required: false
+    default: ""
+  sales-landing-path:
+    description: "Override for the Auto Loader landing volume path."
+    required: false
+    default: ""
+""",
+        """  landing-path:
+    description: "Override for the Auto Loader landing volume path."
+    required: false
+    default: ""
+""",
+        "deploy-dab/action.yml",
+    )
+    text = require_replace(
+        text,
+        '        [ -n "$IN_CATALOG" ]       && PUBLISH_ARGS+=(--catalog-for "customer_sales=$IN_CATALOG")\n'
+        '        [ -n "$IN_SALES_CATALOG" ] && PUBLISH_ARGS+=(--catalog-for "sales=$IN_SALES_CATALOG")\n',
+        f'        [ -n "$IN_CATALOG" ] && PUBLISH_ARGS+=(--catalog-for "{catalog}=$IN_CATALOG")\n',
+        "deploy-dab/action.yml",
+    )
+    text = require_replace(
+        text,
+        "        IN_SALES_CATALOG:  ${{ inputs.sales-catalog }}\n"
+        "        IN_LANDING_PATH:   ${{ inputs.sales-landing-path }}\n",
+        "        IN_LANDING_PATH:   ${{ inputs.landing-path }}\n",
+        "deploy-dab/action.yml",
+    )
+    text = require_replace(
+        text,
+        '        [ -n "$IN_SALES_CATALOG" ]  && ARGS+=(--var "sales_catalog=$IN_SALES_CATALOG")\n'
+        '        [ -n "$IN_LANDING_PATH" ]   && ARGS+=(--var "sales_landing_path=$IN_LANDING_PATH")\n',
+        '        [ -n "$IN_LANDING_PATH" ]   && ARGS+=(--var "landing_path=$IN_LANDING_PATH")\n',
+        "deploy-dab/action.yml",
+    )
+    text = text.replace(
+        "        IN_SALES_CATALOG: ${{ inputs.sales-catalog }}\n", ""
+    )
+    action.write_text(text, encoding="utf-8")
+
+
+def patch_cicd_docs(out: Path, ctx: dict[str, str], slug: str) -> None:
+    """Repoint docs/CICD.md at the adopter's identity.
+
+    Left untouched, a generated repo's own CI/CD doc still carries the
+    TEMPLATE's OIDC federation subject, deploy SP and workspace host — a
+    first-timer copying the federation-policy command from their own docs would
+    wire OIDC to the template's service principal."""
+    path = out / "docs" / "CICD.md"
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    text = require_replace(
+        text, "repo:dediggibyte/datalab:environment:", f"repo:{slug}:environment:", "docs/CICD.md"
+    )
+    text = text.replace("437346a1-0b53-418a-80d4-abaf2586ed97", ctx["@@DEPLOY_SP@@"])
+    text = text.replace("https://dbc-425be768-f138.cloud.databricks.com", ctx["@@HOST@@"])
     path.write_text(text, encoding="utf-8")
 
 
 def patch_databricksignore(out: Path) -> None:
+    """Drop entries whose paths don't exist in the adopter layout (the reference
+    domains, design assets, dev-time pilot) so the list stays ALIGNED with the
+    rewritten databricks.yml sync.exclude — `make check-sync-lists` enforces it."""
     path = out / ".databricksignore"
     if not path.exists():
         return
-    kept = [ln for ln in path.read_text(encoding="utf-8").splitlines() if "projects/" not in ln]
+    dropped = ("projects/", "design/", "omnigent/")
+    kept = [
+        ln
+        for ln in path.read_text(encoding="utf-8").splitlines()
+        if not any(gone in ln for gone in dropped)
+    ]
     path.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
 
@@ -827,6 +942,13 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     catalog, tag = r["catalog"], r["framework_tag"]
+    if not re.match(r"^v\d+\.\d+\.\d+$", tag):
+        raise SystemExit(
+            f"scaffold: framework tag {tag!r} is not a vX.Y.Z release tag. var.datalab_version "
+            "becomes the Volume wheel FILENAME (datalab-<version>-py3-none-any.whl), so a "
+            "branch/rev pin (e.g. 'main') would never match the wheel publish_wheel builds. "
+            "Pass --framework-tag v<x.y.z>."
+        )
     ctx = {
         "@@CATALOG@@": catalog,
         "@@HOST@@": r["host"],
@@ -867,8 +989,12 @@ def main(argv: list[str] | None = None) -> int:
     write_repo_level(out, subst)
     patch_makefile(out, catalog)
     patch_bootstrap_uc(out, catalog, ctx)
+    patch_domains(out, catalog)
     patch_rbac(out, ctx)
     patch_ci(out)
+    patch_cd(out, catalog)
+    slug = repo_slug(out) if args.in_place else ""
+    patch_cicd_docs(out, ctx, slug if slug and slug != TEMPLATE_SLUG else "<owner>/<repo>")
     patch_databricksignore(out)
     patch_mcp(out, ctx)
 

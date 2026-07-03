@@ -22,10 +22,12 @@ Runs under ``uv run --with databricks-sdk --with pip`` so neither the SDK nor pi
 enters uv.lock. The target volumes must already exist: ``make bootstrap-uc
 TARGET=<t>`` provisions each project catalog's ``artifacts.wheels`` volume.
 
-NOTE: the per-target domain catalogs come from bootstrap_uc.CATALOGS (the bundle
-defaults). If a deploy overrides a domain catalog (the ``--var catalog=...``
-escape hatch), pass ``--catalog <name>`` (repeatable) to match, or the wheel
-lands in the wrong catalog.
+NOTE: the per-target domain catalogs are resolved by the domain registry
+(scripts/domains.py) from the same bundle files the deploy reads. If a deploy
+overrides a domain catalog (the ``--var catalog=...`` escape hatch), pass
+``--catalog-for <domain>=<name>`` to repoint THAT domain's upload to match (the
+deploy-dab action does this automatically), or ``--catalog <name>`` (repeatable)
+to replace the whole list.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ from pathlib import Path
 
 # Single source of truth for the per-target domain catalogs + the wheel volume
 # location (scripts/ is on sys.path[0] when this file is run directly).
-from bootstrap_uc import ARTIFACTS_SCHEMA, CATALOGS, WHEELS_VOLUME
+from domains import ARTIFACTS_SCHEMA, WHEELS_VOLUME, domain_catalogs, targets
 
 ARTIFACTS_PATH = f"{ARTIFACTS_SCHEMA}/{WHEELS_VOLUME}"  # <catalog>.artifacts.wheels Volume
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -75,7 +77,12 @@ def build_wheel(dist_dir: str) -> None:
 
     ``--no-deps`` keeps it to ``datalab`` alone (no pyspark etc.); the isolated
     ``dist_dir`` keeps it out of the bundle's ``dist/`` (which ``bundle deploy``
-    fills with the per-domain ``<catalog>_etl`` wheels right after)."""
+    fills with the per-domain ``<catalog>_etl`` wheels right after). Stale
+    framework wheels from earlier bumps are removed first so the strict
+    ``wheel_path`` check below can never pick one up."""
+    for stale in Path(dist_dir).glob("datalab-*.whl"):
+        print(f"  removing stale {stale}")
+        stale.unlink()
     req = _git_requirement()
     print(f"  building {req} -> {dist_dir}/")
     subprocess.run(
@@ -85,19 +92,54 @@ def build_wheel(dist_dir: str) -> None:
 
 
 def wheel_path(version: str, dist_dir: str) -> Path:
+    """The wheel to upload — STRICT: publishing anything but the pinned version
+    would silently break every environment referencing var.datalab_wheel.
+
+    With a known version, only the exact ``datalab-<version>-…`` filename is
+    accepted (a stale wheel from an earlier bump sitting in dist_dir must never
+    win). Without one (isolated env where ``datalab`` isn't importable), the
+    dist dir must contain exactly one framework wheel."""
+    built = sorted(Path(dist_dir).glob("datalab-*-py3-none-any.whl"))
     if version:
         exact = Path(dist_dir) / f"datalab-{version}-py3-none-any.whl"
-        if exact.exists() or not list(Path(dist_dir).glob("datalab-*.whl")):
-            return exact
-    # version skew / unknown version: take the single built framework wheel
-    built = sorted(Path(dist_dir).glob("datalab-*-py3-none-any.whl"))
-    return built[-1] if built else Path(dist_dir) / f"datalab-{version}-py3-none-any.whl"
+        others = [w for w in built if w != exact]
+        if others:
+            raise SystemExit(
+                f"{dist_dir}/ holds framework wheel(s) other than the pinned {version}: "
+                f"{', '.join(w.name for w in others)} — remove them (stale earlier "
+                "builds) and re-run with --build"
+            )
+        return exact
+    if len(built) != 1:
+        raise SystemExit(
+            f"cannot determine which wheel to publish: found {len(built)} framework "
+            f"wheels in {dist_dir}/ and no --version to disambiguate"
+        )
+    return built[0]
 
 
-def target_catalogs(target: str, overrides: list[str]) -> list[str]:
-    """The project catalogs to publish the wheel into — explicit ``--catalog``
-    overrides, else the per-target domain catalogs from bootstrap_uc.CATALOGS."""
-    return overrides or [catalog for catalog, _ in CATALOGS[target]]
+def target_catalogs(target: str, replace: list[str], per_domain: list[str]) -> list[str]:
+    """The project catalogs to publish the wheel into.
+
+    Default: every domain's catalog for ``target`` from the registry. ``--catalog``
+    (``replace``) swaps in an explicit list; ``--catalog-for domain=name``
+    (``per_domain``) repoints single domains — matching the ``--var`` overrides a
+    deploy may apply, so the wheel lands where the pipelines will look."""
+    if replace and per_domain:
+        raise SystemExit("--catalog and --catalog-for are mutually exclusive")
+    if replace:
+        return replace
+    resolved = domain_catalogs(target)
+    for item in per_domain:
+        domain, sep, catalog = item.partition("=")
+        if not sep or not catalog:
+            raise SystemExit(f"--catalog-for expects <domain>=<catalog>, got {item!r}")
+        if domain not in resolved:
+            raise SystemExit(
+                f"--catalog-for: unknown domain {domain!r} (registry has: {', '.join(resolved)})"
+            )
+        resolved[domain] = catalog
+    return list(resolved.values())
 
 
 def volume_dir(catalog: str) -> str:
@@ -117,7 +159,7 @@ def upload(local: Path, dest: str, profile: str | None) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=sorted(CATALOGS), required=True)
+    parser.add_argument("--target", choices=targets(), required=True)
     parser.add_argument(
         "--build",
         action="store_true",
@@ -137,7 +179,15 @@ def main(argv: list[str] | None = None) -> None:
         "--catalog",
         action="append",
         default=[],
-        help="project catalog(s) to publish into (default: the target's domain catalogs); repeatable",
+        help="project catalog(s) to publish into, REPLACING the registry list; repeatable",
+    )
+    parser.add_argument(
+        "--catalog-for",
+        action="append",
+        default=[],
+        metavar="DOMAIN=CATALOG",
+        help="repoint ONE domain's upload catalog (matches a deploy's --var catalog "
+        "override); repeatable, other domains keep their registry catalogs",
     )
     args = parser.parse_args(argv)
 
@@ -146,7 +196,7 @@ def main(argv: list[str] | None = None) -> None:
 
     version = args.version or _default_version()
     local = wheel_path(version, args.dist_dir)
-    catalogs = target_catalogs(args.target, args.catalog)
+    catalogs = target_catalogs(args.target, args.catalog, args.catalog_for)
 
     if not args.apply:
         print(f"-- dry run for target '{args.target}' — re-run with --apply (APPLY=1) to upload\n")

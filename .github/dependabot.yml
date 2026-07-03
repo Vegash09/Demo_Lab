@@ -1,0 +1,24 @@
+# Dependabot: keeps the GitHub Actions pins and regular Python dev deps fresh.
+#
+# The datalab FRAMEWORK pin is deliberately NOT handled here — Dependabot can't
+# bump a [tool.uv.sources] git tag, let alone the full lockstep (tag +
+# var.datalab_version + uv.lock + regenerated schemas/). That job belongs to the
+# scheduled framework-bump workflow (.github/workflows/framework-bump.yml),
+# which drives `make bump-framework`.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Framework pin: owned by the framework-bump workflow (full lockstep).
+      - dependency-name: datalab

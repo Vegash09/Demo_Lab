@@ -65,6 +65,89 @@ def test_run_dataset_reproduces_silver_customers_contract(spark, bronze_customer
 
     assert res.cdc_plan and "customer_id" in res.cdc_plan  # engine-owned SCD1
 
+    # domain-wide operational metadata (domain.yml): stamps land after mapping +
+    # transforms and before dqx, so quarantine evidence carries them too
+    assert valid[0]._record_source == "sales.silver.customers"
+    assert "_loaded_at" in res.valid_df.columns
+    assert quarantined[0]._record_source == "sales.silver.customers"
+
+
+def test_run_dataset_scd2_history_opts_out_of_metadata(spark, bronze_customers):
+    """silver.customers_history: SCD2 over the same bronze source, with the
+    dataset-level `operational_metadata: false` opt-out honoured."""
+    res = run_dataset(
+        spark,
+        CONFIG_DIR,
+        "silver",
+        "customers_history",
+        params=PARAMS,
+        inputs={"cat.bronze.customers": bronze_customers},
+    )
+
+    valid = res.valid_df.collect()
+    assert [r.customer_id for r in valid] == [1]
+    assert valid[0].email == "asha@example.com"  # shared normalize_email transform
+    assert "_record_source" not in res.valid_df.columns  # opt-out honoured
+    assert res.cdc_plan and "customer_id" in res.cdc_plan  # engine-owned SCD2
+
+
+@pytest.fixture()
+def bronze_products(spark):
+    return spark.createDataFrame(
+        [
+            (10, "Widget", "Gadgets", "Small", "Acme", 9.99),
+            (None, "Ghost widget", "Gadgets", "Small", "Acme", 1.0),
+        ],
+        "product_id long, product_name string, category string, subcategory string, "
+        "brand string, price double",
+    )
+
+
+def test_run_dataset_snapshot_cdc_product_catalog(spark, bronze_products):
+    """silver.product_catalog: cdc_from_snapshot pattern A — the BATCH bronze
+    read is the snapshot; mapping/quality/metadata apply to the prepared frame."""
+    res = run_dataset(
+        spark,
+        CONFIG_DIR,
+        "silver",
+        "product_catalog",
+        params=PARAMS,
+        inputs={"cat.bronze.products": bronze_products},
+    )
+
+    valid = res.valid_df.collect()
+    assert [r.product_id for r in valid] == [10]
+    assert valid[0]._record_source == "sales.silver.product_catalog"  # stamped
+    quarantined = res.quarantine_df.collect()
+    assert [e.name for e in quarantined[0]._errors] == ["product_id_is_not_null"]
+
+
+def test_run_dataset_templated_rollup_expands_and_runs(spark):
+    """gold.revenue_by_state exists only through templates/revenue_rollup.yml +
+    the gold/revenue_rollups.yml instance — run_dataset sees it as an ordinary
+    dataset (sql source over same-pipeline silver datasets)."""
+    orders = spark.createDataFrame(
+        [
+            (1, 100, "completed", 50.0),
+            (2, 100, "cancelled", 10.0),
+            (3, 200, "shipped", 30.0),
+        ],
+        "order_id long, customer_id long, order_status string, total_amount double",
+    )
+    customers = spark.createDataFrame(
+        [(100, "TX", "US"), (200, "NV", "US")],
+        "customer_id long, state string, country string",
+    )
+    orders.createOrReplaceTempView("orders")
+    customers.createOrReplaceTempView("customers")
+
+    res = run_dataset(spark, CONFIG_DIR, "gold", "revenue_by_state", params=PARAMS)
+
+    rows = {r.state: r for r in res.valid_df.collect()}
+    assert rows["TX"].num_orders == 2  # cancelled still counts as an order …
+    assert rows["TX"].gross_revenue == 50.0  # … but not as revenue
+    assert rows["NV"].gross_revenue == 30.0
+
 
 def test_run_dataset_unknown_dataset_lists_options(spark):
     with pytest.raises(ConfigError, match="customers"):
@@ -76,3 +159,5 @@ def test_plan_needs_no_spark_and_names_quarantine():
     assert "customers_quarantine" in out
     assert "sales.normalize_email" in out
     assert "materialized_view" in out  # the gold aggregates
+    assert "revenue_by_state" in out  # template-expanded datasets are ordinary datasets
+    assert "revenue_by_country" in out

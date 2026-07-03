@@ -37,18 +37,25 @@ flowchart LR
 
 | Workflow | Trigger | What runs |
 |---|---|---|
-| `ci-cd-dev.yml` | PRs to `main`, pushes to `main`, manual | CI on PRs; CI + deploy to `dev` on push to main |
-| `ci-cd-stage.yml` | `v*-rc*` tags, manual | CI + deploy to `stage` |
-| `ci-cd-prod.yml` | `v*` tags (non-rc), manual | CI + deploy to `prod` |
+| `ci-cd.yml` | PRs to `main` (CI only, vs dev); pushes to `main` (CI + deploy dev); `v*-rc*` tags (stage); `v*` tags (prod); manual with a target choice | ONE workflow for every target — a `params` job derives the target/deploy flags from the trigger, then calls the common CI/CD workflows |
+| `framework-bump.yml` | daily schedule, manual | watches `datalab-framework` for a new `vX.Y.Z` tag and opens a full-lockstep bump PR (`make bump-framework`: pyproject tag + `var.datalab_version` + `uv.lock` + regenerated `schemas/`), pre-validated in-workflow |
 | `pr-template-check.yml` | every PR | enforces the unified PR template |
+
+Dependabot (`.github/dependabot.yml`) keeps the GitHub Actions pins and regular
+Python dev deps fresh; the framework pin is deliberately excluded there — the
+framework-bump workflow owns that multi-file lockstep.
 
 Reusable pieces:
 
 - `common-ci-steps.yml` — `uv sync --frozen` → `ruff check` (same paths as
-  `make lint`, projects/ included) → config validation
-  (`python -m datalab.framework`, the `make validate-configs` loader) →
-  `pytest` (local Spark, Java 21; runs each project's suite) →
-  `databricks bundle validate -t <target>` (OIDC).
+  `make lint`, projects/ included) → skill-mirror, framework-lockstep,
+  vendored-schema, domain-registry and sync-list drift checks (the `make
+  check-*` gates) → config validation (`python -m datalab.framework`, the
+  `make validate-configs` loader) → `pytest` (local Spark, Java 21; runs each
+  project's suite) → `databricks bundle validate -t <target>` (OIDC; skipped
+  gracefully when the target's GitHub Environment has no Databricks secrets
+  yet, same gate as CD) → the adopter-scaffold smoke test (`make new-adopter`
+  into a temp dir, then the GENERATED repo's own quality gates).
 - `common-cd-steps.yml` — OIDC setup → `deploy-dab` composite action
   (validate + deploy with optional `--var` overrides). **dev passes
   `auto-approve: true`** so CI can apply destructive changes (e.g. deleting a

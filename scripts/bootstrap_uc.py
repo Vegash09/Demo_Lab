@@ -24,34 +24,14 @@ from __future__ import annotations
 import argparse
 import sys
 
-# Domain catalogs to provision per target, each as (catalog, with_volumes).
-# `with_volumes` controls the edge-lane Auto Loader landing + export volumes
-# (customer_sales only). The datalab framework wheel lives in EACH of these
-# catalogs under `artifacts.wheels` (see _catalog_sql) — there is NO separate
-# shared catalog. Keep in sync with databricks.yml targets.*.variables
-# (catalog, sales_catalog).
-CATALOGS = {
-    "dev":   [("customer_sales",       True), ("sales",       False)],
-    "stage": [("customer_sales_stage", True), ("sales_stage", False)],
-    "prod":  [("customer_sales_prod",  True), ("sales_prod",  False)],
-}
-
-# Persona groups per target — keep in sync with rbac.yml
-# reader_group / engineer_group variables.
-GROUPS = {
-    "dev": {"reader": "demo_analyst", "engineer": "Data Science group"},
-    "stage": {"reader": "dl_sales_readers", "engineer": "dl_sales_engineers"},
-    "prod": {"reader": "dl_sales_readers", "engineer": "dl_sales_engineers"},
-}
+# The per-target domain catalogs and persona groups are RESOLVED from the bundle
+# files (variables/medallion.yml + targets/<t>.yml + rbac.yml) through the domain
+# registry — no hardcoded per-target dicts to keep in sync anymore. Adding a
+# domain = one entry in scripts/domains.py DOMAINS.
+from domains import ARTIFACTS_SCHEMA, WHEELS_VOLUME, catalogs, groups, targets
 
 BASE_SCHEMAS = ["bronze", "silver", "gold"]
 VOLUME_SCHEMAS = ["landing", "exports"]  # only for catalogs with edge-lane volumes
-# Every domain catalog also gets this schema/volume holding the datalab FRAMEWORK
-# wheel — published by `make publish-wheel` into EACH project's own catalog and
-# installed by that domain's pipeline/job environments (var.datalab_wheel /
-# var.sales_datalab_wheel; see AGENTS.md "Wheel delivery").
-ARTIFACTS_SCHEMA = "artifacts"
-WHEELS_VOLUME = "wheels"
 
 # The CI/CD deploy service principal (GitHub OIDC) — needs full rights on the
 # catalog it deploys pipelines/tables into. Keep in sync with docs/CICD.md.
@@ -123,11 +103,12 @@ def bootstrap_sql(
     if the catalogs already exist (created via the UI) — set
     ``create_catalogs=False`` to skip CREATE CATALOG and just ensure the
     schemas/volumes/grants."""
-    reader = GROUPS[target]["reader"]
-    engineer = GROUPS[target]["engineer"]
+    who = groups(target)
+    reader = who["reader"]
+    engineer = who["engineer"]
     location = f" MANAGED LOCATION '{managed_location}'" if managed_location else ""
     stmts: list[str] = []
-    for catalog, with_volumes in CATALOGS[target]:
+    for catalog, with_volumes in catalogs(target):
         stmts += _catalog_sql(
             catalog, reader, engineer, location, with_volumes, create_catalogs
         )
@@ -151,7 +132,7 @@ def apply(statements: list[str], warehouse_id: str, profile: str | None) -> None
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=sorted(CATALOGS), required=True)
+    parser.add_argument("--target", choices=targets(), required=True)
     parser.add_argument("--apply", action="store_true", help="execute (default: print SQL only)")
     parser.add_argument("--warehouse-id", default="", help="SQL warehouse id (required with --apply)")
     parser.add_argument("--profile", default="", help="Databricks CLI profile (default: ambient auth)")

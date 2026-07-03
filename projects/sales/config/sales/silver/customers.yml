@@ -28,9 +28,7 @@ columns:
       - criticality: warn # flows through flagged; not dropped
         filter: email IS NOT NULL
         check:
-          function: regex_match
-          arguments:
-            regex: '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+          function: is_valid_email # dqx built-in (0.15+) — no hand-rolled regex
   - name: phone
     type: string
   - name: city

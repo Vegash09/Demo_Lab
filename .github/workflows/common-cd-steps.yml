@@ -108,6 +108,8 @@ jobs:
           auto-approve: ${{ inputs.auto-approve }}
           # Optional per-environment overrides; empty → databricks.yml defaults.
           catalog:            ${{ vars.DATALAB_CATALOG || '' }}
+          sales-catalog:      ${{ vars.DATALAB_SALES_CATALOG || '' }}
           sales-landing-path: ${{ vars.DATALAB_SALES_LANDING_PATH || '' }}
           reader-group:       ${{ vars.DATALAB_READER_GROUP || '' }}
           engineer-group:     ${{ vars.DATALAB_ENGINEER_GROUP || '' }}
+          admin-group:        ${{ vars.DATALAB_ADMIN_GROUP || '' }}

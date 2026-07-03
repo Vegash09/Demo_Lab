@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: silver.product_catalog — SCD from periodic FULL snapshots
+# (`target.cdc_from_snapshot`, pattern A). Reference example for snapshot CDC:
+# bronze.products is read as a BATCH source and re-read on every pipeline
+# update; SDP diffs successive snapshots — new keys insert, changed keys
+# update, keys absent from the newest snapshot DELETE (exactly the semantics of
+# a nightly full dump / JDBC-extracted dimension). Contrast with sibling
+# silver.products, which streams the same bronze table through AUTO CDC —
+# use that pattern when the source is a change FEED, this one when each load
+# is the complete state.
+#
+# With snapshot CDC the quarantine materializes as an MV (the prepared frame is
+# the snapshot itself — no stream to split).
+schema_version: 1
+name: product_catalog
+comment: Product catalog maintained by snapshot diffing (cdc_from_snapshot) — deletes propagate when a product leaves the snapshot.
+source:
+  kind: table
+  name: products
+  layer: bronze # BATCH read — each pipeline update sees the full current snapshot
+columns:
+  - name: product_id
+    type: long
+    quality:
+      - criticality: error # no product key → never reaches the catalog
+        check: { function: is_not_null }
+  - name: product_name
+    type: string
+    quality:
+      - criticality: warn
+        check: { function: is_not_null_and_not_empty }
+  - name: category
+    type: string
+  - name: subcategory
+    type: string
+  - name: brand
+    type: string
+  - name: price
+    type: double
+    quality:
+      - criticality: warn # negative price is suspect; flag, don't drop
+        check:
+          function: is_not_less_than
+          arguments: { limit: 0 }
+quality:
+  quarantine:
+    name: product_catalog_quarantine
+    include_warnings: false
+target:
+  kind: streaming_table
+  cdc_from_snapshot:
+    keys: [product_id]
+    scd_type: 1 # current state only; see customers_history for the SCD2 shape

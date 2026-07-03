@@ -5,7 +5,7 @@
 [![DQX](https://img.shields.io/badge/DQX-Data%20Quality-green.svg)](https://databrickslabs.github.io/dqx/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![CI/CD Dev](https://github.com/dediggibyte/datalab/actions/workflows/ci-cd-dev.yml/badge.svg?branch=main)](https://github.com/dediggibyte/datalab/actions/workflows/ci-cd-dev.yml)
+[![CI/CD](https://github.com/dediggibyte/datalab/actions/workflows/ci-cd.yml/badge.svg?branch=main)](https://github.com/dediggibyte/datalab/actions/workflows/ci-cd.yml)
 [![Docs](https://img.shields.io/badge/docs-getting%20started-blue.svg)](docs/GETTING_STARTED.md)
 
 **Reference domains + deploy bundle for the config-driven [datalab
@@ -123,7 +123,8 @@ flowchart TD
 make install            # uv sync → .venv from uv.lock
 make enable-githooks    # protected-files pre-commit guard
 make validate-configs   # validate every domain's YAML artifacts (pydantic + dqx)
-make lint test          # ruff + pytest (framework suite + example suites)
+make lint test          # ruff + pytest (the reference domains' suites; the
+                        # framework's own tests live in datalab-framework)
 
 databricks auth login --host https://dbc-425be768-f138.cloud.databricks.com
 make validate           # bundle validate -t dev

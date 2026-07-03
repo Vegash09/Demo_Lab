@@ -46,6 +46,69 @@
       "title": "LayerEntry",
       "type": "object"
     },
+    "MetadataColumn": {
+      "additionalProperties": false,
+      "description": "One operational-metadata column. Exactly one of:\n\n* ``expr`` \u2014 any SQL expression, evaluated per row at write time\n  (``current_timestamp()``, ``_metadata.file_path`` on file sources, \u2026);\n* ``value`` \u2014 a literal string; ``{domain}``/``{layer}``/``{dataset}``\n  tokens resolve at generation time;\n* ``conf`` \u2014 a pipeline-conf KEY resolved per environment and stamped\n  as a literal (the usual dev/stage/prod stamp).",
+      "properties": {
+        "conf": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][\\w.]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conf"
+        },
+        "expr": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expr"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "title": "MetadataColumn",
+      "type": "object"
+    },
+    "OperationalMetadataSpec": {
+      "additionalProperties": false,
+      "description": "Domain-wide metadata columns stamped on every dataset frame \u2014 AFTER\ncolumn mapping and transforms (so a transform cannot drop them) and\nBEFORE data quality (so quarantine evidence carries them too). Datasets\nopt out with ``operational_metadata: false``.",
+      "properties": {
+        "columns": {
+          "default": {},
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/MetadataColumn"
+            }
+          },
+          "title": "Columns",
+          "type": "object"
+        }
+      },
+      "title": "OperationalMetadataSpec",
+      "type": "object"
+    },
     "ResultColumns": {
       "additionalProperties": false,
       "properties": {
@@ -109,6 +172,17 @@
       },
       "title": "Layers",
       "type": "object"
+    },
+    "operational_metadata": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OperationalMetadataSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "schema_version": {
       "const": 1,

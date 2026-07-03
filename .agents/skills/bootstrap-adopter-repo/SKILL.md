@@ -45,9 +45,10 @@ What the engine does every run: drops the reference domains (`projects/`), desig
 assets and `omnigent/`; writes one minimal root-level domain renamed to
 `<catalog>`; rewrites every repo-level file (single-package `pyproject.toml`,
 root `resources/`, single catalog, `targets/`, `rbac.yml`, `Makefile`,
-`scripts/bootstrap_uc.py`, CI); validates the base-catalog name; and repoints the
-read-only MCP grounding config (`.mcp.json` + `.cursor/mcp.json`) at the
-customer's SQL warehouse + CLI profile. `references/templates.md` is the
+`scripts/domains.py` + `scripts/bootstrap_uc.py`, CI/CD incl. `docs/CICD.md`'s
+OIDC identity); validates the base-catalog name and the vX.Y.Z framework tag; and
+repoints the read-only MCP grounding config (`.mcp.json` + `.cursor/mcp.json`) at
+the customer's SQL warehouse + CLI profile. `references/templates.md` is the
 human-readable record of what it writes — and the manual fallback.
 
 ## 1. Gather inputs (ask the user)
@@ -146,8 +147,9 @@ uv run --no-project python scripts/scaffold_adopter.py --in-place --yes \
 It creates the minimal root domain (`config/<catalog>/` + one Auto Loader bronze
 table, `src/<catalog>_etl/`, `resources/<catalog>_etl.{pipeline,job}.yml`,
 `tests/`), rewrites every repo-level file (`pyproject.toml`, `databricks.yml`,
-`variables/`, `targets/`, `rbac.yml`, `Makefile`, `scripts/bootstrap_uc.py`, CI,
-`.databricksignore`, `README`/`CHANGELOG`), rewires `.mcp.json` +
+`variables/`, `targets/`, `rbac.yml`, `Makefile`, `scripts/domains.py`,
+`scripts/bootstrap_uc.py`, CI/CD + `docs/CICD.md`, `.databricksignore`,
+`README`/`CHANGELOG`), rewires `.mcp.json` +
 `.cursor/mcp.json`, and removes `projects/ design/ omnigent/ uv.lock`. It **keeps**
 `scripts/`, `schemas/` (vendored), `.github/`, `docs/`, and the agent harness
 (`.agents .claude .cursor .codex .githooks`) — so the adopter keeps every

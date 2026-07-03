@@ -27,7 +27,9 @@
               "cloud_files": "#/$defs/CloudFilesSource",
               "files": "#/$defs/FileSource",
               "kafka": "#/$defs/KafkaSource",
+              "python": "#/$defs/PythonSource",
               "snapshot_function": "#/$defs/SnapshotFunctionSource",
+              "sql": "#/$defs/SqlSource",
               "table": "#/$defs/TableSource",
               "view": "#/$defs/ViewSource"
             },
@@ -51,6 +53,12 @@
             },
             {
               "$ref": "#/$defs/SnapshotFunctionSource"
+            },
+            {
+              "$ref": "#/$defs/SqlSource"
+            },
+            {
+              "$ref": "#/$defs/PythonSource"
             }
           ],
           "title": "Source"
@@ -306,7 +314,6 @@
       "additionalProperties": false,
       "properties": {
         "arguments": {
-          "additionalProperties": true,
           "default": {},
           "title": "Arguments",
           "type": "object"
@@ -540,7 +547,9 @@
               "cloud_files": "#/$defs/CloudFilesSource",
               "files": "#/$defs/FileSource",
               "kafka": "#/$defs/KafkaSource",
+              "python": "#/$defs/PythonSource",
               "snapshot_function": "#/$defs/SnapshotFunctionSource",
+              "sql": "#/$defs/SqlSource",
               "table": "#/$defs/TableSource",
               "view": "#/$defs/ViewSource"
             },
@@ -564,6 +573,12 @@
             },
             {
               "$ref": "#/$defs/SnapshotFunctionSource"
+            },
+            {
+              "$ref": "#/$defs/SqlSource"
+            },
+            {
+              "$ref": "#/$defs/PythonSource"
             }
           ],
           "title": "Source"
@@ -771,6 +786,37 @@
       "title": "MetricsSpec",
       "type": "object"
     },
+    "PythonSource": {
+      "additionalProperties": false,
+      "description": "A registered ``@dataframe_source`` function as the source frame \u2014 the\nescape hatch for sources no built-in reader covers (JDBC pulls, synthetic\nframes, custom connectors). The contract is\n``fn(spark, **args) -> DataFrame``: pure, read-only, no writes.\n\nSet ``as_stream: true`` when the function returns a STREAMING DataFrame\nso flow/target validation treats it as such.",
+      "properties": {
+        "args": {
+          "default": {},
+          "title": "Args",
+          "type": "object"
+        },
+        "as_stream": {
+          "default": false,
+          "title": "As Stream",
+          "type": "boolean"
+        },
+        "function": {
+          "title": "Function",
+          "type": "string"
+        },
+        "kind": {
+          "const": "python",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "function"
+      ],
+      "title": "PythonSource",
+      "type": "object"
+    },
     "QualitySpec": {
       "additionalProperties": false,
       "description": "TABLE-level quality config. Most rules belong on the columns\nthemselves (``columns[].quality``); this block carries multi-column /\ndataset-level checks and the quarantine/metrics/reference settings.",
@@ -966,6 +1012,27 @@
       "title": "SnapshotFunctionSource",
       "type": "object"
     },
+    "SqlSource": {
+      "additionalProperties": false,
+      "description": "A SQL query as the source frame (``spark.sql``) \u2014 BATCH semantics.\n\nReference same-pipeline datasets by their short name; for anything\noutside the pipeline use ``${conf:<key>}`` placeholders so catalogs and\nschemas stay per-environment (no hardcoded catalogs \u2014 ever)::\n\n    query: |\n      SELECT c.customer_id, c.city, o.total\n      FROM ${conf:datalab.catalog}.silver.customers c\n      JOIN ${conf:datalab.catalog}.silver.orders o USING (customer_id)\n\nSQL sources are batch: pair them with ``materialized_view`` /\n``temporary_view`` targets or non-CDC ``backfill:`` entries. For a\nstreaming read, use a ``table``/``view`` source with ``as_stream: true``\nand express the logic in ``transform:`` steps.",
+      "properties": {
+        "kind": {
+          "const": "sql",
+          "title": "Kind",
+          "type": "string"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "query"
+      ],
+      "title": "SqlSource",
+      "type": "object"
+    },
     "StreamingTableTarget": {
       "additionalProperties": false,
       "properties": {
@@ -1065,6 +1132,11 @@
           "default": null,
           "title": "Catalog Conf"
         },
+        "change_data_feed": {
+          "default": false,
+          "title": "Change Data Feed",
+          "type": "boolean"
+        },
         "kind": {
           "const": "table",
           "title": "Kind",
@@ -1141,7 +1213,6 @@
       "additionalProperties": false,
       "properties": {
         "args": {
-          "additionalProperties": true,
           "default": {},
           "title": "Args",
           "type": "object"
@@ -1221,6 +1292,11 @@
       "title": "Name",
       "type": "string"
     },
+    "operational_metadata": {
+      "default": true,
+      "title": "Operational Metadata",
+      "type": "boolean"
+    },
     "quality": {
       "anyOf": [
         {
@@ -1246,7 +1322,9 @@
               "cloud_files": "#/$defs/CloudFilesSource",
               "files": "#/$defs/FileSource",
               "kafka": "#/$defs/KafkaSource",
+              "python": "#/$defs/PythonSource",
               "snapshot_function": "#/$defs/SnapshotFunctionSource",
+              "sql": "#/$defs/SqlSource",
               "table": "#/$defs/TableSource",
               "view": "#/$defs/ViewSource"
             },
@@ -1270,6 +1348,12 @@
             },
             {
               "$ref": "#/$defs/SnapshotFunctionSource"
+            },
+            {
+              "$ref": "#/$defs/SqlSource"
+            },
+            {
+              "$ref": "#/$defs/PythonSource"
             }
           ]
         },

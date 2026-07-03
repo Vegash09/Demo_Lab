@@ -11,6 +11,14 @@ domain: sales
 imports: # python modules registering this domain's @transform fns
   - sales_etl.transforms.sales
 catalog_conf: datalab.catalog
+# Domain-wide stamp columns, added to EVERY dataset frame after column mapping +
+# transforms and before dqx (quarantine evidence carries them too). A dataset
+# opts out with `operational_metadata: false` in its artifact (see
+# silver/customers_history.yml, whose explicit SCD2 DDL owns its column set).
+operational_metadata:
+  columns:
+    _loaded_at: { expr: current_timestamp() }
+    _record_source: { value: "{domain}.{layer}.{dataset}" }
 layers:
   bronze:
     schema_conf: datalab.bronze_schema

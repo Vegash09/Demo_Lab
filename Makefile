@@ -14,6 +14,8 @@ TARGET ?= dev
 .PHONY: help install lock lint fmt test validate-configs validate \
         deploy run destroy publish-wheel bootstrap-uc enable-githooks \
         commit-protected clean sync-skills check-skills publish-genie-skills \
+        sync-schemas check-schemas check-lockstep bump-framework check-domains \
+        check-sync-lists \
         spec-local dry-run-local run-local validate-connect design \
         new-adopter configure-adopter
 
@@ -49,10 +51,47 @@ CONFIG_DIRS := $(wildcard config) $(wildcard projects/*/config)
 validate-configs: install  ## Validate every domain's <layer>/<table>.yml artifacts (pydantic + dqx checks)
 	$(UV) run python -m datalab.framework $(CONFIG_DIRS)
 
-# Editor schemas (schemas/*.json) are VENDORED here for config validation; they
-# are generated FROM the datalab models in the datalab-framework repo (its
-# `scripts/export_config_schema.py`). Refresh them when bumping the datalab
-# version: regenerate there and copy the JSON over.
+# ---- vendored editor schemas (generated from the PINNED framework) ----------
+# schemas/*.json power editor validation via the yaml-language-server header in
+# every config file. They are GENERATED from the datalab Pydantic models of the
+# pinned framework version installed in .venv — never hand-edited, never
+# hand-copied from the framework repo (that's how they went stale pre-0.6.0).
+sync-schemas: install  ## Regenerate schemas/*.json from the pinned datalab framework
+	$(UV) run python scripts/sync_schemas.py --write
+
+check-schemas: install  ## Fail if schemas/*.json drifted from the pinned framework (CI + pre-commit)
+	$(UV) run python scripts/sync_schemas.py --check
+
+# ---- framework version lockstep ---------------------------------------------
+# The framework version lives in TWO functional places: the `datalab` git tag in
+# pyproject.toml [tool.uv.sources] and variables/medallion.yml `datalab_version`
+# (the Volume wheel filename), with uv.lock resolving the tag. check-lockstep
+# asserts all three agree (CI runs it); bump-framework is the one-shot that
+# performs a full, drift-free upgrade.
+check-lockstep:  ## Fail if the datalab git tag, var.datalab_version and uv.lock disagree
+	$(UV) run --no-project python scripts/check_lockstep.py
+
+# ---- domain registry ---------------------------------------------------------
+# scripts/domains.py is the ONE place listing this repo's domains; the per-target
+# catalogs/groups are resolved from variables/ + targets/ + rbac.yml (nothing to
+# keep in sync by hand). check-domains resolves every target as a smoke check.
+check-domains: install  ## Resolve the domain registry against variables/, targets/ and rbac.yml (CI)
+	$(UV) run python scripts/domains.py
+
+check-sync-lists: install  ## Fail if databricks.yml sync.exclude and .databricksignore diverged (CI)
+	$(UV) run python scripts/check_sync_lists.py
+
+bump-framework:  ## Upgrade the framework pin end to end (VERSION=x.y.z): pyproject tag + datalab_version + uv.lock + schemas
+	@if [ -z "$(VERSION)" ]; then \
+		echo "ERROR: pass the new framework version:  make bump-framework VERSION=0.7.0"; \
+		exit 1; \
+	fi
+	$(UV) run --no-project python scripts/bump_framework.py --version $(VERSION)
+	$(UV) lock
+	$(UV) sync
+	$(UV) run python scripts/sync_schemas.py --write
+	$(UV) run --no-project python scripts/check_lockstep.py
+	@echo "Framework pinned to $(VERSION). Review CHANGELOG.md, then commit + make publish-wheel APPLY=1 per target."
 
 # ---- agent skills (one canonical source: .agents/skills) --------------------
 # Authored ONCE under .agents/skills (read natively by Cursor + Codex); the
@@ -91,8 +130,12 @@ validate:  ## databricks bundle validate -t $(TARGET)
 deploy: validate  ## Deploy the bundle to $(TARGET)
 	databricks bundle deploy -t $(TARGET)
 
-run:  ## Trigger a refresh of the customer_sales_etl pipeline on $(TARGET)
-	databricks bundle run customer_sales_etl -t $(TARGET)
+# Any deployed pipeline/job resource works: PIPELINE=sales_etl refreshes the
+# second reference domain (it has no scheduled job — on-demand by design).
+PIPELINE ?= customer_sales_etl
+
+run:  ## Trigger a refresh of a pipeline on $(TARGET) (PIPELINE=<resource>, default customer_sales_etl)
+	databricks bundle run $(PIPELINE) -t $(TARGET)
 
 destroy:  ## Tear down everything the bundle deployed to $(TARGET) (asks first)
 	databricks bundle destroy -t $(TARGET)

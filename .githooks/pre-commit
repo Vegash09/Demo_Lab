@@ -68,6 +68,8 @@ PATTERNS=(
   '^\.codex/hooks\.json$'
   '^\.agents/skills/.*'
   '^scripts/sync_skills\.py$'
+  '^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists)\.py$'
+  '^schemas/.*\.json$'
   '^\.mcp\.json$'
   '^\.cursor/mcp\.json$'
   '^\.githooks/.*'
@@ -114,7 +116,7 @@ fi
     • For databricks.yml / resources/*.yml — validate locally (`make validate`).
     • For pyproject.toml — `make lock` was run and uv.lock is in the same commit.
     • For .github/** — OIDC auth + `uv sync --frozen` semantics stay intact.
-    • For src/datalab/{config,params}.py — every pipeline and job lane depends on these.
+    • For schemas/*.json — GENERATED from the pinned framework (`make sync-schemas`), never hand-edited.
 
   This commit is BLOCKED until you acknowledge. To proceed:
 

@@ -250,10 +250,14 @@ sync:
     - .codex
     - .agents
     - .githooks
+    - .mcp.json
     - Makefile
     - uv.lock
     - .markdownlint.json
 ```
+
+Keep this list ALIGNED with `.databricksignore` — `make check-sync-lists` (run in
+CI) fails on divergence.
 
 ### `pyproject.toml`
 
@@ -409,7 +413,8 @@ pivot). Only change the group-name defaults and per-target overrides:
 ### `Makefile`
 
 - `LINT_PATHS := scripts src`
-- `run:` recipe → `databricks bundle run <catalog>_etl -t $(TARGET)`
+- `PIPELINE ?= customer_sales_etl` → `PIPELINE ?= <catalog>_etl` (the `run:`
+  recipe reads `$(PIPELINE)`)
 - `LOCAL_DOMAIN_CONFIG ?= config/<catalog>`
 - `LOCAL_TRANSFORMS ?= src/<catalog>_etl/transformations`
 - `LOCAL_LANDING ?= $(CURDIR)/sample_data/landing/<catalog>/events`
@@ -417,42 +422,68 @@ pivot). Only change the group-name defaults and per-target overrides:
 - `CONNECT_CONFIG ?= config/<catalog>` and `CONNECT_DOMAIN ?= .`
 - `CONFIG_DIRS` already picks up the root `config/` — leave it (or simplify to `CONFIG_DIRS := config`).
 
+### `scripts/domains.py`
+
+The domain registry — the ONE place listing the repo's domains. Per-target
+catalogs and groups are RESOLVED from `variables/` + `targets/` + `rbac.yml`,
+so this is the only registry edit:
+
+```python
+DOMAINS: dict[str, dict] = {
+    "<catalog>": {"catalog_var": "catalog", "edge_volumes": True},
+}
+```
+
+`scripts/bootstrap_uc.py` and `scripts/publish_wheel.py` need no
+catalog/group edits — they resolve through `domains.py`.
+
 ### `scripts/bootstrap_uc.py`
 
 ```python
-CATALOGS = {
-    "dev":   [("<catalog>",        True)],
-    "stage": [("<catalog>_stage",  True)],
-    "prod":  [("<catalog>_prod",   True)],
-}
-
-GROUPS = {
-    "dev":   {"reader": "<reader-group>", "engineer": "<engineer-group>"},
-    "stage": {"reader": "<reader-group>", "engineer": "<engineer-group>"},
-    "prod":  {"reader": "<reader-group>", "engineer": "<engineer-group>"},
-}
-
 DEPLOY_SP = "<deploy-sp-app-id>"
 ```
-
-`scripts/publish_wheel.py` needs no edit — it reads `CATALOGS` from
-`bootstrap_uc`.
 
 ### `.github/workflows/common-ci-steps.yml`
 
 - Ruff step: `uv run ruff check scripts projects` → `uv run ruff check scripts src`.
 - The config-validation loop `for d in config projects/*/config` already matches
   the root `config/` — leave it (or simplify to `config`).
+- DELETE everything below the `# --- template-only below: stripped from generated
+  adopters …` marker (the scaffold smoke-test job exercises the TEMPLATE layout
+  and would fail in an adopter).
 - Keep the GitHub App token steps ("Mint a read-only token for datalab-framework"
   + the HTTPS `insteadOf` rewrite). The adopter repo must set the
   `DATALAB_FRAMEWORK_APP_CLIENT_ID` variable + `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` secret
   (from the shared datalab-framework reader GitHub App) and have read access to the
   (private) framework repo, or `uv sync` fails in CI.
 
+### `.github/workflows/common-cd-steps.yml` + `.github/actions/deploy-dab/action.yml`
+
+Single-domain CD plumbing:
+
+- `common-cd-steps.yml`: drop the `sales-catalog:` forward; rename the
+  `sales-landing-path:`/`DATALAB_SALES_LANDING_PATH` forward to
+  `landing-path:`/`DATALAB_LANDING_PATH`.
+- `deploy-dab/action.yml`: drop the `sales-catalog`/`sales-landing-path` inputs
+  in favour of one `landing-path` input; in the publish step use
+  `--catalog-for "<catalog>=$IN_CATALOG"`; in the deploy step map
+  `IN_LANDING_PATH` to `--var "landing_path=…"` and drop the `sales_catalog` var.
+
+### `docs/CICD.md`
+
+Repoint the template identity at the adopter, or a first-timer copying the
+federation-policy command from their own docs wires OIDC to the TEMPLATE's SP:
+
+- federation subject `repo:dediggibyte/datalab:environment:<target>` →
+  `repo:<owner>/<repo>:environment:<target>` (both occurrences)
+- SP application id `437346a1-…` → `<deploy-sp-app-id>`
+- workspace host → the adopter's host
+
 ### `.databricksignore`
 
-Align with the new `databricks.yml` `sync.exclude` — remove any `projects/*`
-lines; keep the rest.
+Align with the new `databricks.yml` `sync.exclude` — remove the `projects/*`,
+`design/` and `omnigent/` lines (those paths don't exist in an adopter); keep
+the rest. `make check-sync-lists` enforces the alignment.
 
 ### `README.md`, `CHANGELOG.md`
 

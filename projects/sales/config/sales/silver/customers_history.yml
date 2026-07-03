@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: silver.customers_history — full change history per customer
+# (SCD2). Reference example for `scd_type: 2`: SDP adds __START_AT/__END_AT
+# (typed like sequence_by; the current row has __END_AT IS NULL), which the
+# explicit target `schema:` must declare. Sibling silver.customers keeps the
+# SCD1 "current state" view of the same bronze source — the classic pairing.
+#
+# `operational_metadata: false` opts this dataset out of the domain-wide stamp
+# columns (domain.yml): the explicit SCD2 DDL owns this table's column set.
+schema_version: 1
+name: customers_history
+comment: Customer profile change history (SCD2) — one row per customer per state, __END_AT IS NULL marks current.
+operational_metadata: false
+source:
+  kind: table
+  name: customers
+  layer: bronze # resolved via domain.yml layers (no hardcoded schemas)
+  as_stream: true
+columns:
+  - name: customer_id
+    type: long
+    quality:
+      - criticality: error # rows without an id never reach silver
+        check: { function: is_not_null }
+  - name: email
+    type: string
+  - name: city
+    type: string
+  - name: state
+    type: string
+  - name: country
+    type: string
+  - name: updated_at
+    type: timestamp
+  - name: _ingest_ts
+    type: timestamp
+transform:
+  - function: sales.normalize_email # same normalization as silver.customers
+quality:
+  quarantine:
+    name: customers_history_quarantine
+    include_warnings: false
+target:
+  kind: streaming_table
+  # SCD2 requires the __START_AT/__END_AT pair in an explicit schema (typed like
+  # sequence_by — _ingest_ts, a timestamp).
+  schema: >-
+    customer_id BIGINT, email STRING, city STRING, state STRING, country STRING,
+    updated_at TIMESTAMP, _ingest_ts TIMESTAMP,
+    __START_AT TIMESTAMP, __END_AT TIMESTAMP
+  cdc:
+    keys: [customer_id]
+    sequence_by: _ingest_ts
+    scd_type: 2
+    # Only open a new history row when a TRACKED column changes — re-ingests
+    # that only touch the ingest stamp don't create noise rows.
+    track_history_except_columns: [_ingest_ts]

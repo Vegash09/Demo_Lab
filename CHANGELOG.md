@@ -15,11 +15,88 @@ and the example domains under `projects/`.
 `[project].version`. The FRAMEWORK version it pins lives in two places that MUST
 move in lockstep: the `datalab` git tag in `pyproject.toml` `[tool.uv.sources]`
 and `variables/medallion.yml` `datalab_version` (the Volume wheel filename) —
-bump both, then `make publish-wheel`.
+`make bump-framework VERSION=x.y.z` moves both (plus `uv.lock` and the vendored
+schemas), CI asserts the lockstep, and the scheduled framework-bump workflow
+opens the bump PR automatically; then `make publish-wheel`.
 
 ## [Unreleased]
 
 ### Added
+- **Adopter-hardening pass** (schemas, lockstep, registry, bot, CI, showcase):
+  - `make sync-schemas` / `make check-schemas` (`scripts/sync_schemas.py`): the
+    vendored `schemas/*.json` are now GENERATED from the PINNED framework's
+    Pydantic models instead of hand-copied — the hand copies had gone stale
+    pre-0.6.0 and were missing the two 0.5.0 template schemas entirely. All 4
+    schemas re-vendored at v0.6.0; drift now fails CI and the pre-commit guard.
+  - `make check-lockstep` (`scripts/check_lockstep.py`) asserts the framework
+    pin agrees across `pyproject.toml`, `variables/medallion.yml` and `uv.lock`;
+    `make bump-framework VERSION=x.y.z` (`scripts/bump_framework.py`) performs
+    the whole upgrade in one command (edits + lock + schema regen + assert).
+  - **Framework-bump bot** (`.github/workflows/framework-bump.yml`): daily
+    check of `datalab-framework` for a new `vX.Y.Z` tag; opens a pre-validated
+    full-lockstep PR. `.github/dependabot.yml` keeps the GitHub Actions pins +
+    regular Python deps fresh (the framework pin is excluded there — the bot
+    owns that lockstep).
+  - **Domain registry** (`scripts/domains.py`): the ONE place listing this
+    repo's domains; `bootstrap_uc.py` + `publish_wheel.py` now RESOLVE
+    per-target catalogs/groups from `variables/` + `targets/` + `rbac.yml`
+    instead of hardcoded `CATALOGS`/`GROUPS` dicts (`make check-domains` gates
+    CI). `publish_wheel.py --catalog-for <domain>=<catalog>` mirrors a deploy's
+    `--var catalog` override so the wheel always lands in the catalog the
+    pipelines will read (deploy-dab now passes it; previously an overridden
+    deploy published to the wrong catalog).
+  - `make check-sync-lists` (`scripts/check_sync_lists.py`): databricks.yml
+    `sync.exclude` and `.databricksignore` (two hand-mirrored lists) now fail
+    CI on divergence.
+  - **Adopter-scaffold smoke test in CI**: `make new-adopter` into a temp dir,
+    then the GENERATED repo's own `validate-configs`/`lint`/`test`/`check-*`
+    gates — the headline scaffold transformation was previously unverified.
+  - **sales domain is now the framework feature showcase**: `customers_history`
+    (AUTO CDC **SCD2** with explicit `__START_AT`/`__END_AT` schema + the
+    `operational_metadata: false` opt-out), `product_catalog`
+    (**`cdc_from_snapshot`** pattern A over `bronze.products`, quarantine as MV),
+    domain-wide **`operational_metadata:`** stamps (`_loaded_at`,
+    `_record_source`), and a **config template** (`templates/revenue_rollup.yml`
+    + `gold/revenue_rollups.yml`) expanding two `sql`-source gold MVs
+    (`revenue_by_state`, `revenue_by_country`) — all pinned by new
+    graph/run_dataset contract tests. Fan-in `sources:` and `backfill:`
+    intentionally remain example-less (they need second physical sources this
+    demo workspace lacks; see `projects/README.md`).
+  - Failure alerting scaffold: `var.alert_emails` (complex, default `[]`) wired
+    into the refresh job's `email_notifications.on_failure`; per-target
+    `datalab_version` override documented in `targets/stage.yml` for
+    soak-testing a new framework release before prod.
+  - Edge-lane contract tests (`test_export_job.py`): the export job's
+    fail-fast-on-missing-volume guard and cli_params error surface.
+
+### Changed
+- **CI/CD consolidated to ONE workflow** (`.github/workflows/ci-cd.yml`): the
+  three near-identical `ci-cd-{dev,stage,prod}.yml` wrappers are replaced by a
+  params job that derives the target from the trigger (PR→CI vs dev; main
+  push→deploy dev with auto-approve; `v*-rc*`→stage; `v*`→prod; manual dispatch
+  with a target choice). `databricks/setup-cli` is now pinned (`v1.6.0`, was
+  `@main` — the one floating action on the deploy path). CI's `bundle validate`
+  job gained the same graceful skip as CD for unprovisioned GitHub
+  Environments. New CI drift gates: check-schemas, check-lockstep,
+  check-domains, check-sync-lists.
+- `publish_wheel.py` is now STRICT about the wheel it uploads: a stale
+  framework wheel from an earlier bump in `dist-framework/` is an error (and
+  `--build` clears old wheels first) — previously a fuzzy glob could silently
+  publish the wrong version.
+- `make run` takes `PIPELINE=<resource>` (default `customer_sales_etl`), so the
+  `sales_etl` pipeline is now runnable via make.
+- The adopter scaffold additionally repoints `docs/CICD.md`'s OIDC identity
+  (federation subject, deploy SP, host — previously a generated repo's docs
+  pointed at the TEMPLATE's service principal), converts the CD plumbing to the
+  single-domain shape (drops the `sales_*` forwards; `landing_path` override),
+  patches `scripts/domains.py`, strips the template-only CI jobs, keeps
+  `sync.exclude`/`.databricksignore` aligned (incl. `.mcp.json`, which the
+  generated bundle previously deployed), and REJECTS a non-`vX.Y.Z` framework
+  pin (a branch pin would break the wheel-filename contract).
+- `silver.customers` (sales) email rule uses the dqx 0.15 built-in
+  `is_valid_email` instead of a hand-rolled `regex_match`.
+- `schemas/`, `scripts/domains.py` and the other repo-integrity scripts joined
+  the protected-file surface (all three guards updated).
 - **In-place, interactive adopter configurator** (`make configure-adopter`). The
   GitHub-template flow now converts a clone in place by driving the deterministic
   engine (`scripts/scaffold_adopter.py --in-place`) instead of hand-editing —

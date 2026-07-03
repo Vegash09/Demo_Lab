@@ -58,3 +58,8 @@ variables:
   sales_datalab_wheel:
     description: UC Volume path of the framework wheel in the sales catalog (var.sales_catalog).
     default: /Volumes/${var.sales_catalog}/artifacts/wheels/datalab-${var.datalab_version}-py3-none-any.whl
+  # --- operations ------------------------------------------------------------
+  alert_emails:
+    description: Recipients for scheduled-job failure notifications (empty = no mail; set real addresses per target).
+    type: complex
+    default: []

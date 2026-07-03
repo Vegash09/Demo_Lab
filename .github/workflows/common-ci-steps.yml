@@ -88,6 +88,31 @@ jobs:
         # generated copy for Claude Code (scripts/sync_skills.py). Fails on drift.
         run: uv run python scripts/sync_skills.py --check
 
+      - name: Check framework version pin is in lockstep
+        # Mirror of `make check-lockstep`: the datalab git tag (pyproject.toml
+        # [tool.uv.sources]), var.datalab_version (variables/medallion.yml — the
+        # Volume wheel filename) and the uv.lock resolution must all reference the
+        # same framework release. Historically prose-enforced and it drifted.
+        run: uv run --no-project python scripts/check_lockstep.py
+
+      - name: Check vendored schemas match the pinned framework (no drift)
+        # Mirror of `make check-schemas`: schemas/*.json are GENERATED from the
+        # pinned framework's Pydantic models (scripts/sync_schemas.py); hand-copied
+        # vendoring went stale two releases in a row before this check existed.
+        run: uv run python scripts/sync_schemas.py --check
+
+      - name: Check the domain registry resolves against the bundle files
+        # Mirror of `make check-domains`: scripts/domains.py must resolve every
+        # target's domain catalogs + persona groups from variables/ + targets/ +
+        # rbac.yml (bootstrap_uc and publish_wheel depend on this resolution).
+        run: uv run python scripts/domains.py
+
+      - name: Check sync.exclude and .databricksignore are aligned
+        # Mirror of `make check-sync-lists`: `bundle deploy` honors only
+        # databricks.yml sync.exclude; `databricks sync`/the IDE extension honor
+        # only .databricksignore. Divergence silently deploys (or drops) files.
+        run: uv run python scripts/check_sync_lists.py
+
       - name: Validate dataset configs (pydantic + static dqx checks)
         # Same loader as `make validate-configs`, the pipeline import, and the
         # editor schemas: a bad artifact fails CI before any deploy. Mirrors
@@ -121,13 +146,90 @@ jobs:
       DATABRICKS_HOST:      ${{ secrets.DATABRICKS_HOST }}
       DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
     steps:
+      # Same graceful gate as the CD workflow: an unprovisioned GitHub
+      # Environment (no Databricks secrets yet — e.g. stage/prod before their
+      # SPs exist) skips validation instead of failing the run. docs/CICD.md
+      # promises this behavior for both CI and CD.
+      - name: Gate on environment provisioning
+        id: gate
+        run: |
+          if [ -z "$DATABRICKS_HOST" ] || [ -z "$DATABRICKS_CLIENT_ID" ]; then
+            echo "::notice::GitHub Environment '${{ inputs.target }}' has no DATABRICKS_HOST/DATABRICKS_CLIENT_ID secrets — skipping bundle validate."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v7
+        if: steps.gate.outputs.enabled == 'true'
 
       - name: Configure Databricks CLI (OIDC)
+        if: steps.gate.outputs.enabled == 'true'
         uses: ./.github/actions/databricks-setup
         with:
           databricks-host:      ${{ secrets.DATABRICKS_HOST }}
           databricks-client-id: ${{ secrets.DATABRICKS_CLIENT_ID }}
 
       - name: databricks bundle validate -t ${{ inputs.target }}
+        if: steps.gate.outputs.enabled == 'true'
         run: databricks bundle validate -t ${{ inputs.target }}
+
+  # --- template-only below: stripped from generated adopters by scaffold_adopter.py ---
+  # The adopter scaffold is the headline "stand up a customer repo" feature and
+  # performs a substantial transformation (drops projects/, hoists one domain to
+  # the root, rewrites ~15 repo-level files). This smoke test runs it end to end
+  # and then runs the GENERATED repo's own quality gates, so a scaffold or
+  # template regression fails the PR instead of the next customer bootstrap.
+  scaffold-smoke:
+    name: "adopter scaffold smoke test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Java (local Spark for the generated repo's tests)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Mint a read-only token for datalab-framework (GitHub App)
+        # The generated repo resolves the same private framework git dep.
+        id: framework_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id:    ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
+          private-key:  ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+          owner:        dediggibyte
+          repositories: datalab-framework
+
+      - name: Route the private framework clone over HTTPS with the token
+        env:
+          FRAMEWORK_TOKEN: ${{ steps.framework_token.outputs.token }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${FRAMEWORK_TOKEN}@github.com/dediggibyte/datalab-framework".insteadOf \
+            "https://github.com/dediggibyte/datalab-framework"
+
+      - name: Generate an adopter repo (make new-adopter)
+        run: |
+          uv sync --frozen
+          make new-adopter CATALOG=acme OUT="$RUNNER_TEMP/acme-datalab" \
+            HOST=https://adb-000000000000000.0.azuredatabricks.net \
+            WAREHOUSE_ID=0000000000000000 DEPLOY_SP=00000000-0000-0000-0000-000000000000
+
+      - name: Run the generated repo's quality gates
+        working-directory: ${{ runner.temp }}/acme-datalab
+        run: |
+          make validate-configs
+          make lint
+          make test
+          make check-schemas
+          make check-lockstep
+          make check-domains
+          make check-sync-lists

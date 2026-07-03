@@ -198,7 +198,7 @@ declares no `environment:`, so it only sees repo/org variables and secrets):
 2. `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` — an Actions **secret** (the .pem body).
 
 The CI/CD workflows already carry the token flow (`common-ci-steps.yml` /
-`common-cd-steps.yml`): `actions/create-github-app-token@v2` mints a token scoped
+`common-cd-steps.yml`): `actions/create-github-app-token@v3` mints a token scoped
 to `datalab-framework`, then a
 `git config url."https://x-access-token:<token>@github.com/…".insteadOf
 "https://github.com/…"` rewrite so `uv` and `pip wheel` clone over HTTPS. Nothing
@@ -267,7 +267,7 @@ Two places must reference the **same** framework release — keep them in lockst
 
    ```yaml
    datalab_version:
-     default: "0.6.0"        # → datalab-0.5.0-py3-none-any.whl on each project catalog's artifacts.wheels volume
+     default: "0.6.0"        # → datalab-0.6.0-py3-none-any.whl on each project catalog's artifacts.wheels volume
    ```
 
 `var.datalab_wheel` derives the full path from `var.catalog` +
@@ -405,17 +405,27 @@ project catalog's `artifacts.wheels` volume.
 
 ## Upgrading the framework later
 
-1. Bump the git **tag** in `pyproject.toml` `[tool.uv.sources] datalab` **and**
-   `var.datalab_version` in `variables/medallion.yml` — **in lockstep**.
-2. `make lock` (refreshes `uv.lock` — CI runs `uv sync --frozen` and fails on
-   drift; commit both files).
-3. `make publish-wheel TARGET=<t> APPLY=1` — build the new version from the new
-   tag and upload it into each project catalog's `artifacts.wheels` volume.
-4. Refresh the vendored `schemas/*.json` if the framework's models changed —
-   they are generated **in the framework repo** (its
-   `scripts/export_config_schema.py`) and copied here for editor/config
-   validation; regenerate there and copy the JSON over.
-5. Redeploy (`make deploy`, or merge → CI).
+One command performs the whole lockstep:
+
+```bash
+make bump-framework VERSION=0.7.0
+```
+
+It rewrites the git **tag** in `pyproject.toml` `[tool.uv.sources] datalab` and
+`var.datalab_version` in `variables/medallion.yml`, runs `make lock` (CI runs
+`uv sync --frozen` and fails on drift), regenerates the vendored `schemas/*.json`
+from the newly pinned models (`make sync-schemas`), and asserts the lockstep
+(`make check-lockstep` — also a CI gate, so a partial bump can't merge). Then:
+
+1. Commit everything the bump touched (pyproject, medallion.yml, uv.lock, schemas/).
+2. `make publish-wheel TARGET=<t> APPLY=1` — build the new version from the new
+   tag and upload it into each project catalog's `artifacts.wheels` volume
+   (CI's deploy also publishes before `bundle deploy`).
+3. Redeploy (`make deploy`, or merge → CI).
+
+You usually don't even start this by hand: the scheduled **framework-bump
+workflow** (`.github/workflows/framework-bump.yml`) watches the framework repo
+for new release tags and opens the lockstep PR for you.
 
 **Caching gotcha:** pipeline/job environments cache dependencies. A new framework
 version may not appear until the environment rebuilds — trigger a full pipeline

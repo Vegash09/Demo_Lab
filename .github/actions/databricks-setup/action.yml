@@ -17,7 +17,11 @@ runs:
   using: "composite"
   steps:
     - name: Install Databricks CLI
-      uses: databricks/setup-cli@main
+      # Pinned to a release tag (was @main — the one floating action in the
+      # repo, a supply-chain/reproducibility hole on the deploy path). The
+      # action installs the latest CLI by default; this repo needs CLI
+      # >= v0.294.0 (pipeline environment_version). Dependabot bumps the tag.
+      uses: databricks/setup-cli@v1.6.0
 
     - name: Write ~/.databrickscfg and export env vars
       shell: bash
