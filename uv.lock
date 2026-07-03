@@ -175,7 +175,7 @@ wheels = [
 
 [[package]]
 name = "databricks-labs-dqx"
-version = "0.14.0"
+version = "0.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "databricks-labs-blueprint" },
@@ -183,9 +183,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlalchemy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/12/bc/9611431e060dce7de45ffba9187ef91c2463c94265d269f4ac4e39fc36e5/databricks_labs_dqx-0.14.0.tar.gz", hash = "sha256:12e4be3614c44012cfe711957d8e966a7bd07a2ffb68a501c75a0971550a5036", size = 264153, upload-time = "2026-05-06T03:06:25.909Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/95/cae0ea13e15d974dba03f9d6c63a96d75971833583d5e2a4e655adc52bb4/databricks_labs_dqx-0.15.0.tar.gz", hash = "sha256:27cb6436ab6be098e12c710ad2df30c0da3627a5e979c0c918bff26bb580015a", size = 291588, upload-time = "2026-06-15T23:54:34.766Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/16/3c/256d4605586c2b5e5cc7e4cc3855648b94c40cde1996148f778e30c9f701/databricks_labs_dqx-0.14.0-py3-none-any.whl", hash = "sha256:e8de730e44dfed94766693a1ca42f3dab68501ef7daf39aada7c47efa901cf51", size = 306748, upload-time = "2026-05-06T03:06:24.329Z" },
+    { url = "https://files.pythonhosted.org/packages/52/cd/cf1bdb0b2785b3a02218efb5ce2df2becce61615f9a47ca8abf89cd95927/databricks_labs_dqx-0.15.0-py3-none-any.whl", hash = "sha256:6c5d7e9fd54ffa30c5b7b07052f493a3dd943e6c181c01956a9761f7897e2795", size = 335746, upload-time = "2026-06-15T23:54:33.46Z" },
 ]
 
 [[package]]
@@ -204,8 +204,8 @@ wheels = [
 
 [[package]]
 name = "datalab"
-version = "0.3.0"
-source = { git = "https://github.com/dediggibyte/datalab-framework.git?tag=v0.3.0#027c52faaa21ed89a372509844b507fe25dcb256" }
+version = "0.5.0"
+source = { git = "https://github.com/dediggibyte/datalab-framework.git?tag=v0.5.0#169931b372b7347ea0a23a857e8954dee402993e" }
 dependencies = [
     { name = "databricks-labs-dqx" },
     { name = "pydantic" },
@@ -233,7 +233,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "customer-sales-etl", editable = "projects/customer_sales" },
-    { name = "datalab", git = "https://github.com/dediggibyte/datalab-framework.git?tag=v0.3.0" },
+    { name = "datalab", git = "https://github.com/dediggibyte/datalab-framework.git?tag=v0.5.0" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "pyspark", extras = ["pipelines"], specifier = ">=4.1.0" },
     { name = "pytest", specifier = ">=8.4" },

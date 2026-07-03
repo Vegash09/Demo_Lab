@@ -257,7 +257,7 @@ Two places must reference the **same** framework release — keep them in lockst
 
    ```toml
    [tool.uv.sources]
-   datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v0.3.0" }
+   datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v0.5.0" }
    ```
 
    (`datalab` is listed under `[dependency-groups].dev`; the root project itself
@@ -267,7 +267,7 @@ Two places must reference the **same** framework release — keep them in lockst
 
    ```yaml
    datalab_version:
-     default: "0.3.0"        # → datalab-0.3.0-py3-none-any.whl on each project catalog's artifacts.wheels volume
+     default: "0.5.0"        # → datalab-0.5.0-py3-none-any.whl on each project catalog's artifacts.wheels volume
    ```
 
 `var.datalab_wheel` derives the full path from `var.catalog` +
