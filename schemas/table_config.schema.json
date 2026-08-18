@@ -313,6 +313,11 @@
     "DQCheck": {
       "additionalProperties": false,
       "properties": {
+        "allow_column_arguments": {
+          "default": false,
+          "title": "Allow Column Arguments",
+          "type": "boolean"
+        },
         "arguments": {
           "default": {},
           "title": "Arguments",
@@ -591,6 +596,32 @@
       "title": "FlowSource",
       "type": "object"
     },
+    "ForeachBatchSinkTarget": {
+      "additionalProperties": false,
+      "description": "Custom Python write per micro-batch (dp.foreach_batch_sink +\ndp.append_flow) \u2014 the escape hatch for destinations no built-in sink\ncovers. ``function`` names a ``@batch_sink``-registered handler\n``fn(df, batch_id, **args) -> None``; the handler IS the writer (there is\nno Spark writer to configure), runs on the DRIVER once per micro-batch,\nand must be idempotent on ``batch_id`` (micro-batches can be\nre-delivered; ``batch_id`` restarts at 0 on stream start / full refresh).\nStreaming only; Databricks SDP runtime only. Same SDP caveat as the other\nsinks: a full refresh never clears previously written sink data.",
+      "properties": {
+        "args": {
+          "default": {},
+          "title": "Args",
+          "type": "object"
+        },
+        "function": {
+          "title": "Function",
+          "type": "string"
+        },
+        "kind": {
+          "const": "foreach_batch_sink",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "function"
+      ],
+      "title": "ForeachBatchSinkTarget",
+      "type": "object"
+    },
     "KafkaSinkTarget": {
       "additionalProperties": false,
       "description": "Streaming append to a Kafka topic (dp.create_sink format=kafka +\ndp.append_flow) \u2014 also Kafka-compatible endpoints (Event Hubs, MSK).\n\nThe flow's frame must follow the Kafka writer contract: a ``value``\ncolumn (string/binary; ``framework.to_json_value`` packs rows for you),\noptional ``key``/``partition``/``headers``/``topic`` columns. Same SDP\ncaveat as delta_sink: full refresh never clears sink data.",
@@ -781,6 +812,11 @@
           ],
           "default": null,
           "title": "Name"
+        },
+        "summary": {
+          "default": false,
+          "title": "Summary",
+          "type": "boolean"
         }
       },
       "title": "MetricsSpec",
@@ -838,7 +874,8 @@
           "$ref": "#/$defs/MetricsSpec",
           "default": {
             "enabled": false,
-            "name": null
+            "name": null,
+            "summary": false
           }
         },
         "quarantine": {
@@ -1084,6 +1121,18 @@
           "title": "Partition Cols",
           "type": "array"
         },
+        "replace_where": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replace Where"
+        },
         "schema": {
           "anyOf": [
             {
@@ -1145,11 +1194,7 @@
         "layer": {
           "anyOf": [
             {
-              "enum": [
-                "bronze",
-                "silver",
-                "gold"
-              ],
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
               "type": "string"
             },
             {
@@ -1376,6 +1421,7 @@
       "discriminator": {
         "mapping": {
           "delta_sink": "#/$defs/DeltaSinkTarget",
+          "foreach_batch_sink": "#/$defs/ForeachBatchSinkTarget",
           "kafka_sink": "#/$defs/KafkaSinkTarget",
           "materialized_view": "#/$defs/MaterializedViewTarget",
           "streaming_table": "#/$defs/StreamingTableTarget",
@@ -1398,6 +1444,9 @@
         },
         {
           "$ref": "#/$defs/KafkaSinkTarget"
+        },
+        {
+          "$ref": "#/$defs/ForeachBatchSinkTarget"
         }
       ],
       "title": "Target"

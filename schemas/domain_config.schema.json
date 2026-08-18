@@ -160,15 +160,10 @@
       "type": "array"
     },
     "layers": {
-      "additionalProperties": {
-        "$ref": "#/$defs/LayerEntry"
-      },
-      "propertyNames": {
-        "enum": [
-          "bronze",
-          "silver",
-          "gold"
-        ]
+      "patternProperties": {
+        "^[A-Za-z_][A-Za-z0-9_]*$": {
+          "$ref": "#/$defs/LayerEntry"
+        }
       },
       "title": "Layers",
       "type": "object"

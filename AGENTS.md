@@ -466,6 +466,15 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   with static `run_time`/`run_id` overwrites ALWAYS — removing them silently
   breaks materialized-view incrementalization. Pinned by
   `tests/unit/framework/test_dq.py`.
+- **dqx list-membership values are SQL expressions, not literals (dqx >= 0.16.0).**
+  A BARE string in `is_in_list` / `is_not_in_list` / `is_not_null_and_is_in_list`
+  (`allowed:` / `forbidden:`) resolves as a COLUMN reference / SQL expression, so
+  string literals must carry their own quotes — `allowed: ["'completed'"]`, not
+  `allowed: [completed]`. Numbers, booleans and ISO-8601 dates are safe as plain
+  YAML scalars. A `DQCheck` validator rejects bare strings at config load, so
+  `make validate-configs` catches it; set `allow_column_arguments: true` on the
+  check when a column/expression genuinely IS intended. Live example:
+  `projects/sales/config/sales/silver/orders.yml`.
 - **Never install the dqx `[cli]` extra** — it pulls databricks-connect,
   which conflicts with the local pyspark dev dependency. dqx is pinned exact
   (Beta library); upgrade only after reading its changelog.

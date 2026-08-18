@@ -21,6 +21,25 @@ opens the bump PR automatically; then `make publish-wheel`.
 
 ## [Unreleased]
 
+### Changed
+- **Framework pin bumped `0.6.0` → `0.9.0`** (`make bump-framework VERSION=0.9.0`
+  — `pyproject.toml` git tag + `variables/medallion.yml` `datalab_version` +
+  `uv.lock` + re-vendored `schemas/`). Picks up five framework releases: custom
+  sub-layer identifiers (0.7.0), the `is_non_negative` / `is_positive` /
+  `is_valid_email` / `is_valid_uuid` built-in checks (0.8.0), the batch
+  quarantine-MV `TABLE_OR_VIEW_NOT_FOUND` fix (0.8.1), pyspark 4.2 capability
+  probing (0.8.2), and dqx `0.15.0` → `0.16.0` plus `target.replace_where`,
+  `foreach_batch_sink` and the opt-in `quality.metrics.summary` MV (0.9.0).
+  Publish the new wheel with `make publish-wheel APPLY=1` per target.
+
+### Fixed
+- **dqx 0.16.0 list-membership literals** in
+  `projects/sales/config/sales/silver/orders.yml` (`order_status`, `channel`,
+  `currency`): dqx now resolves a BARE string in `allowed:` as a COLUMN
+  reference / SQL expression rather than a literal, so the three lists are
+  requoted as `["'completed'", …]`. Without this the domain fails
+  `make validate-configs` on 0.9.0.
+
 ### Added
 - **Adopter-hardening pass** (schemas, lockstep, registry, bot, CI, showcase):
   - `make sync-schemas` / `make check-schemas` (`scripts/sync_schemas.py`): the
