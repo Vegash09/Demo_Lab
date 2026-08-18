@@ -40,6 +40,21 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Fail clearly if the framework App credentials are missing
+        # Without this the run dies inside create-github-app-token with a bare
+        # "private-key input must be set", which reads as an action bug rather
+        # than "the secret is gone". Mirrors common-ci-steps.yml. Both values are
+        # repo/org scoped, NOT per-environment: this job declares no
+        # `environment:`, so an environment secret would be invisible here.
+        env:
+          CLIENT_ID: ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
+          APP_KEY:   ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$CLIENT_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error title=Missing framework App credentials::The bump bot must mint a token from the datalab-framework reader GitHub App to read the PRIVATE dediggibyte/datalab-framework repo, but the DATALAB_FRAMEWORK_APP_CLIENT_ID variable and/or DATALAB_FRAMEWORK_APP_PRIVATE_KEY secret is not set (repo or org scope — NOT environment). See docs/CICD.md."
+            exit 1
+          fi
+
       - name: Mint a read-only token for datalab-framework (GitHub App)
         id: framework_token
         uses: actions/create-github-app-token@v3
@@ -60,15 +75,34 @@ jobs:
       - name: Compare the pinned tag with the framework's latest release tag
         id: versions
         run: |
+          set -euo pipefail
           current=$(uv run --no-project python -c 'import tomllib,pathlib;print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["tool"]["uv"]["sources"]["datalab"]["tag"])')
-          latest=$(git ls-remote --tags --refs https://github.com/dediggibyte/datalab-framework.git 'v*' \
+          # `-c http.https://github.com/.extraheader=` is LOAD-BEARING. actions/checkout
+          # persists `http.https://github.com/.extraheader = AUTHORIZATION: basic
+          # <GITHUB_TOKEN>` into the repo-LOCAL git config, and an explicit
+          # Authorization header BEATS the credentials in the URL that the
+          # `insteadOf` rewrite above supplies. Any git command run from the
+          # workspace therefore reaches the PRIVATE framework repo as the
+          # GITHUB_TOKEN — which cannot see it — and gets "Repository not found".
+          # (uv's clone is unaffected: it targets ~/.cache/uv, outside this repo,
+          # so the gitdir-scoped header never applies. That asymmetry is why CI
+          # stayed green while this job silently found nothing for six weeks.)
+          # Unsetting the header lets the rewritten URL's App token be used.
+          tags=$(git -c http.https://github.com/.extraheader= \
+                     ls-remote --tags --refs \
+                     https://github.com/dediggibyte/datalab-framework.git 'v*')
+          latest=$(printf '%s\n' "$tags" \
                    | awk -F/ '{print $NF}' \
                    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-                   | sort -V | tail -1)
+                   | sort -V | tail -1) || true
           echo "current=$current latest=$latest"
           if [ -z "$latest" ]; then
-            echo "::warning::no vX.Y.Z tags found on datalab-framework — nothing to do."
-            echo "bump=false" >> "$GITHUB_OUTPUT"
+            # NOT a warning. Reading zero tags means the bot cannot tell whether
+            # the pin is stale, so treating it as "nothing to do" reports success
+            # while doing nothing — exactly how the pin sat at v0.6.0 while the
+            # framework shipped v0.9.0.
+            echo "::error title=Cannot read framework tags::Read no vX.Y.Z tag from dediggibyte/datalab-framework, so staleness of the pin ($current) is UNKNOWN. Check the App installation and that the token can read the repo."
+            exit 1
           elif [ "$latest" = "$current" ] || [ "$(printf '%s\n' "$latest" "$current" | sort -V | tail -1)" = "$current" ]; then
             echo "::notice::pin $current is current (latest framework tag: $latest)."
             echo "bump=false" >> "$GITHUB_OUTPUT"

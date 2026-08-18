@@ -444,6 +444,28 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   deploy-only flag; `bundle validate` rejects it).
 - **`uv.lock` is the contract.** CI runs `uv sync --frozen` and fails on
   drift. After editing `pyproject.toml`, run `make lock` and commit both.
+- **A workspace git command CANNOT reach the private framework repo.**
+  `actions/checkout` (with the default `persist-credentials: true`) writes
+  `http.https://github.com/.extraheader = AUTHORIZATION: basic <GITHUB_TOKEN>`
+  into the repo-LOCAL git config, and an explicit Authorization header BEATS the
+  credentials in the URL that our `url."https://x-access-token:$TOKEN@…".insteadOf`
+  rewrite supplies. So any `git` command run from the workspace (`git ls-remote`,
+  `git fetch`, `git clone` of the framework) authenticates as the GITHUB_TOKEN,
+  which cannot see `dediggibyte/datalab-framework`, and fails with the misleading
+  `remote: Repository not found`. **uv is unaffected** — it clones into
+  `~/.cache/uv`, outside the workspace, so the gitdir-scoped header never applies.
+  That asymmetry is why `uv sync --frozen` succeeds in CI while a hand-written
+  `git ls-remote` in the same job fails. Fix: prefix the command with
+  `git -c http.https://github.com/.extraheader= …` (leave the header intact
+  elsewhere, or the bot's own `git push` breaks). This cost six weeks of a silently
+  stale framework pin — see `.github/workflows/framework-bump.yml`.
+- **A version/staleness check that finds NOTHING must fail, not warn.** The bump
+  bot read its tag list through a pipeline (`$(git ls-remote … | grep … | tail -1)`);
+  when the git call failed, the pipeline's status came from `tail` (success), the
+  variable was empty, and an empty result was treated as "nothing to do" — green
+  job, no PR, for six weeks while the framework moved 0.6.0 → 0.9.0. Any gate that
+  cannot determine an answer must `exit 1` with `::error::`, never `::warning::`
+  plus a skip. Use `set -euo pipefail` in such steps.
 - **GitHub OIDC** auth (no stored client secret). The federation policy
   subject must match `repo:<owner>/<repo>:environment:<target>` because the
   CI/CD jobs declare `environment: <target>`. See `docs/CICD.md`.
