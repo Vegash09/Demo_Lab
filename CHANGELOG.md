@@ -22,6 +22,42 @@ opens the bump PR automatically; then `make publish-wheel`.
 ## [Unreleased]
 
 ### Changed
+- **Framework pin bumped `0.9.0` → `0.10.0`** and `gold.sales_by_category` no
+  longer hardcodes its joined table. The transform used to build the dimension's
+  name itself:
+
+  ```python
+  catalog = spark.conf.get("datalab.catalog")
+  products = spark.read.table(f"{catalog}.{silver_schema}.products")
+  ```
+
+  so the artifact did not describe its own inputs, the dimension's layer was
+  fixed in Python, a cross-catalog dimension was inexpressible, and — because the
+  read bypassed `ResolveContext` — `run_dataset`'s `inputs=` substitution could
+  not reach it, which is why this was the only gold dataset with no end-to-end
+  test. The dimension is now DECLARED in
+  `projects/sales/config/sales/gold/sales_by_category.yml`:
+
+  ```yaml
+  transform:
+    - function: sales.sales_by_category
+      tables:
+        products_table: {name: products, layer: silver}
+  ```
+
+  and arrives as a resolved, per-environment table name
+  (`@transform def sales_by_category(df, products_table: str)`). Framework
+  v0.10.0 supplies `transform[].tables`; see its CHANGELOG.
+- **New end-to-end test** `test_run_dataset_sales_by_category_joins_the_declared_dimension`
+  — the coverage hole the hardcoding created, now closable because the declared
+  ref is substitutable via `inputs=`.
+- `AGENTS.md` + the `author-ldp-artifact` skill now state the rule: a transform
+  never names a catalog/schema and never reads `spark.conf` — extra tables come
+  from `tables:`, extra scalars from `args:` (where `${conf:<key>}` resolves).
+  Caveat recorded too: a `tables:` ref is a batch read OUTSIDE the SDP graph and
+  adds no dependency edge; `source.kind: sql` remains the in-graph join.
+
+### Changed
 - **Framework pin bumped `0.6.0` → `0.9.0`** (`make bump-framework VERSION=0.9.0`
   — `pyproject.toml` git tag + `variables/medallion.yml` `datalab_version` +
   `uv.lock` + re-vendored `schemas/`). Picks up five framework releases: custom

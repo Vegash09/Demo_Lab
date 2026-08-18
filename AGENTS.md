@@ -245,14 +245,41 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   target table in its layer folder (file name == table name) declaring
   source(s) (cloud_files / files / table / view / kafka — single `source:`
   or fan-in `sources:`), `columns:` (source→target names, data types,
-  per-column dqx rules), transform steps (registry names), table-level
+  per-column dqx rules), transform steps (registry name + `args:` + `tables:`), table-level
   quality, optional `backfill:` once-flows, and target (streaming_table
   [+cdc | +cdc_from_snapshot] / materialized_view / temporary_view /
   delta_sink / kafka_sink). NL→artifact recipe: `author-ldp-artifact` skill;
   full reference incl. the SDP capability matrix: the framework repo's
   [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
 - Business logic stays in `src/<catalog>_etl/transforms/` as pure functions
-  registered with `@transform("<domain>.<name>")`; custom dqx checks in
+  registered with `@transform("<domain>.<name>")`. **A transform never names a
+  catalog/schema and never reads `spark.conf` itself** — everything it needs comes
+  from its artifact step as keyword arguments: scalars via `args:` (where
+  `${conf:<key>}` resolves), and any EXTRA TABLE it reads via `tables:`, which the
+  framework resolves to a per-environment name through the same lane
+  `source: {kind: table}` uses:
+
+  ```yaml
+  transform:
+    - function: sales.sales_by_category
+      tables:
+        products_table: {name: products, layer: silver}   # -> "cat.silver.products"
+      args: {min_qty: 1}
+  ```
+
+  ```python
+  @transform("sales.sales_by_category")
+  def sales_by_category(df, products_table: str, min_qty: int = 0):
+      return category_rollup(df, df.sparkSession.read.table(products_table))
+  ```
+
+  This keeps the artifact the single declaration of every table a dataset touches,
+  lets `run_dataset(inputs={"cat.silver.products": df})` substitute the dimension
+  in tests, and makes a wrong/missing kwarg fail `make validate-configs` (the step's
+  args+tables are bound against the function signature at load). Note the declared
+  table is still a batch read OUTSIDE the SDP graph — it adds no pipeline
+  dependency edge; use `source.kind: sql` when you need a real in-graph join.
+  Custom dqx checks live in
   `src/<catalog>_etl/checks/` with `@check_function`; snapshot walkers with
   `@snapshot_source`. `domain.yml`'s `imports:` list names these modules —
   the framework hardcodes none.

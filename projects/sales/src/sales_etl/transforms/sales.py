@@ -8,12 +8,12 @@ rules also live in the artifacts.
 
 ``sales_by_category`` is the one transform that joins a sibling dataset: gold
 "sales by category" needs the product ``category``, which lives only in
-``silver.products``. It reads that table through the active Spark session
-(resolving catalog/schema from pipeline conf) and delegates the join + rollup to
-the pure, unit-testable :func:`category_rollup` helper. Because it reads a
-concrete UC table, this MV's full materialization is verified on Databricks
-(dev refresh / ``make validate-connect``) rather than the local OSS run; the
-join logic itself is covered by a direct unit test on ``category_rollup``.
+``silver.products``. That dimension is DECLARED in the artifact
+(``transform[].tables``) and arrives as an already-resolved table name, so the
+function stays free of catalog/schema knowledge and the join is exercisable with
+sample frames via ``run_dataset``. The join + rollup itself lives in the pure
+:func:`category_rollup` helper. Note the declared table is still a plain batch
+read outside the SDP graph — it creates no pipeline dependency edge.
 """
 
 from __future__ import annotations
@@ -88,13 +88,12 @@ def category_rollup(order_items: DataFrame, products: DataFrame) -> DataFrame:
 
 
 @transform("sales.sales_by_category")
-def sales_by_category(df: DataFrame) -> DataFrame:
+def sales_by_category(df: DataFrame, products_table: str) -> DataFrame:
     """Gold aggregate: revenue and units per product category. ``df`` is
-    ``silver.order_items``; the product ``category`` is joined in from
-    ``silver.products`` (resolved from pipeline conf — same catalog, silver
-    schema)."""
-    spark = df.sparkSession
-    catalog = spark.conf.get("datalab.catalog")
-    silver_schema = spark.conf.get("datalab.silver_schema")
-    products = spark.read.table(f"{catalog}.{silver_schema}.products")
+    ``silver.order_items``; ``products_table`` is the RESOLVED name of the
+    dimension, supplied by the artifact's ``transform[].tables`` block. The
+    function therefore names no catalog or schema of its own — the artifact
+    declares every table it touches, and ``run_dataset`` can substitute a sample
+    frame for the dimension."""
+    products = df.sparkSession.read.table(products_table)
     return category_rollup(df, products)

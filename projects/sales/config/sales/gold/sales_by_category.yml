@@ -2,10 +2,10 @@
 #
 # Target table: gold.sales_by_category — business aggregate (batch MV): units
 # and revenue per product category/subcategory. The source is silver.order_items;
-# the product category is joined in from silver.products inside the transform
-# (the framework's column mapping cannot express a join — see the transform's
-# docstring and docs/FRAMEWORK.md). No columns: mapping; the transform owns the
-# output shape.
+# the product category is joined in from silver.products, declared below as a
+# transform `tables:` ref (the framework's column mapping cannot express a join —
+# see docs/patterns/stream-static-join.md). No columns: mapping; the transform
+# owns the output shape.
 schema_version: 1
 name: sales_by_category
 comment: Units sold and revenue per product category/subcategory.
@@ -15,5 +15,10 @@ source:
   layer: silver
 transform:
   - function: sales.sales_by_category
+    # The joined-in dimension, declared rather than hardcoded: the framework
+    # resolves layer -> schema_conf -> per-environment FQN (same lane as
+    # `source: {kind: table}`) and passes it as the `products_table` kwarg.
+    tables:
+      products_table: {name: products, layer: silver}
 target:
   kind: materialized_view

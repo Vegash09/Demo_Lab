@@ -6,8 +6,9 @@ SCD1 tables + quarantines, one SCD2 history table (customers_history), one
 snapshot-CDC table (product_catalog, quarantine as MV), 3 hand-written gold MVs
 and 2 template-expanded gold MVs (revenue_by_state / revenue_by_country).
 capture records registrations without running the query bodies, so
-sales_by_category's products read is never executed here (its join logic is
-covered by test_sales_transforms.category_rollup).
+sales_by_category's products read is never executed here (the join is covered by
+test_sales_transforms.category_rollup and, end to end, by
+test_sales_run_dataset_contract.test_run_dataset_sales_by_category_joins_the_declared_dimension).
 """
 
 from pathlib import Path

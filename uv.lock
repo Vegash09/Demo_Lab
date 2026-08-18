@@ -205,8 +205,8 @@ wheels = [
 
 [[package]]
 name = "datalab"
-version = "0.9.0"
-source = { git = "https://github.com/dediggibyte/datalab-framework.git?tag=v0.9.0#40d026d43a26a879483b5fdde6c45b8fcdb18e59" }
+version = "0.10.0"
+source = { git = "https://github.com/dediggibyte/datalab-framework.git?tag=v0.10.0#69ec45aa8b65dc16ab750459112c9f5b58e7446c" }
 dependencies = [
     { name = "databricks-labs-dqx" },
     { name = "pydantic" },
@@ -234,7 +234,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "customer-sales-etl", editable = "projects/customer_sales" },
-    { name = "datalab", git = "https://github.com/dediggibyte/datalab-framework.git?tag=v0.9.0" },
+    { name = "datalab", git = "https://github.com/dediggibyte/datalab-framework.git?tag=v0.10.0" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "pyspark", extras = ["pipelines"], specifier = ">=4.1.0,<4.3" },
     { name = "pytest", specifier = ">=8.4" },

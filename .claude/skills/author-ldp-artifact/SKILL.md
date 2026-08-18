@@ -47,6 +47,9 @@ columns:                       # target columns: source→target + type + rules
     quality: [...]             #   this column's dqx rules (see below)
 transform:                     # only logic a mapping can't express
   - function: <domain>.<fn>    #   @transform-registered pure function
+    args: {k: v}               #   extra kwargs (${conf:<key>} resolves here)
+    tables:                    #   extra TABLES the fn reads — resolved to a
+      <kwarg>: {name: <t>, layer: <l>}   #   per-env FQN, passed as that kwarg
 quality:                       # table-level rules + quarantine settings
   checks: [...]                #   multi-column / dataset-level dqx rules
   quarantine: {}               #   error rules AUTO-quarantine even without this
@@ -144,6 +147,37 @@ Pure function in `src/<domain>_etl/transforms/` with
 `@transform("<domain>.<name>")` + a unit test; ensure the module is in
 `domain.yml` `imports:`. Custom checks: `src/<domain>_etl/checks/` with
 `@check_function`.
+
+**Never hardcode a table, catalog or schema in a transform, and never read
+`spark.conf` there.** A transform that needs a SECOND table (the classic case:
+joining a dimension into a gold aggregate) declares it in the artifact and
+receives the resolved name as a keyword argument:
+
+```yaml
+transform:
+  - function: sales.sales_by_category
+    tables:
+      products_table: {name: products, layer: silver}
+```
+
+```python
+@transform("sales.sales_by_category")
+def sales_by_category(df, products_table: str):
+    return category_rollup(df, df.sparkSession.read.table(products_table))
+```
+
+`layer:` resolves through `domain.yml`'s layer→schema mapping; use
+`catalog_conf:`/`schema_conf:` for a table outside this domain (`layer:` and
+`schema_conf:` are mutually exclusive). Why it matters: the artifact stays the
+single declaration of every table the dataset touches, the same config works in
+dev/stage/prod, and `run_dataset(inputs={"<cat>.silver.products": df})` can
+substitute the dimension so the join is testable without a live table. A wrong or
+missing kwarg fails `make validate-configs`, not the pipeline update.
+
+Caveat: a `tables:` ref is a batch read OUTSIDE the SDP graph — it adds no
+dependency edge. When you need a genuine in-graph join, use `source.kind: sql`
+over same-pipeline datasets by short name (see `config/sales/templates/`).
+Live example: `projects/sales/config/sales/gold/sales_by_category.yml`.
 
 ## Verify (always, in this order)
 

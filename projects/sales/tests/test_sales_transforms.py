@@ -1,8 +1,10 @@
 """Unit tests for the sales domain's pure transforms.
 
 The join-based gold aggregate (sales_by_category) is split into a registered
-transform that reads silver.products and a pure ``category_rollup`` helper; the
-helper is tested here with two in-memory DataFrames (no live table needed)."""
+transform that reads the dimension named by its artifact's ``transform[].tables``
+ref, and a pure ``category_rollup`` helper; the helper is tested here with two
+in-memory DataFrames (no live table needed), and the wired-up transform is
+covered end to end in test_sales_run_dataset_contract.py."""
 
 from pyspark.sql import Row
 

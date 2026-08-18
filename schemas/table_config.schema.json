@@ -943,7 +943,7 @@
     },
     "ReferenceSource": {
       "additionalProperties": false,
-      "description": "Batch-read reference table exposed to dqx checks via ref_dfs.",
+      "description": "A second table named declaratively, resolved per environment.\n\nUsed by dqx checks (``quality.references`` \u2192 ``ref_dfs``) and by a transform\nstep's ``tables:``. ``layer`` references the domain's layer\u2192schema mapping\n(domain.yml); the ``*_conf`` overrides are for tables outside this domain.\nAll are pipeline-conf KEYS \u2014 never literal catalog/schema names.",
       "properties": {
         "catalog_conf": {
           "anyOf": [
@@ -957,6 +957,19 @@
           ],
           "default": null,
           "title": "Catalog Conf"
+        },
+        "layer": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer"
         },
         "name": {
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
@@ -1265,6 +1278,16 @@
         "function": {
           "title": "Function",
           "type": "string"
+        },
+        "tables": {
+          "default": {},
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/ReferenceSource"
+            }
+          },
+          "title": "Tables",
+          "type": "object"
         }
       },
       "required": [

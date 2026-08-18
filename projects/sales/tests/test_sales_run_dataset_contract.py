@@ -149,6 +149,47 @@ def test_run_dataset_templated_rollup_expands_and_runs(spark):
     assert rows["NV"].gross_revenue == 30.0
 
 
+def test_run_dataset_sales_by_category_joins_the_declared_dimension(spark):
+    """gold.sales_by_category: the ONLY dataset whose transform reads a second
+    table. That dimension is declared by the artifact's ``transform[].tables``
+    (products_table: {name: products, layer: silver}), so the framework resolves
+    it to cat.silver.products and ``inputs=`` can substitute a sample frame —
+    which is what makes this end-to-end test possible at all."""
+    order_items = spark.createDataFrame(
+        [
+            (1, 100, 1, 2, 10.0, 0.0),
+            (2, 100, 2, 1, 50.0, 10.0),
+            (3, 101, 1, 3, 10.0, 0.0),
+        ],
+        "item_id long, order_id long, product_id long, quantity int, "
+        "unit_price double, discount_pct double",
+    )
+    products = spark.createDataFrame(
+        [(1, "Electronics", "Audio"), (2, "Electronics", "Wearables")],
+        "product_id long, category string, subcategory string",
+    )
+
+    res = run_dataset(
+        spark,
+        CONFIG_DIR,
+        "gold",
+        "sales_by_category",
+        params=PARAMS,
+        inputs={
+            "cat.silver.order_items": order_items,
+            "cat.silver.products": products,  # the declared tables: ref
+        },
+    )
+
+    rows = {(r.category, r.subcategory): r for r in res.valid_df.collect()}
+    audio = rows[("Electronics", "Audio")]
+    assert audio.units_sold == 5  # 2 + 3
+    assert audio.num_orders == 2  # orders 100 and 101
+    assert audio.gross_revenue == 50.0  # (2*10) + (3*10), no discount
+    wearables = rows[("Electronics", "Wearables")]
+    assert wearables.gross_revenue == 45.0  # 1 * 50 * (1 - 0.10)
+
+
 def test_run_dataset_unknown_dataset_lists_options(spark):
     with pytest.raises(ConfigError, match="customers"):
         run_dataset(spark, CONFIG_DIR, "silver", "nope", params=PARAMS)

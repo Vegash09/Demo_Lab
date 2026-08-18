@@ -76,6 +76,6 @@ package = false   # workspace + dev-env root, not a built package
 members = ["projects/customer_sales", "projects/sales"]
 
 [tool.uv.sources]
-datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v0.9.0" }
+datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v0.10.0" }
 customer_sales_etl = { workspace = true }
 sales_etl = { workspace = true }
