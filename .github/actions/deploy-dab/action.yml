@@ -75,7 +75,8 @@ runs:
     # PRECONDITION: each project catalog's artifacts.wheels Volume already exists —
     # `make bootstrap-uc TARGET=<t>` provisions it. Auth is the same OIDC env the
     # deploy uses (set at the job level); the Databricks SDK picks it up ambiently.
-    # `--with databricks-sdk` / `--with pip` keep the SDK + pip out of uv.lock.
+    # `--with databricks-sdk` keeps the SDK out of uv.lock. No `--with pip` — the
+    # wheel is built by `uv build` from a shallow clone, so pip is never needed.
     - name: Publish datalab framework wheel to each project catalog's volume
       shell: bash
       env:
@@ -85,7 +86,7 @@ runs:
         # Build the FRAMEWORK wheel from the pinned git dep (pyproject
         # [tool.uv.sources].datalab) into an isolated dir, then upload — never
         # touches the bundle's dist/ (which `bundle deploy` fills with the example
-        # wheels right after). `--with pip` builds the wheel, `--with databricks-sdk`
+        # wheels right after). `--with databricks-sdk`
         # uploads it; neither enters uv.lock.
         #
         # When a domain catalog is overridden below (--var catalog / sales_catalog),
@@ -95,7 +96,7 @@ runs:
         PUBLISH_ARGS=(--target "${{ inputs.target }}" --build --apply)
         [ -n "$IN_CATALOG" ]       && PUBLISH_ARGS+=(--catalog-for "customer_sales=$IN_CATALOG")
         [ -n "$IN_SALES_CATALOG" ] && PUBLISH_ARGS+=(--catalog-for "sales=$IN_SALES_CATALOG")
-        uv run --with databricks-sdk --with pip python scripts/publish_wheel.py "${PUBLISH_ARGS[@]}"
+        uv run --with databricks-sdk python scripts/publish_wheel.py "${PUBLISH_ARGS[@]}"
 
     # Validate and deploy in one step so the quoted --var argument array
     # (group names may contain spaces) doesn't have to cross a step boundary.

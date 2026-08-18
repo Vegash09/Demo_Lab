@@ -185,7 +185,16 @@ resources:
             include: ../src/@@CATALOG@@_etl/transformations/**
 
       environment:
-        environment_version: "4"
+        # Pins the Python runtime + preinstalled library set independently of DBR
+        # upgrades. COMMENTED OUT for the FIRST deploy: Databricks gates enabling
+        # environment_version on a new pipeline behind a fingerprint check that
+        # rejects it (NO_PREVIOUS_FINGERPRINT, then FINGERPRINT_MISMATCH) and
+        # leaves the pipeline unable to run until the setting is removed. Every
+        # documented remedy was tried against a real pipeline (2026-08),
+        # including a compatibility scan that reported ZERO issues while the gate
+        # still refused. Uncomment once the pipeline has a stable update history
+        # — see docs/ADOPTING.md "environment_version".
+        # environment_version: "4"
         dependencies:
           # datalab FRAMEWORK wheel from THIS catalog's artifacts.wheels Volume
           # (make publish-wheel; bump var.datalab_version to roll it). Serverless
@@ -324,7 +333,10 @@ dev = [
     "ruff>=0.14",
     # Local Spark for tests + the OSS local-run profile. Never add
     # databricks-connect here (conflicts with pyspark; use `make validate-connect`).
-    "pyspark[pipelines]>=4.1.0",
+    # Capped: the OSS SDP subset moves between minors (4.2.0 added an abstract
+    # method to GraphElementRegistry and an SCD1-only create_auto_cdc_flow).
+    # Needs datalab >= 0.8.2 for 4.2. Raise deliberately, after running tests.
+    "pyspark[pipelines]>=4.1.0,<4.3",
     "pandas>=2.0",
     # The framework, pinned to a release tag (source mapped to git below). Keep the
     # tag in lockstep with var.datalab_version (the serverless UC-Volume wheel).

@@ -194,7 +194,7 @@ flowchart TD
   before ALTER, named `dl_mask_<purpose>` / `dl_rf_<purpose>`. Worked
   example: `projects/customer_sales/sql/abac/mask_customer_email.sql`.
 
-Group creation stays account/workspace-level (`databricks groups create`) —
+Group creation stays manual, and the SCOPE matters: UC grants need **account** groups (`databricks account groups create`), while pipeline/job ACLs resolve **workspace** groups (`databricks groups create`). A workspace-local group can never hold a UC privilege —
 nothing in this repo creates principals.
 
 ## Editing the design diagrams

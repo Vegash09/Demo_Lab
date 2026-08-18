@@ -15,8 +15,25 @@ catalogs in the UI first and pass SKIP_CATALOGS=1 (--skip-catalogs) to set up on
 schemas/volumes/grants, or pass a MANAGED LOCATION. It runs `uv run --with
 databricks-sdk` so the SDK never enters uv.lock (the dev venv stays pyspark-only —
 databricks-connect/sdk conflicts, see AGENTS.md). Group CREATION is
-workspace/account-level and stays manual: `databricks groups create` — this script
-only grants to groups.
+manual, and the SCOPE matters — see below. This script only grants to groups.
+
+GROUPS: WORKSPACE vs ACCOUNT — these are NOT the same principal
+--------------------------------------------------------------
+* the bundle's `permissions:` blocks (rbac.yml -> pipeline/job ACLs) resolve
+  WORKSPACE groups:  `databricks groups create --profile <workspace>`
+* Unity Catalog GRANT resolves ACCOUNT groups:
+  `databricks account groups create --profile <account>`  (account-admin auth)
+
+A workspace-local group is INVISIBLE to Unity Catalog: granting to one fails
+with PRINCIPAL_DOES_NOT_EXIST even though the group is plainly listed in the
+workspace UI. Databricks documents this — workspace-local groups "cannot be
+granted access to data in a Unity Catalog metastore" — but the failure gives no
+hint about scope, so it reads as a typo. Create the personas at ACCOUNT level and
+assign them to the workspace (`databricks account workspace-assignment update`).
+
+Pass --skip-grants to provision catalogs/schemas/volumes alone when the account
+groups do not exist yet (e.g. a dev workspace where the catalog creator already
+owns everything).
 """
 
 from __future__ import annotations
@@ -40,7 +57,7 @@ DEPLOY_SP = "437346a1-0b53-418a-80d4-abaf2586ed97"
 
 def _catalog_sql(
     catalog: str, reader: str, engineer: str, location: str, with_volumes: bool,
-    create_catalog: bool = True,
+    create_catalog: bool = True, grants: bool = True,
 ) -> list[str]:
     """Idempotent DDL + grants for ONE domain catalog. Engineers get build rights
     across the medallion; readers get silver+gold reads; bronze stays
@@ -55,6 +72,21 @@ def _catalog_sql(
     stmts = []
     if create_catalog:
         stmts.append(f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location}")
+
+    if not grants:
+        # Structure only — for a workspace whose ACCOUNT-level persona groups do
+        # not exist yet (UC cannot see workspace-local groups; see the module
+        # docstring). The catalog creator already owns everything created here.
+        stmts += [f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{s}`" for s in schemas]
+        stmts.append(
+            f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{ARTIFACTS_SCHEMA}`.`{WHEELS_VOLUME}`"
+        )
+        if with_volumes:
+            stmts += [
+                f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`sales`",
+                f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`exports`.`sales`",
+            ]
+        return stmts
     # The deploy SP owns everything the bundle creates in this catalog — and, by
     # privilege inheritance, can write the framework wheel into the volume.
     stmts.append(f"GRANT ALL PRIVILEGES ON CATALOG `{catalog}` TO `{DEPLOY_SP}`")
@@ -91,7 +123,8 @@ def _catalog_sql(
 
 
 def bootstrap_sql(
-    target: str, managed_location: str = "", create_catalogs: bool = True
+    target: str, managed_location: str = "", create_catalogs: bool = True,
+    grants: bool = True,
 ) -> list[str]:
     """Idempotent DDL + grants for ``target``: every domain catalog (the
     customer_sales medallion + the pipeline-only ``sales`` catalog), each
@@ -110,9 +143,58 @@ def bootstrap_sql(
     stmts: list[str] = []
     for catalog, with_volumes in catalogs(target):
         stmts += _catalog_sql(
-            catalog, reader, engineer, location, with_volumes, create_catalogs
+            catalog, reader, engineer, location, with_volumes, create_catalogs, grants
         )
     return stmts
+
+
+def preflight_storage_root(profile: str | None, *, managed_location: str, creating: bool) -> None:
+    """Fail BEFORE executing DDL when CREATE CATALOG cannot possibly succeed.
+
+    On a metastore with no storage root (accounts with Default Storage enabled),
+    `CREATE CATALOG` fails with:
+
+        Metastore storage root URL does not exist. Default Storage is enabled in
+        your account. You can use the UI to create a new catalog using Default
+        Storage, or please provide a storage location for the catalog.
+
+    Without this check that surfaces as a bare failure on statement #1, after the
+    run has already begun — and the remedy is not obvious, because the API cannot
+    help either: `CreateCatalog` has no default-storage field at all (an
+    unresolved CLI gap, databricks/cli#4513), so `databricks catalogs create`
+    fails the same way. The workable paths are all listed below.
+
+    Degrades to a no-op if the metastore cannot be inspected — a permissions
+    quirk must never block a bootstrap that would otherwise succeed.
+    """
+    if not creating or managed_location:
+        return
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        client = WorkspaceClient(profile=profile) if profile else WorkspaceClient()
+        summary = client.metastores.summary()
+        storage_root = getattr(summary, "storage_root", None)
+    except Exception as exc:  # noqa: BLE001 — advisory only
+        print(f"note: could not inspect the metastore ({exc}); skipping the storage-root preflight")
+        return
+
+    if storage_root:
+        return
+
+    raise SystemExit(
+        "this metastore has NO storage root (Default Storage), so `CREATE CATALOG` "
+        "will fail — and the Catalogs API cannot create a Default-Storage catalog "
+        "either (databricks/cli#4513). Pick one:\n"
+        "  1. Reuse an existing catalog's location:\n"
+        "       databricks catalogs get <existing-catalog> --profile <p>   # read .storage_root\n"
+        "       make bootstrap-uc ... MANAGED_LOCATION=<that storage_root>\n"
+        "  2. Create the catalog once in the UI (or with `databricks catalogs create "
+        "--storage-root <url>`), then re-run with SKIP_CATALOGS=1.\n"
+        "  3. On a SERVERLESS workspace, run `CREATE CATALOG <name>` from a serverless "
+        "SQL warehouse — Default Storage applies the location automatically — then "
+        "re-run with SKIP_CATALOGS=1."
+    )
 
 
 def apply(statements: list[str], warehouse_id: str, profile: str | None) -> None:
@@ -142,6 +224,13 @@ def main(argv: list[str] | None = None) -> None:
         help="catalog MANAGED LOCATION (required on metastores without a storage root)",
     )
     parser.add_argument(
+        "--skip-grants",
+        action="store_true",
+        help="create catalogs/schemas/volumes only, no GRANTs — for a workspace where the "
+        "ACCOUNT-level persona groups do not exist yet (UC does not resolve workspace-local "
+        "groups; granting to one fails PRINCIPAL_DOES_NOT_EXIST)",
+    )
+    parser.add_argument(
         "--skip-catalogs",
         action="store_true",
         help="skip CREATE CATALOG (the domain catalogs already exist, e.g. created via the "
@@ -150,7 +239,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     statements = bootstrap_sql(
-        args.target, args.managed_location, create_catalogs=not args.skip_catalogs
+        args.target,
+        args.managed_location,
+        create_catalogs=not args.skip_catalogs,
+        grants=not args.skip_grants,
     )
     if not args.apply:
         print(f"-- dry run for target '{args.target}' — re-run with --apply to execute\n")
@@ -158,6 +250,11 @@ def main(argv: list[str] | None = None) -> None:
         return
     if not args.warehouse_id:
         parser.error("--apply requires --warehouse-id")
+    preflight_storage_root(
+        args.profile or None,
+        managed_location=args.managed_location,
+        creating=not args.skip_catalogs,
+    )
     apply(statements, args.warehouse_id, args.profile or None)
     print(f"bootstrap complete for target '{args.target}'")
 

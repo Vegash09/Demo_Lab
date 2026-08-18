@@ -11,14 +11,15 @@ variables/medallion.yml ``datalab_wheel`` / ``sales_datalab_wheel``).
 
 This repo (the adopter/reference bundle) BUILDS that wheel from the pinned git
 dependency and uploads it to each project catalog's volume. ``--build`` clones+
-builds ``datalab`` from the git ref in ``pyproject.toml`` (``pip wheel "datalab @
+builds ``datalab`` from the git ref in ``pyproject.toml`` (shallow clone + ``uv
+build --wheel``; formerly ``pip wheel "datalab @
 git+<url>@<tag>" --no-deps``); without it the script just uploads a wheel already
 sitting in ``--dist-dir``.
 
     make publish-wheel TARGET=dev               # dry run (prints the build+upload plan)
     make publish-wheel TARGET=dev APPLY=1       # build from the git dep + upload via the SDK
 
-Runs under ``uv run --with databricks-sdk --with pip`` so neither the SDK nor pip
+Runs under ``uv run --with databricks-sdk`` so the SDK never
 enters uv.lock. The target volumes must already exist: ``make bootstrap-uc
 TARGET=<t>`` provisions each project catalog's ``artifacts.wheels`` volume.
 
@@ -35,6 +36,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -75,20 +77,43 @@ def _git_requirement() -> str:
 def build_wheel(dist_dir: str) -> None:
     """Build ONLY the framework wheel from the pinned git dep into ``dist_dir``.
 
-    ``--no-deps`` keeps it to ``datalab`` alone (no pyspark etc.); the isolated
-    ``dist_dir`` keeps it out of the bundle's ``dist/`` (which ``bundle deploy``
-    fills with the per-domain ``<catalog>_etl`` wheels right after). Stale
-    framework wheels from earlier bumps are removed first so the strict
-    ``wheel_path`` check below can never pick one up."""
+    Shallow-clones the pinned tag into a temp dir and runs ``uv build --wheel``.
+    This used to shell ``python -m pip wheel <git url>``, which does not work in a
+    uv-created venv: uv installs no pip, so the call dies with "No module named
+    pip". It only appeared to work because the Makefile injected ``--with pip``;
+    running the script directly always failed.
+    Cloning + ``uv build`` needs neither pip nor a resolver pass, and uv is
+    already a hard prerequisite for `bundle deploy`.
+
+    The isolated ``dist_dir`` keeps the framework wheel out of the bundle's
+    ``dist/`` (which ``bundle deploy`` fills with the domain wheel right after).
+    Stale framework wheels from earlier bumps are removed first so the strict
+    ``wheel_path`` check below can never pick one up.
+    """
     for stale in Path(dist_dir).glob("datalab-*.whl"):
         print(f"  removing stale {stale}")
         stale.unlink()
-    req = _git_requirement()
-    print(f"  building {req} -> {dist_dir}/")
-    subprocess.run(
-        [sys.executable, "-m", "pip", "wheel", req, "--no-deps", "-w", dist_dir],
-        check=True,
-    )
+
+    data = tomllib.loads(PYPROJECT.read_text())
+    src = data["tool"]["uv"]["sources"]["datalab"]
+    url = src["git"]
+    ref = src.get("tag") or src.get("rev") or src.get("branch")
+    out = Path(dist_dir).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+
+    print(f"  building {_git_requirement()} -> {dist_dir}/")
+    with tempfile.TemporaryDirectory() as tmp:
+        checkout = Path(tmp) / "datalab-framework"
+        subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", ref, url, str(checkout)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["uv", "build", "--wheel", "--out-dir", str(out)],
+            cwd=checkout,
+            check=True,
+        )
 
 
 def wheel_path(version: str, dist_dir: str) -> Path:

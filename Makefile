@@ -147,7 +147,7 @@ destroy:  ## Tear down everything the bundle deployed to $(TARGET) (asks first)
 # references via var.datalab_wheel / var.sales_datalab_wheel must be on its volume
 # first). Bump the git tag + var.datalab_version in lockstep when upgrading.
 publish-wheel: install  ## Build the framework wheel from the pinned git dep + publish it into each project catalog's artifacts.wheels Volume for $(TARGET) (APPLY=1)
-	$(UV) run --with databricks-sdk --with pip python scripts/publish_wheel.py \
+	$(UV) run --with databricks-sdk python scripts/publish_wheel.py \
 		--target $(TARGET) --build \
 		$(if $(APPLY),--apply,) \
 		$(if $(PROFILE),--profile $(PROFILE),)
@@ -211,11 +211,19 @@ validate-connect:  ## Validate one dataset on a LIVE cluster via isolated Databr
 # CREATE CATALOG statements when the domain catalogs already exist (e.g. created
 # via the UI on a Default-Storage metastore) — it still ensures schemas/volumes/
 # grants. `--with` keeps databricks-sdk out of uv.lock (dev venv stays pyspark-only).
+# MANAGED_LOCATION and SKIP_GRANTS were previously unreachable from `make` — the
+# script defined the flags but the recipe never passed them, so the documented
+# Default-Storage remedy could not actually be run through the Makefile.
+BOOTSTRAP_FLAGS := $(if $(SKIP_CATALOGS),--skip-catalogs,) \
+                   $(if $(SKIP_GRANTS),--skip-grants,) \
+                   $(if $(MANAGED_LOCATION),--managed-location $(MANAGED_LOCATION),) \
+                   $(if $(PROFILE),--profile $(PROFILE),)
+
 bootstrap-uc:  ## Print/apply UC bootstrap SQL for $(TARGET) (WAREHOUSE_ID=… to apply; PROFILE=… picks the workspace; SKIP_CATALOGS=1 if catalogs exist)
 	@if [ -n "$(WAREHOUSE_ID)" ]; then \
-		$(UV) run --with databricks-sdk python scripts/bootstrap_uc.py --target $(TARGET) --apply --warehouse-id $(WAREHOUSE_ID) $(if $(PROFILE),--profile $(PROFILE),) $(if $(SKIP_CATALOGS),--skip-catalogs,); \
+		$(UV) run --with databricks-sdk python scripts/bootstrap_uc.py --target $(TARGET) --apply --warehouse-id $(WAREHOUSE_ID) $(BOOTSTRAP_FLAGS); \
 	else \
-		$(UV) run python scripts/bootstrap_uc.py --target $(TARGET) $(if $(SKIP_CATALOGS),--skip-catalogs,); \
+		$(UV) run python scripts/bootstrap_uc.py --target $(TARGET) $(BOOTSTRAP_FLAGS); \
 	fi
 
 # ---- git --------------------------------------------------------------------

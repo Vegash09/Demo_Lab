@@ -58,7 +58,7 @@ jobs:
       - name: Check framework App credentials are configured
         # The deploy clones the PRIVATE datalab-framework repo: the deploy-dab
         # publish step builds the framework wheel from the pinned git dep
-        # (`pip wheel "datalab @ git+…"`) and `bundle deploy` resolves it too. Same
+        # (shallow clone + `uv build`) and `bundle deploy` resolves it too. Same
         # datalab-framework reader GitHub App CI uses — see docs/CICD.md.
         if: steps.gate.outputs.enabled == 'true'
         env:
@@ -83,7 +83,7 @@ jobs:
           repositories: datalab-framework
 
       - name: Route the private framework clone over HTTPS with the token
-        # Both `pip wheel "datalab @ git+https://…"` (publish step) and
+        # Both the publish step (clone of `git+https://…`) and
         # `bundle deploy` resolve the framework git dep through this rewrite.
         if: steps.gate.outputs.enabled == 'true'
         env:

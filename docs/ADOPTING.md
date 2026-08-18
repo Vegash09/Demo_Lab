@@ -115,7 +115,11 @@ sections below.
 - [ ] **6. Databricks auth (OIDC)** — GitHub Environments `dev`/`stage`/`prod` with
   `DATABRICKS_HOST` + `DATABRICKS_CLIENT_ID`; an OIDC federation policy on the SP
   with subject `repo:<owner>/<repo>:environment:<target>` (one per target).
-- [ ] **7. UC bootstrap** — ensure the groups exist, then `make bootstrap-uc
+- [ ] **7. UC bootstrap** — create the persona groups at **ACCOUNT** level
+  (`databricks account groups create --profile <account-profile>`; a workspace
+  group created with `databricks groups create` is INVISIBLE to Unity Catalog and
+  every GRANT fails `PRINCIPAL_DOES_NOT_EXIST`), assign them to the workspace with
+  `databricks account workspace-assignment update`, then `make bootstrap-uc
   TARGET=dev WAREHOUSE_ID=<warehouse-id> PROFILE=<cli-profile>` (`SKIP_CATALOGS=1`
   if catalogs exist or the metastore uses Default Storage).
 - [ ] **8. Publish the framework wheel** — `make publish-wheel TARGET=dev APPLY=1`
@@ -327,8 +331,9 @@ rides in each domain's own catalog:
   and the domain's pipeline/job run-as gets **READ VOLUME** so it can install the
   wheel (the install fails if that read grant is missing).
 
-Keep the script's `CATALOGS` / `GROUPS` dicts in sync with the catalog vars in
-`targets/` and the group names in `rbac.yml` (see AGENTS.md "Change access").
+Per-target catalogs and groups are RESOLVED from `variables/`, `targets/` and
+`rbac.yml` through `scripts/domains.py` — there are no `CATALOGS`/`GROUPS` dicts to
+keep in sync (they were removed when the registry landed) (see AGENTS.md "Change access").
 
 ## Lay out / copy a reference domain
 
@@ -431,6 +436,86 @@ for new release tags and opens the lockstep PR for you.
 version may not appear until the environment rebuilds — trigger a full pipeline
 restart (publishing a new version filename forces this) if a change doesn't show
 up.
+
+## First-deploy traps (found the hard way)
+
+Three things bite on a brand-new adopter repo, all confirmed against a real
+customer workspace in August 2026. None is obvious from the error message.
+
+### Persona groups must be ACCOUNT-level, not workspace-level
+
+Unity Catalog `GRANT` resolves **account** groups. `databricks groups create`
+creates a **workspace-local** group, which appears in the workspace UI and is
+perfectly usable for pipeline/job `permissions:` ACLs — but is invisible to UC,
+so every grant fails:
+
+```
+PRINCIPAL_DOES_NOT_EXIST: Could not find principal with name <group>
+```
+
+Databricks documents that workspace-local groups "cannot be granted access to
+data in a Unity Catalog metastore", but the error says nothing about scope, so it
+reads like a typo. Create them at account level and assign to the workspace:
+
+```bash
+databricks account groups create --display-name <catalog>_readers   --profile <account-profile>
+databricks account workspace-assignment update --profile <account-profile> ...
+```
+
+Account-level commands need an account profile (host = the account console URL +
+`account_id`) with account-admin rights — a workspace PAT will not do. If you
+don't have that yet, `make bootstrap-uc ... SKIP_GRANTS=1` provisions the
+catalogs/schemas/volumes alone so you are not blocked.
+
+### Default Storage metastores reject `CREATE CATALOG`
+
+If your account has Default Storage enabled and the metastore has no storage
+root:
+
+```
+Metastore storage root URL does not exist. Default Storage is enabled in your
+account. You can use the UI to create a new catalog using Default Storage, or
+please provide a storage location for the catalog.
+```
+
+The API cannot help either — `CreateCatalog` has no default-storage field, so
+`databricks catalogs create` fails identically (unresolved:
+[databricks/cli#4513](https://github.com/databricks/cli/issues/4513)).
+`bootstrap_uc.py` now pre-flights this and fails *before* running any DDL, naming
+the three workable paths:
+
+```bash
+# 1. reuse a sibling catalog's location (this is what unblocked us)
+databricks catalogs get <existing-catalog> --profile <p>   # read .storage_root
+make bootstrap-uc TARGET=dev ... MANAGED_LOCATION=<that storage_root>
+
+# 2. create the catalog once in the UI / with --storage-root, then
+make bootstrap-uc TARGET=dev ... SKIP_CATALOGS=1
+
+# 3. on a SERVERLESS workspace, run `CREATE CATALOG <name>` from a serverless SQL
+#    warehouse (Default Storage supplies the location), then SKIP_CATALOGS=1
+```
+
+### `environment_version` cannot be enabled on a new pipeline
+
+The generated pipeline resource ships with `environment_version` **commented
+out**. Databricks gates enabling it behind a fingerprint check that a new
+pipeline cannot satisfy, and a failed attempt leaves the pipeline unable to run
+until the setting is removed. Every documented remedy was tried against a real
+pipeline:
+
+| Attempt | Result |
+|---|---|
+| baseline run → enable | `NO_PREVIOUS_FINGERPRINT`, then `FINGERPRINT_MISMATCH` |
+| re-baseline with byte-identical code → enable | `FINGERPRINT_MISMATCH` |
+| baseline **and** enable both with `--full-refresh-all` | `FINGERPRINT_MISMATCH` |
+| `pipelines.environmentVersion.enableCompatibilityScan: "true"` | **zero** issues reported — and the gate still refused |
+
+What you give up by leaving it off: the Python version is 3.12.3 either way today
+(DBR 17.3 and environment version 4 agree), so only the **preinstalled library
+set** is left unpinned across DBR upgrades. Enabling it also switches pipeline
+code to Spark Connect, which is why the gate exists. Uncomment it once the
+pipeline has a stable update history, and expect to iterate.
 
 ## Where to go next
 

@@ -28,7 +28,10 @@ dev = [
     "ruff>=0.14",
     # Local Spark for the example tests + the OSS local-run profile. Never add
     # databricks-connect here (conflicts with pyspark; use `make validate-connect`).
-    "pyspark[pipelines]>=4.1.0",
+    # Capped: the OSS SDP subset moves between minors (4.2.0 added an abstract
+    # method to GraphElementRegistry and an SCD1-only create_auto_cdc_flow).
+    # Needs datalab >= 0.8.2 for 4.2. Raise deliberately, after running tests.
+    "pyspark[pipelines]>=4.1.0,<4.3",
     "pandas>=2.0",
     # The framework, pinned to a release tag (source mapped to git below). Keep the
     # tag in lockstep with var.datalab_version (the UC-Volume wheel serverless uses).
