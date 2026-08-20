@@ -56,7 +56,7 @@ DEPLOY_SP = "437346a1-0b53-418a-80d4-abaf2586ed97"
 
 
 def _catalog_sql(
-    catalog: str, reader: str, engineer: str, location: str, with_volumes: bool,
+    catalog: str, reader: str, engineer: str, location: str, edge_volume: str | None,
     create_catalog: bool = True, grants: bool = True,
 ) -> list[str]:
     """Idempotent DDL + grants for ONE domain catalog. Engineers get build rights
@@ -64,10 +64,13 @@ def _catalog_sql(
     engineer-only. Every catalog also gets an `artifacts.wheels` volume holding
     the datalab framework wheel for THIS project's pipelines (published by
     `make publish-wheel`). Volume catalogs (customer_sales) additionally get the
-    Auto Loader landing + export volumes and their grants. ``create_catalog=False``
+    Auto Loader landing + export volumes, NAMED by the domain registry's
+    ``edge_volume`` field (scripts/domains.py) so they always match the volume
+    segment of the domain's landing/export path variables. ``create_catalog=False``
     skips the CREATE CATALOG statement when the catalog already exists (e.g. made
     via the UI on a Default-Storage metastore, where SQL CREATE CATALOG needs an
     explicit location) — schemas/volumes/grants still run."""
+    with_volumes = edge_volume is not None
     schemas = BASE_SCHEMAS + [ARTIFACTS_SCHEMA] + (VOLUME_SCHEMAS if with_volumes else [])
     stmts = []
     if create_catalog:
@@ -83,8 +86,8 @@ def _catalog_sql(
         )
         if with_volumes:
             stmts += [
-                f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`sales`",
-                f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`exports`.`sales`",
+                f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`{edge_volume}`",
+                f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`exports`.`{edge_volume}`",
             ]
         return stmts
     # The deploy SP owns everything the bundle creates in this catalog — and, by
@@ -113,11 +116,11 @@ def _catalog_sql(
     ]
     if with_volumes:
         stmts += [
-            f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`sales`",
-            f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`exports`.`sales`",
-            f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`landing`.`sales` TO `{engineer}`",
-            f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`exports`.`sales` TO `{engineer}`",
-            f"GRANT READ VOLUME ON VOLUME `{catalog}`.`exports`.`sales` TO `{reader}`",
+            f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`landing`.`{edge_volume}`",
+            f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`exports`.`{edge_volume}`",
+            f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`landing`.`{edge_volume}` TO `{engineer}`",
+            f"GRANT READ VOLUME, WRITE VOLUME ON VOLUME `{catalog}`.`exports`.`{edge_volume}` TO `{engineer}`",
+            f"GRANT READ VOLUME ON VOLUME `{catalog}`.`exports`.`{edge_volume}` TO `{reader}`",
         ]
     return stmts
 
@@ -141,9 +144,9 @@ def bootstrap_sql(
     engineer = who["engineer"]
     location = f" MANAGED LOCATION '{managed_location}'" if managed_location else ""
     stmts: list[str] = []
-    for catalog, with_volumes in catalogs(target):
+    for catalog, edge_volume in catalogs(target):
         stmts += _catalog_sql(
-            catalog, reader, engineer, location, with_volumes, create_catalogs, grants
+            catalog, reader, engineer, location, edge_volume, create_catalogs, grants
         )
     return stmts
 

@@ -3,6 +3,7 @@
 Shared source of truth for AI coding agents (Cursor, Claude Code, Codex) and humans.
 Read this before editing. Keep it accurate when you change the system.
 
+<!-- template-only:repo-intro start (scaffold_adopter.py swaps this block in generated adopters) -->
 > **Repo split (done).** The reusable framework lives in its OWN repo,
 > **[dediggibyte/datalab-framework](https://github.com/dediggibyte/datalab-framework)** —
 > there is no `src/datalab` in this repo. THIS repo is the reference **domains +
@@ -15,6 +16,7 @@ Read this before editing. Keep it accurate when you change the system.
 > target kinds, dqx, the SDP capability matrix) lives in that repo's
 > [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md);
 > to stand up your own repo on the framework, see [`docs/ADOPTING.md`](docs/ADOPTING.md).
+<!-- template-only:repo-intro end -->
 
 ## Overview
 
@@ -39,6 +41,7 @@ Bundle).
   it has zero domain code and lifts into any project untouched. Domain code is
   declared to the framework via `domain.yml`'s `imports:` list — never by editing
   the framework (which lives in its own repo).
+<!-- template-only:overview-domains start -->
 - **projects/ holds the reference domains**: `projects/customer_sales/` is a
   complete worked adoption (config + domain package + edge jobs + notebook +
   resources + tests + ABAC SQL) laid out to MIRROR an adopter repo root —
@@ -54,6 +57,7 @@ Bundle).
   Fan-in `sources:` and `backfill:` deliberately have NO deployed example
   (they need second physical sources this demo workspace lacks; shapes live
   in the framework repo's FRAMEWORK.md).
+<!-- template-only:overview-domains end -->
 - **Folder names mirror the UC namespace** (`docs/NAMING.md`): the domain
   folder is the BASE CATALOG name (`customer_sales`; stage/prod append
   `_stage`/`_prod` via bundle variables), config subfolders are the SCHEMA
@@ -74,6 +78,7 @@ Bundle).
 
 ## Architecture
 
+<!-- template-only:architecture start -->
 ```
 Developer ──push/PR──▶ GitHub Actions ──OIDC──▶ Declarative Automation Bundle
                        ci-cd.yml (ONE workflow;  (databricks.yml + projects/*/resources/*.yml)
@@ -99,9 +104,11 @@ sales.bronze.*  ─▶│ orders · order_items · customers · products        
   edge jobs (read-only on pipeline tables): customer_sales_export ─▶ exports volume (weekly CSV)
                                             customer_sales_quarantine_report (on-demand triage notebook)
 ```
+<!-- template-only:architecture end -->
 
 ## Codebase layout
 
+<!-- template-only:codebase-layout start -->
 ```
 databricks.yml            Bundle: name + include only (variables/ + targets/ + rbac + resources merged in)
 variables/                Variable declarations + defaults (medallion catalog/schemas/paths); include'd, deep-merged
@@ -173,6 +180,7 @@ Adopter repos use the same shape with the domain at the ROOT instead of under
 projects/: `config/<catalog>/`, `src/<catalog>_etl/`, `src/jobs/<catalog>/`,
 `notebooks/<catalog>/`, `resources/*.yml` (see `projects/README.md`; naming
 contract: `docs/NAMING.md`).
+<!-- template-only:codebase-layout end -->
 
 ## Local development
 
@@ -604,6 +612,23 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   export entry point fails fast if `/Volumes/<catalog>/exports/sales/` is
   missing rather than silently creating dev-shaped paths elsewhere.
   `make bootstrap-uc TARGET=<t>` creates them (plus schemas and grants).
+- **The edge-volume NAME is a registry field — bootstrap and the path variables
+  must agree.** `scripts/domains.py` `DOMAINS[<domain>]["edge_volume"]` names
+  the `landing`/`exports` UC volume bootstrap creates, and it must equal the
+  volume segment of that domain's landing/export path variables
+  (`/Volumes/<catalog>/landing/<edge_volume>/…`). bootstrap_uc used to hardcode
+  `sales` while the adopter scaffold wrote `<catalog>` paths, so a fresh
+  adopter's first `make run` failed on a volume that was never provisioned —
+  the scaffold smoke test now asserts the contract end to end.
+<!-- template-only:agents-conversion-gotcha start -->
+- **AGENTS.md is converted for adopters via template-only markers.** Regions
+  fenced `<!-- template-only:<name> start/end -->` are swapped for adopter text
+  by `scaffold_adopter.py` (`patch_agents_md`), which then FAILS if any
+  `projects/` / `design/` / `omnigent` reference survives outside a line that
+  names the "template repo". Adding template-only material to this file? Fence
+  it with markers (or handle it in `patch_agents_md`), or the CI scaffold
+  smoke test fails loudly.
+<!-- template-only:agents-conversion-gotcha end -->
 - **Permission groups are string variables on purpose — and so are the
   levels.** All access control lives in `rbac.yml` (include'd by
   `databricks.yml` next to `variables/` and `targets/`; `databricks.yml` itself
@@ -655,12 +680,14 @@ When you change anything in the **protected file surface** below, in the same
 change:
 
 1. Capture the *why* in this file (Common tasks or Critical knowledge).
+<!-- template-only:maintenance-design start -->
 2. If the architecture moved, update `docs/ARCHITECTURE.md` **and** the `design/`
    package: edit `design/02_implementation_end_to_end.drawio` (the living
    diagram), run `make design` to re-export `design/images/`, and refresh
    `design/OVERVIEW.md` if the customer narrative changed — all in the same PR.
    Follow the `maintain-design-diagram` skill (`design/01_*` only when the design
    intent changes).
+<!-- template-only:maintenance-design end -->
 3. **The framework is an external dependency — change it in the
    `datalab-framework` repo, not here** (its `docs/FRAMEWORK.md` is the doc of
    record for framework behavior). To BUMP the framework version in this repo,
@@ -731,8 +758,9 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   (`scripts/scaffold_adopter.py`) produces a minimal, root-level single-domain
   adopter repo two ways — (A) **in place**, `make configure-adopter` inside a
   clone made from this **GitHub template repository** (the
-  `bootstrap-adopter-repo` skill drives this; `--interactive` PROMPTS for and
-  confirms every workspace value, then converts the clone), or (B) **fresh
+  `bootstrap-adopter-repo` skill drives this; interactive mode prompts ONLY for
+  catalog + host, defaults the rest with a fill-before-deploy TODO list, and
+  confirms a summary before converting the clone; `YES=1` runs it scripted), or (B) **fresh
   sibling**, `make new-adopter CATALOG=<c> OUT=../<c>-datalab` (copies only
   git-tracked files into a new dir). Same engine, same result: drops the
   reference domains, writes the minimal domain, rewrites every repo-level file,
@@ -745,7 +773,8 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   prevents the `config/<catalog>_databricks_prod` drift. Never hand-edit the
   conversion — drift is what hand-editing causes; `references/templates.md` is the
   manual fallback. Then extend with `author-ldp-artifact`. Wiring reference:
-  `docs/ADOPTING.md` (incl. the onboarding checklist). **Cross-org:** both paths
+  `docs/ADOPTING.md`; the single ordered onboarding checklist (prereqs → first
+  deploy) is `docs/NEW_ADOPTER.md`. **Cross-org:** both paths
   are org-agnostic, but the new repo reads the PRIVATE framework via the shared
   **datalab-framework reader GitHub App** — set `DATALAB_FRAMEWORK_APP_CLIENT_ID`
   (repo/org **variable**) + `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` (repo/org **secret**),
@@ -756,6 +785,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   repo→repo git reads — so it cannot pull the framework into the wheel. Mechanics +
   alternatives (PAT / vendored wheel): `docs/ADOPTING.md` → "Accessing the private
   framework repo".
+<!-- template-only:common-task-new-domain start -->
 - **Add a new domain pipeline** (e.g. finance): follow
   `docs/GETTING_STARTED.md` end to end — copy the `projects/customer_sales/` shape
   (config + `src/<catalog>_etl` + resources + `pyproject.toml`), register the
@@ -766,6 +796,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   check-domains` verifies), point `datalab.config_dir` at the new config dir, and
   list the domain's `<catalog>_datalab_wheel` + its own wheel in the resource
   `environment.dependencies`. The framework (the external `datalab` dependency) is not touched.
+<!-- template-only:common-task-new-domain end -->
 - **Change quality rules**: edit the column's `quality:` list (or the
   table-level `quality.checks`) in the table's artifact — dqx metadata,
   NL→function mapping in the `author-ldp-artifact` skill (full dqx catalog;
@@ -815,6 +846,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   policies → add display-only SQL under the domain's `sql/abac/` following
   the conventions in `docs/ARCHITECTURE.md` — never execute them from CI or
   an agent session.
+<!-- template-only:common-task-design start -->
 - **Update the design (diagrams, images, overview)**: edit the diagrams.net
   (draw.io) source in `design/` — `02_implementation_end_to_end.drawio` when the
   implemented architecture moves (same PR), `01_design_config_driven_medallion.drawio`
@@ -825,6 +857,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   conventions + the geometry check; full how-to in `docs/ARCHITECTURE.md`
   ("Editing the design diagrams"). `design/` is excluded from the deployed
   workspace files via the `sync.exclude` block in databricks.yml.
+<!-- template-only:common-task-design end -->
 - **Query Databricks from the agent (MCP)**: opt-in, dev-time. Authenticate the
   CLI (`databricks auth login --host <host>` → profile `diggi_dev_aws`), then in
   Claude Code approve the `databricks-sql` server from `.mcp.json` (Cursor:

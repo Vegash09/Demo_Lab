@@ -184,8 +184,13 @@ For each target (`dev`, `stage`, `prod`):
    - Environments without secrets are skipped gracefully by the deploy gate
      (the merge stays green until stage/prod are provisioned).
 4. **Unity Catalog bootstrap** (one time, before the first deploy):
-   create the persona groups (`databricks groups create` or the account
-   console — `dl_sales_readers`, `dl_sales_engineers` for stage/prod), then
+   create the persona groups at **ACCOUNT level** — `databricks account groups
+   create --display-name <group> --profile <account-profile>`, then assign each
+   to the workspace with `databricks account workspace-assignment update
+   <workspace-id> <group-id> --json '{"permissions": ["USER"]}'`. (A group made
+   with plain `databricks groups create` is workspace-local — invisible to
+   Unity Catalog, so every GRANT fails `PRINCIPAL_DOES_NOT_EXIST`; see
+   ADOPTING.md "First-deploy traps".) Then
    `make bootstrap-uc TARGET=<target> WAREHOUSE_ID=<sql-warehouse-id> PROFILE=<cli-profile>`
    to create the catalog, medallion + landing/exports schemas, the
    `artifacts.wheels` volume, and GRANTs. `PROFILE` picks the workspace (the SDK

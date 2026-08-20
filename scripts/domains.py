@@ -30,11 +30,17 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # domain name -> its bundle catalog VARIABLE (variables/medallion.yml, overridden
-# per target in targets/<t>.yml) and whether bootstrap provisions the edge-lane
-# Auto Loader landing + export volumes (customer_sales' python-file/notebook lanes).
+# per target in targets/<t>.yml) and, when bootstrap provisions the edge-lane
+# Auto Loader landing + export volumes, the VOLUME NAME to create ("edge_volume").
+# The volume name must match the volume segment of the domain's landing/export
+# path variables (/Volumes/<catalog>/landing/<edge_volume>/...) — bootstrap used
+# to hardcode `sales` while the adopter scaffold wrote `<catalog>` paths, so a
+# fresh adopter's first `make run` failed on a missing volume. Now both sides
+# read this one field. This repo's live volumes are named `sales`
+# (var.sales_landing_path / var.sales_export_path); adopters get `<catalog>`.
 DOMAINS: dict[str, dict] = {
-    "customer_sales": {"catalog_var": "catalog", "edge_volumes": True},
-    "sales": {"catalog_var": "sales_catalog", "edge_volumes": False},
+    "customer_sales": {"catalog_var": "catalog", "edge_volume": "sales"},
+    "sales": {"catalog_var": "sales_catalog", "edge_volume": None},
 }
 
 # Every domain catalog gets this schema/volume holding the datalab FRAMEWORK
@@ -64,9 +70,11 @@ def _target_variables(target: str) -> dict[str, str]:
     return (data.get("targets") or {}).get(target, {}).get("variables") or {}
 
 
-def catalogs(target: str) -> list[tuple[str, bool]]:
-    """``[(catalog, edge_volumes), ...]`` for every domain on ``target`` —
-    the per-target value from targets/<t>.yml, else the medallion.yml default."""
+def catalogs(target: str) -> list[tuple[str, str | None]]:
+    """``[(catalog, edge_volume_name_or_None), ...]`` for every domain on
+    ``target`` — the per-target value from targets/<t>.yml, else the
+    medallion.yml default. A non-None edge volume name means bootstrap creates
+    the ``landing``/``exports`` volumes under that name in the catalog."""
     defaults = _variable_defaults()
     overrides = _target_variables(target)
     resolved = []
@@ -79,7 +87,7 @@ def catalogs(target: str) -> list[tuple[str, bool]]:
                 f"{target!r} (checked targets/{target}.yml and variables/medallion.yml) — "
                 "fix the bundle files or scripts/domains.py DOMAINS"
             )
-        resolved.append((catalog, spec["edge_volumes"]))
+        resolved.append((catalog, spec["edge_volume"]))
     return resolved
 
 
@@ -135,7 +143,7 @@ def main() -> int:
         resolved = catalogs(target)
         who = groups(target)
         pretty = ", ".join(
-            f"{domain}->{catalog}{' (+edge volumes)' if edge else ''}"
+            f"{domain}->{catalog}{f' (+edge volumes: {edge})' if edge else ''}"
             for domain, (catalog, edge) in zip(DOMAINS, resolved, strict=True)
         )
         print(f"{target}: {pretty}; reader={who['reader']!r} engineer={who['engineer']!r}")

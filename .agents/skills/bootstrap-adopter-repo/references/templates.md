@@ -274,7 +274,7 @@ multi-domain reference repo).
 # KEEP IN LOCKSTEP: the `datalab` git tag below and var.datalab_version.
 
 [build-system]
-requires      = ["hatchling>=1.27"]
+requires      = ["hatchling>=1.31.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -406,6 +406,18 @@ pivot). Only change the group-name defaults and per-target overrides:
 - in `targets.stage.variables` / `targets.prod.variables`, set the stage/prod
   group names (and prod read levels) for the customer.
 
+### `sample_data/landing/<catalog>/events/events.json`
+
+Starter sample landing data — `make run-local` reads it (the Makefile's
+`LOCAL_LANDING` points here), and uploading it to the landing volume proves the
+first dev refresh (`docs/NEW_ADOPTER.md` step 9):
+
+```json
+{"event_id": "e-0001", "event_type": "signup", "user_id": "u-001", "ts": "2026-01-15T09:30:00Z"}
+{"event_id": "e-0002", "event_type": "login", "user_id": "u-001", "ts": "2026-01-16T08:02:11Z"}
+{"event_id": "e-0003", "event_type": "purchase", "user_id": "u-002", "ts": "2026-01-16T12:44:03Z"}
+```
+
 ---
 
 ## Files to EDIT in place (not full rewrites)
@@ -420,22 +432,31 @@ pivot). Only change the group-name defaults and per-target overrides:
 - `LOCAL_LANDING ?= $(CURDIR)/sample_data/landing/<catalog>/events`
 - in `spec-local`, the `--conf datalab.sales_landing_path=...` → `--conf datalab.landing_path=file://$(LOCAL_LANDING)`
 - `CONNECT_CONFIG ?= config/<catalog>` and `CONNECT_DOMAIN ?= .`
-- `CONFIG_DIRS` already picks up the root `config/` — leave it (or simplify to `CONFIG_DIRS := config`).
+- `CONFIG_DIRS := config` (drop the `projects/*/config` wildcard + its comment),
+  and the `lint:` help comment → "Ruff lint over scripts/ and src/".
+- DELETE the `design:` target (and `design` from `.PHONY`) — `design/` does not
+  exist in an adopter. Also delete `scripts/export_design.py` and the
+  `maintain-design-diagram` skill from BOTH `.agents/skills/` and
+  `.claude/skills/` (both, or `make check-skills` fails on mirror drift).
 
 ### `scripts/domains.py`
 
 The domain registry — the ONE place listing the repo's domains. Per-target
 catalogs and groups are RESOLVED from `variables/` + `targets/` + `rbac.yml`,
-so this is the only registry edit:
+so this is the only registry edit. `edge_volume` NAMES the `landing`/`exports`
+UC volume bootstrap creates — it MUST equal the volume segment of
+`var.landing_path` (`/Volumes/${var.catalog}/landing/<catalog>/events/` above),
+or the first `make run` fails on a volume that was never provisioned:
 
 ```python
 DOMAINS: dict[str, dict] = {
-    "<catalog>": {"catalog_var": "catalog", "edge_volumes": True},
+    "<catalog>": {"catalog_var": "catalog", "edge_volume": "<catalog>"},
 }
 ```
 
 `scripts/bootstrap_uc.py` and `scripts/publish_wheel.py` need no
-catalog/group edits — they resolve through `domains.py`.
+catalog/group/volume edits — they resolve through `domains.py` (the ONLY
+bootstrap_uc.py change is the `DEPLOY_SP` constant, below).
 
 ### `scripts/bootstrap_uc.py`
 
@@ -487,10 +508,27 @@ the rest. `make check-sync-lists` enforces the alignment.
 
 ### `README.md`, `CHANGELOG.md`
 
-Rewrite `README.md` for the customer (title, intro, the `make run <catalog>_etl`
-quick start; drop the `projects/customer_sales` + `projects/sales` references).
-Reset `CHANGELOG.md`. The `docs/` are reusable framework guidance — keep them,
-but fix repo-specific references (workspace host, any `projects/...` paths).
+Rewrite `README.md` for the customer: title, intro, the quick start (`make lock
+install`, `make enable-githooks`, the gates) and a first-deploy block that
+points at `docs/NEW_ADOPTER.md` and carries `PROFILE=<cli-profile>` on BOTH
+`make bootstrap-uc` and `make publish-wheel` (`make run PIPELINE=<catalog>_etl`
+— `run` reads the `PIPELINE` variable, it takes no positional argument). Drop
+the `projects/customer_sales` + `projects/sales` references. Reset
+`CHANGELOG.md`. The `docs/` are reusable framework guidance — keep them, but
+fix repo-specific references (workspace host, any `projects/...` paths).
+
+### `AGENTS.md`
+
+The document of record — CLAUDE.md auto-loads it, so it must not describe the
+template's `projects/` + `design/` + `omnigent/` layout the conversion deleted.
+The engine (`patch_agents_md`) swaps every region fenced with
+`<!-- template-only:<name> start/end -->` markers for adopter text (root-level
+layout, `<catalog>_etl` architecture), re-points example file paths at "the
+template repo's `projects/...`", and fails if any dead reference survives.
+Manual fallback: delete each fenced region, write the adopter equivalent
+(layout + architecture for YOUR domain), and verify
+`grep -n "projects/\|design/\|omnigent" AGENTS.md | grep -v "template repo"`
+comes back empty.
 
 ### `.mcp.json` and `.cursor/mcp.json` (the MCP grounding config)
 

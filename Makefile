@@ -251,13 +251,15 @@ commit-protected:  ## Commit staged changes past the protected-files guard (make
 # CATALOG must be the BASE catalog name — no _dev/_stage/_prod suffix (the bundle
 # appends those per target; the engine rejects a suffixed name). docs/ADOPTING.md.
 
-# configure-adopter: convert THIS clone (made from the GitHub template) in place,
-# PROMPTING for + confirming every workspace value. This is the path the
-# bootstrap-adopter-repo skill drives. Prefill any value to skip its prompt
-# (e.g. CATALOG=acme). --no-project: the script is stdlib-only, so it runs before
-# `make install` and without touching the (still reference) project env.
-configure-adopter:  ## Configure THIS template clone in place into an adopter (interactive; prefill CATALOG=, HOST=, WAREHOUSE_ID=, MCP_PROFILE=, *_GROUP=, DEPLOY_SP=)
-	$(UV) run --no-project python scripts/scaffold_adopter.py --in-place --interactive \
+# configure-adopter: convert THIS clone (made from the GitHub template) in place.
+# Interactive by default: prompts ONLY for catalog + host (a prefilled value
+# skips its prompt), everything else defaults with a printed fill-before-deploy
+# TODO list. YES=1 skips all prompts + the confirm (requires CATALOG=) for
+# scripted use. This is the path the bootstrap-adopter-repo skill drives.
+# --no-project: the script is stdlib-only, so it runs before `make install` and
+# without touching the (still reference) project env.
+configure-adopter:  ## Configure THIS template clone in place into an adopter (prompts for catalog+host only; prefill CATALOG=, HOST=, ...; YES=1 for non-interactive)
+	$(UV) run --no-project python scripts/scaffold_adopter.py --in-place $(if $(YES),--yes,--interactive) \
 		$(if $(CATALOG),--catalog $(CATALOG),) \
 		$(if $(HOST),--host $(HOST),) \
 		$(if $(WAREHOUSE_ID),--warehouse-id $(WAREHOUSE_ID),) \
@@ -272,12 +274,15 @@ configure-adopter:  ## Configure THIS template clone in place into an adopter (i
 # git-TRACKED files — no secrets/state). Required: CATALOG=<name> OUT=<dir>.
 # Optional: HOST=, WAREHOUSE_ID=, MCP_PROFILE=, DEPLOY_SP=, READER_GROUP=,
 # ENGINEER_GROUP=, ADMIN_GROUP=, FRAMEWORK_TAG=, FORCE=1.
+# --no-project (same as configure-adopter): the script is stdlib-only, so this
+# must not sync the project env — that would demand read access to the private
+# framework repo before the newcomer's first command can even run.
 new-adopter:  ## Generate a new adopter repo in a sibling dir (CATALOG=<name> OUT=<dir>; optional HOST=, WAREHOUSE_ID=, MCP_PROFILE=, DEPLOY_SP=, *_GROUP=, FORCE=1)
 	@if [ -z "$(CATALOG)" ] || [ -z "$(OUT)" ]; then \
 		echo "ERROR: pass CATALOG and OUT:  make new-adopter CATALOG=acme OUT=../acme-datalab"; \
 		exit 1; \
 	fi
-	$(UV) run python scripts/scaffold_adopter.py --catalog $(CATALOG) --out $(OUT) \
+	$(UV) run --no-project python scripts/scaffold_adopter.py --catalog $(CATALOG) --out $(OUT) \
 		$(if $(HOST),--host $(HOST),) \
 		$(if $(WAREHOUSE_ID),--warehouse-id $(WAREHOUSE_ID),) \
 		$(if $(MCP_PROFILE),--mcp-profile $(MCP_PROFILE),) \

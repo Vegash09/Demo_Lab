@@ -2,10 +2,12 @@
 
 This is the repo/bundle/framework-consumption setup the old monorepo used to
 hide. It covers standing up a **repo** on the framework — pinning the framework,
-publishing its wheel, provisioning Unity Catalog, and laying out a domain. To
-author your first **table** once the repo stands, follow
-[GETTING_STARTED.md](GETTING_STARTED.md); this doc wires your repo to the
-framework.
+publishing its wheel, provisioning Unity Catalog, and laying out a domain.
+
+> **Just want the ordered checklist?** [NEW_ADOPTER.md](NEW_ADOPTER.md) is the
+> step-by-step path (prerequisites → generate → convert → wire → deploy) — this
+> doc is the *reference* behind it. To author your first **table** once the
+> repo stands, follow [GETTING_STARTED.md](GETTING_STARTED.md).
 
 ## Quick start: stand up a new customer repo
 
@@ -27,15 +29,17 @@ engine rejects a suffixed name.
 
 **Option A — GitHub template + `make configure-adopter` (convert in place).** This
 repo is a **GitHub template repository**; generate from it, then convert the clone
-in place. `configure-adopter` PROMPTS for and confirms every workspace value
-(catalog, host, SQL warehouse id, MCP CLI profile, RBAC groups, deploy SP,
-framework tag) before writing — or let the `bootstrap-adopter-repo` skill drive it
-with values you gather from the user:
+in place. `configure-adopter` prompts for the two irreducible values — catalog and
+host — confirms a summary, and defaults everything else (warehouse id, MCP CLI
+profile, RBAC groups, deploy SP, framework tag), printing the placeholders you
+left as fill-before-deploy TODOs. Prefill any value to skip its prompt; `YES=1`
+(with `CATALOG=`) runs it fully non-interactive — or let the
+`bootstrap-adopter-repo` skill drive it:
 
 ```bash
-gh repo create <owner>/<customer>-datalab --template <owner>/datalab --private --clone ../<customer>-datalab
-cd ../<customer>-datalab
-make configure-adopter             # interactive; prefill any value, e.g. CATALOG=<catalog> WAREHOUSE_ID=<id>
+gh repo create <owner>/<customer>-datalab --template <owner>/datalab --private --clone
+cd <customer>-datalab                  # --clone is a boolean flag: it clones into ./<customer>-datalab
+make configure-adopter             # prompts: catalog + host; prefill any value, e.g. CATALOG=<catalog> WAREHOUSE_ID=<id>
 make lock install && make validate-configs lint test
 ```
 
@@ -70,63 +74,19 @@ things to know up front:
 
 ## Adopter onboarding checklist
 
-Copy this into the tracking issue for a new repo and fill the blanks. It covers
-both the generator inputs and the post-generation environment facts the generator
-cannot fill (those are the real gaps a first-timer hits). Step details are in the
-sections below.
+Moved: **[NEW_ADOPTER.md](NEW_ADOPTER.md)** is the single ordered checklist
+(prerequisites with who-provides-what, one command per step, success signals,
+failure pointers). This doc used to carry a second copy; two competing
+checklists is how first-timers got lost. Everything below is the *reference*
+the checklist links into.
 
-**Values to decide first**
-
-| Value | Used for | Default / where |
-|---|---|---|
-| `<catalog>` | package `<catalog>_etl`, pipeline, folders, catalog name (lowercase, **base name — no `_dev`/`_stage`/`_prod`**) | — (required) |
-| `<owner>/<repo>` | the new GitHub repo (any org you can push to) | — (required) |
-| `<host>` (+ stage/prod hosts if different) | Databricks workspace URL per target | — (one host fills all three targets) |
-| `<deploy-sp-app-id>` | CI/CD deploy service-principal application id (OIDC → Databricks) | — |
-| `<reader>/<engineer>/<admin>` groups | RBAC + UC grants | default `<catalog>_readers/_engineers/_admins` |
-| `<framework-tag>` | the `datalab` framework release to pin | default: this template's current pin |
-| `<warehouse-id>`, `<cli-profile>` | one-time UC bootstrap **and** the read-only MCP grounding config (`.mcp.json` / `.cursor/mcp.json`) | profile default `<catalog>_dev` |
-| framework read-access credential | how this repo's CI **and** your devs clone the private framework | GitHub App (default) / PAT / vendored wheel |
-
-**Steps**
-
-- [ ] **0. Prereqs** — read access to `dediggibyte/datalab-framework`; a Databricks
-  workspace + a deploy SP; `gh` + `databricks` CLI authenticated; `uv`; Java 17+.
-- [ ] **1. Configure** — in a template clone, `make configure-adopter` (interactive:
-  prompts for catalog, host, warehouse id, MCP profile, groups, deploy SP,
-  framework tag), OR a fresh sibling with `make new-adopter CATALOG=<catalog>
-  OUT=../<catalog>-datalab HOST=<host> WAREHOUSE_ID=<warehouse-id>
-  DEPLOY_SP=<deploy-sp-app-id>` (add `MCP_PROFILE=` / `*_GROUP=` / `FRAMEWORK_TAG=`
-  to override defaults). Blank `HOST`/`DEPLOY_SP`/`WAREHOUSE_ID` become
-  clearly-marked placeholders — fill them before deploy.
-- [ ] **2. Local gates** — `make lock install && make validate-configs lint test`
-  (sibling repos: `cd ../<catalog>-datalab && git init -b main` first). *(`make lock
-  install` clones the private framework — your machine needs framework read access;
-  see below.)*
-- [ ] **3. Stage/prod hosts** — if stage/prod are **different** workspaces, edit
-  `targets/stage.yml` / `targets/prod.yml` (the generator writes one `--host` into
-  all three).
-- [ ] **4. Create the GitHub repo** — `gh repo create <owner>/<repo> --source=.
-  --private --push` (or generate from the template in the target org).
-- [ ] **5. Framework access for CI** — set two **repo-/org-level** (NOT
-  per-environment) entries from the shared **datalab-framework reader GitHub App**
-  (installed on `dediggibyte/datalab-framework`): the `DATALAB_FRAMEWORK_APP_CLIENT_ID`
-  **variable** and the `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` **secret**. See below.
-- [ ] **6. Databricks auth (OIDC)** — GitHub Environments `dev`/`stage`/`prod` with
-  `DATABRICKS_HOST` + `DATABRICKS_CLIENT_ID`; an OIDC federation policy on the SP
-  with subject `repo:<owner>/<repo>:environment:<target>` (one per target).
-- [ ] **7. UC bootstrap** — create the persona groups at **ACCOUNT** level
-  (`databricks account groups create --profile <account-profile>`; a workspace
-  group created with `databricks groups create` is INVISIBLE to Unity Catalog and
-  every GRANT fails `PRINCIPAL_DOES_NOT_EXIST`), assign them to the workspace with
-  `databricks account workspace-assignment update`, then `make bootstrap-uc
-  TARGET=dev WAREHOUSE_ID=<warehouse-id> PROFILE=<cli-profile>` (`SKIP_CATALOGS=1`
-  if catalogs exist or the metastore uses Default Storage).
-- [ ] **8. Publish the framework wheel** — `make publish-wheel TARGET=dev APPLY=1`
-  (uploads into `<catalog>.artifacts.wheels`).
-- [ ] **9. Deploy + run** — `make deploy && make run`; confirm `bronze.events_raw`
-  materializes.
-- [ ] **10. Extend** — add real tables with the `author-ldp-artifact` skill.
+Two checklist steps worth restating here because they are pure environment
+facts the generator cannot fill: if stage/prod are **different** workspaces,
+edit `targets/stage.yml` / `targets/prod.yml` (the generator writes one host
+into all three targets); and on Option B (`make new-adopter` into a sibling
+dir) the repo does not exist on GitHub yet — publish it with `gh repo create
+<owner>/<repo> --source=. --private --push` (Option A's template generation
+already created it).
 
 ## What this is / how the pieces relate
 
@@ -261,7 +221,7 @@ Two places must reference the **same** framework release — keep them in lockst
 
    ```toml
    [tool.uv.sources]
-   datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v0.9.0" }
+   datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v<x.y.z>" }
    ```
 
    (`datalab` is listed under `[dependency-groups].dev`; the root project itself
@@ -271,8 +231,11 @@ Two places must reference the **same** framework release — keep them in lockst
 
    ```yaml
    datalab_version:
-     default: "0.9.0"        # → datalab-0.9.0-py3-none-any.whl on each project catalog's artifacts.wheels volume
+     default: "<x.y.z>"      # → datalab-<x.y.z>-py3-none-any.whl on each project catalog's artifacts.wheels volume
    ```
+
+   (Placeholders on purpose — the real value is whatever `pyproject.toml`
+   currently pins; a literal example here would drift every release.)
 
 `var.datalab_wheel` derives the full path from `var.catalog` +
 `var.datalab_version`, so you never hand-write the wheel path (this repo's second
@@ -291,9 +254,13 @@ wheel rides in the same catalog as the domain it serves, not a separate shared
 catalog):
 
 ```bash
-make publish-wheel TARGET=dev            # dry run — builds + prints what it would upload
-make publish-wheel TARGET=dev APPLY=1    # actually uploads into each project catalog's volume
+make publish-wheel TARGET=dev                                  # dry run — builds + prints what it would upload
+make publish-wheel TARGET=dev APPLY=1 PROFILE=<cli-profile>    # actually uploads into each project catalog's volume
 ```
+
+`PROFILE=` picks the workspace, exactly as for `bootstrap-uc` below — without it
+the SDK uses your DEFAULT CLI profile, and a wrong default silently uploads the
+wheel into another workspace's catalog (the pipeline then fails at env install).
 
 **Ordering constraint:** the wheel the version references must exist in the
 project catalog's `artifacts.wheels` volume **before** any pipeline first runs
@@ -335,10 +302,17 @@ Per-target catalogs and groups are RESOLVED from `variables/`, `targets/` and
 `rbac.yml` through `scripts/domains.py` — there are no `CATALOGS`/`GROUPS` dicts to
 keep in sync (they were removed when the registry landed) (see AGENTS.md "Change access").
 
-## Lay out / copy a reference domain
+## Adding a SECOND domain to THIS reference repo (not an adopter task)
 
-Copy a reference domain to your repo **root** and rename every `customer_sales`
-token to your catalog name. Two starting points:
+> **Adopters: this section is not for you.** A generated adopter repo is
+> single-domain by design — the scaffold already wrote your root-level domain,
+> and its `pyproject.toml` is a single package with **no `[tool.uv.workspace]`
+> block**. Hand-copying a reference domain into an adopter is exactly the
+> drift the scaffold exists to prevent. This section documents how a new
+> domain is added to the multi-domain **template** repo itself.
+
+Copy a reference domain and rename every `customer_sales`
+token to the new catalog name. Two starting points:
 
 - `projects/customer_sales/` — the **full** adoption: pipeline + edge jobs +
   triage notebook + tests + ABAC SQL.
@@ -413,7 +387,7 @@ project catalog's `artifacts.wheels` volume.
 One command performs the whole lockstep:
 
 ```bash
-make bump-framework VERSION=0.7.0
+make bump-framework VERSION=<x.y.z>
 ```
 
 It rewrites the git **tag** in `pyproject.toml` `[tool.uv.sources] datalab` and
@@ -458,8 +432,11 @@ data in a Unity Catalog metastore", but the error says nothing about scope, so i
 reads like a typo. Create them at account level and assign to the workspace:
 
 ```bash
-databricks account groups create --display-name <catalog>_readers   --profile <account-profile>
-databricks account workspace-assignment update --profile <account-profile> ...
+# once per group (readers / engineers / admins):
+databricks account groups create --display-name <catalog>_readers --profile <account-profile>
+# then assign each group to the workspace (group ids: `databricks account groups list`):
+databricks account workspace-assignment update <workspace-id> <group-id> \
+    --json '{"permissions": ["USER"]}' --profile <account-profile>
 ```
 
 Account-level commands need an account profile (host = the account console URL +

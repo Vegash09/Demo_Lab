@@ -23,10 +23,12 @@ versioned **UC-Volume wheel** (serverless) this repo builds + publishes on deplo
 > your repo to the framework; **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**
 > authors your first table.
 >
-> Standing up a repo for **another customer**? This repo is a **GitHub template
-> repository** — generate from it and run the `bootstrap-adopter-repo` skill to
-> convert the clone into a minimal, root-level single-domain adopter repo
-> ([docs/ADOPTING.md](docs/ADOPTING.md#quick-start-generate-from-the-template)).
+> Standing up a repo for **another customer**? Follow the ordered checklist in
+> **[docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md)** — generate from this **GitHub
+> template repository**, then `make configure-adopter` (or let the
+> `bootstrap-adopter-repo` skill drive it) converts the clone into a minimal,
+> root-level single-domain adopter repo. Reference for what the conversion
+> does: [docs/ADOPTING.md](docs/ADOPTING.md).
 
 ## Architecture at a glance
 
@@ -87,7 +89,8 @@ flowchart TD
 
 | Doc | Read it when |
 |---|---|
-| [docs/ADOPTING.md](docs/ADOPTING.md) | you are standing up your own repo on the framework: the two consumption paths (git dep + UC-Volume wheel), pinning + publishing the framework version, UC bootstrap, copying a reference domain |
+| [docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md) | you are standing up a repo for a NEW customer — the one ordered checklist: prerequisites, generate + convert, GitHub/OIDC wiring, bootstrap, first deploy |
+| [docs/ADOPTING.md](docs/ADOPTING.md) | you need the reference behind that checklist: the two consumption paths (git dep + UC-Volume wheel), framework credentials, pinning + publishing, UC bootstrap, first-deploy traps |
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | you are authoring your first table on the framework — empty folder → deployed pipeline |
 | [framework repo: docs/FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) | you are adding a table or domain: artifact schema, generated graph, target kinds, data-quality semantics, the SDP capability matrix — the reusable framework's reference (separate repo) |
 | [docs/NAMING.md](docs/NAMING.md) | you are naming anything: folder paths mirror the UC namespace (catalog → schema → table), package/resource naming rules |
@@ -158,8 +161,8 @@ flowchart LR
 ```
 
 Adding your own table is one artifact + (rarely) one pure `@transform`
-function — the walkthrough is in
-[docs/FRAMEWORK.md](docs/FRAMEWORK.md#add-a-table--one-artifact);
+function — the walkthrough is in the framework repo's
+[docs/FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md);
 [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) takes a brand-new domain
 from empty folder to deployed pipeline.
 

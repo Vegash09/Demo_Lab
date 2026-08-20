@@ -97,8 +97,8 @@ Resolve this repo's slug from `git remote -v` (the `origin` `<owner>/<repo>`),
 then create + clone the new repo as a sibling:
 
 ```bash
-gh repo create <owner>/<customer-repo> --template <owner>/<this-repo> --private --clone ../<customer-repo>
-cd ../<customer-repo>
+gh repo create <owner>/<customer-repo> --template <owner>/<this-repo> --private --clone
+cd <customer-repo>    # --clone is a boolean flag: it clones into ./<customer-repo>, it takes no path
 ```
 
 (Or GitHub UI: "Use this template" → "Create a new repository", then clone.)
@@ -109,26 +109,32 @@ If this repo is not yet flagged as a template, enable it once (repo admin):
 
 ## 3. Configure the clone (run the deterministic configurator)
 
-Copy this checklist and track it:
+Copy this checklist and track it (it is steps 1–10 of `docs/NEW_ADOPTER.md`
+compressed — that doc is the canonical ordered sequence with success signals
+and failure pointers; keep the user pointed at it for everything you don't do
+for them):
 
 ```
-- [ ] 2. Generated + cloned the new repo; cd into it
-- [ ] 3. Ran the configurator — root domain + repo files + MCP all rewired
-- [ ] 4. make lock + the local gates pass
-- [ ] 5. CI/CD secrets + UC bootstrap + first deploy
-- [ ] 6. Handed off to author-ldp-artifact for real tables
+- [ ] 2. Generated + cloned the new repo; cd into it        (NEW_ADOPTER.md 1)
+- [ ] 3. Ran the configurator — domain + repo files + MCP   (NEW_ADOPTER.md 2)
+- [ ] 4. make lock + the local gates pass                   (NEW_ADOPTER.md 3)
+- [ ] 5. GitHub wiring · account groups · bootstrap · first deploy (NEW_ADOPTER.md 4-9)
+- [ ] 6. Handed off to author-ldp-artifact for real tables  (NEW_ADOPTER.md 10)
 ```
 
 Run it **from inside the clone** — two equivalent ways:
 
-**Interactive (a human at a terminal).** Prompts for every value from step 1,
-prints a summary, and asks to confirm before writing:
+**Interactive (a human at a terminal).** Prompts ONLY for catalog + host (a
+prefilled value skips its prompt), defaults everything else, prints a summary
+to confirm, and lists leftover placeholders as fill-before-deploy TODOs:
 
 ```bash
 make configure-adopter
-# prefill any value to skip its prompt:
+# prefill any value (skips its prompt / overrides its default):
 make configure-adopter CATALOG=<catalog> HOST=https://<workspace> \
     WAREHOUSE_ID=<warehouse-id> MCP_PROFILE=<catalog>_dev DEPLOY_SP=<app-id>
+# fully scripted (no prompts at all; CATALOG= required):
+make configure-adopter YES=1 CATALOG=<catalog> HOST=https://<workspace>
 ```
 
 **Non-interactive (you, an agent, applying values you already gathered +
@@ -196,18 +202,27 @@ framework repo" for the cross-org credential). In the new repo:
   do this: it federates Actions to Databricks, not to GitHub, so it can't grant
   read on another private repo. Cross-org alternatives (PAT / GitHub App /
   vendored wheel) are in `docs/ADOPTING.md`.
-- **GitHub Environments** `dev` / `stage` / `prod` with secrets
+- **GitHub Environments** `dev` / `stage` / `prod` with **secrets** (not
+  variables — set as variables the deploy skips with a green run)
   `DATABRICKS_HOST` + `DATABRICKS_CLIENT_ID` (Databricks auth only).
-- **OIDC federation** on the deploy SP: subject
-  `repo:<owner>/<customer-repo>:environment:<target>`, audience
-  `<host>/oidc/v1/token`.
+- **OIDC federation** on the deploy SP (its NUMERIC account id, not the app
+  id): subject `repo:<owner>/<customer-repo>:environment:<target>`, audience
+  `<DATABRICKS_ACCOUNT_ID>` — the account id, per the policy JSON in
+  `docs/CICD.md` (a wrong audience surfaces as TOKEN_INVALID at first deploy).
+- **Account-level persona groups BEFORE bootstrap** (`docs/NEW_ADOPTER.md`
+  step 5): `databricks account groups create` + `databricks account
+  workspace-assignment update` per group — a group made with plain
+  `databricks groups create` is invisible to Unity Catalog and every GRANT
+  fails `PRINCIPAL_DOES_NOT_EXIST`.
 - **First deploy:**
 
 ```bash
+databricks auth login --host <host> --profile <cli-profile>           # creates the CLI profile used below
 make bootstrap-uc TARGET=dev WAREHOUSE_ID=<warehouse-id> PROFILE=<cli-profile>  # catalog/schemas/volumes/grants
-make publish-wheel TARGET=dev APPLY=1                                 # framework wheel → this catalog's volume
+make publish-wheel TARGET=dev APPLY=1 PROFILE=<cli-profile>           # framework wheel → this catalog's volume
 make deploy                                                          # bundle deploy -t dev
 make run                                                             # refresh the pipeline
+git add -A && git commit -m "configure adopter" && git push          # CI needs the regenerated uv.lock
 ```
 
 (`<warehouse-id>` / `<cli-profile>` are the same values from step 1 — already
@@ -233,6 +248,11 @@ case the YAML cannot express, use **`author-sdp-pipeline`**; for deploy issues,
   name), and `.mcp.json` / `.cursor/mcp.json` reference the customer's warehouse +
   profile — `rg -n "diggi_dev_aws|c1cdbe2406e5cf04" .mcp.json .cursor/mcp.json` is
   clean.
-- No `customer_sales` / `sales` / `projects/` references remain
-  (`rg -n "customer_sales|projects/" --glob '!docs/**'` is clean or only hits
-  intentional doc text).
+- The DEPLOYED surfaces carry no template identity:
+  `rg -n "customer_sales|diggi_dev_aws|c1cdbe2406e5cf04" config src resources
+  variables targets rbac.yml databricks.yml Makefile pyproject.toml README.md`
+  is clean. (Do NOT grep the whole repo: `scripts/`, the retained skills and
+  hook files legitimately mention template names in docstrings/regexes.)
+- `AGENTS.md` describes THIS repo, not the template:
+  `rg -n "projects/|design/|omnigent" AGENTS.md Makefile databricks.yml
+  .databricksignore | rg -v "template repo"` is empty.

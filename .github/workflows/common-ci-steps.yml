@@ -248,3 +248,30 @@ jobs:
           make check-lockstep
           make check-domains
           make check-sync-lists
+
+      - name: Assert adopter invariants (landing-volume contract, AGENTS.md conversion)
+        working-directory: ${{ runner.temp }}/acme-datalab
+        run: |
+          set -euo pipefail
+          # 1. The landing volume bootstrap creates must be the one landing_path reads
+          #    (the volume segment of /Volumes/<catalog>/landing/<VOLUME>/...).
+          uv run python scripts/bootstrap_uc.py --target dev | grep -F 'CREATE VOLUME IF NOT EXISTS `acme`.`landing`.`acme`' \
+            || { echo "::error::bootstrap_uc does not create the volume var.landing_path points at (landing.acme)"; exit 1; }
+          grep -F '/Volumes/${var.catalog}/landing/acme/events/' variables/medallion.yml \
+            || { echo "::error::var.landing_path does not follow the landing/<catalog>/ contract"; exit 1; }
+          # 2. AGENTS.md (auto-loaded by CLAUDE.md) and the operational surfaces
+          #    must describe the ADOPTER repo — no reference to the deleted
+          #    projects/ design/ omnigent/ material except lines explicitly
+          #    naming the template repo.
+          if grep -n "projects/\|design/\|omnigent\|make design" AGENTS.md Makefile databricks.yml .databricksignore | grep -v "template repo"; then
+            echo "::error::template-only references survived the conversion"; exit 1
+          fi
+          # 3. Deployed surfaces carry no template identity.
+          if grep -rn "customer_sales\|diggi_dev_aws\|c1cdbe2406e5cf04" config src resources variables targets rbac.yml databricks.yml pyproject.toml README.md; then
+            echo "::error::template identity leaked into a deployed surface"; exit 1
+          fi
+          # 4. The starter sample data + no dead design target.
+          test -f sample_data/landing/acme/events/events.json
+          if grep -qE '^design:' Makefile; then
+            echo "::error::the design target survived into the adopter Makefile"; exit 1
+          fi

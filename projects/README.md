@@ -47,7 +47,10 @@ token to your catalog name:
 | `tests/` | `tests/` | the domain's own unit + contract tests |
 | `sql/abac/` | `sql/abac/` | display-only row-filter/column-mask SQL (admin-applied, never run by CI) |
 
-The two places an adopter wires a new domain up outside the copied folder:
+The two places THIS repo wires a reference domain up outside the copied folder
+(note: a GENERATED adopter repo is single-domain with a single-package
+`pyproject.toml` — it has **no `[tool.uv.workspace]` block**; the workspace
+mechanism below is for the multi-domain reference repo only):
 
 1. `pyproject.toml` → register the domain as a `[tool.uv.workspace]` member, so
    it builds its own `<catalog>_etl` wheel for the pipeline/job environments.

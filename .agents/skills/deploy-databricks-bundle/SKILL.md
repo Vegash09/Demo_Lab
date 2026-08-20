@@ -55,9 +55,11 @@ databricks pipelines list-pipelines | head
 CD authenticates with OIDC (no client secret stored). One-time setup per
 target (full walkthrough: `docs/CICD.md`):
 
-1. On the deploy service principal, add a federation policy:
+1. On the deploy service principal (its NUMERIC account id), add a federation
+   policy:
    - issuer: `https://token.actions.githubusercontent.com`
-   - audience: `<DATABRICKS_HOST>/oidc/v1/token`
+   - audience: `<DATABRICKS_ACCOUNT_ID>` (the account id — Databricks' default
+     and recommendation; a host-URL audience fails with TOKEN_INVALID)
    - subject: `repo:<owner>/<repo>:environment:<target>` (env-style because
      the CI/CD jobs declare `environment: <target>`)
 2. Create the GitHub Environment named `<target>` with secrets

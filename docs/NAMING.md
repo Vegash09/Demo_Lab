@@ -141,17 +141,18 @@ rebuild). Schedule it deliberately in stage/prod; dev just re-runs. The dqx
 `run_id` evidence string also changes (it embeds the domain name) — cosmetic,
 but quarantine dashboards filtering on it should be updated.
 
-## Adopter checklist
+## Naming a new domain (rules recap)
 
-Starting a new domain (full walkthrough: `docs/GETTING_STARTED.md`):
+This section is naming RULES only — the procedures live elsewhere: standing up
+a **new adopter repo** is `docs/NEW_ADOPTER.md` (the scaffold applies these
+rules for you); adding a domain to **this reference repo** is
+`docs/ADOPTING.md` → "Adding a SECOND domain". Either way one rule carries
+everywhere — the BASE catalog name:
 
-1. Pick the base catalog name, e.g. `finance` (dev catalog `finance`,
-   stage/prod `finance_stage`/`finance_prod`).
-2. Copy `projects/customer_sales/` and rename every `customer_sales` token:
-   `config/finance/`, `src/finance_etl/`, `src/jobs/finance/`,
-   `notebooks/finance/`, `resources/finance_*.yml`, registry keys
-   `finance.*`, resources `finance_etl` / `finance_<purpose>`.
-3. Set `domain: finance` + `imports: [finance_etl...]` in `domain.yml`; register
-   `finance` as a `[tool.uv.workspace]` member (its own `pyproject.toml` packages
-   `src/finance_etl`); point `datalab.config_dir` at `.../config/finance`.
-4. `make validate-configs lint test validate` — the same gate CI runs.
+1. Base catalog name, e.g. `finance` — lowercase, **no**
+   `_dev`/`_stage`/`_prod` suffix (dev catalog `finance`; stage/prod
+   `finance_stage`/`finance_prod` come from bundle variables per target).
+2. Folders carry it: `config/finance/<schema>/<table>.yml`,
+   `src/finance_etl/`, `src/jobs/finance/`, `notebooks/finance/`.
+3. Resources carry it: pipeline `finance_etl`, jobs `finance_<purpose>`,
+   registry keys `finance.*`.
