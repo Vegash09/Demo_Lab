@@ -1,9 +1,13 @@
 name: "PR · template check"
 
-# Path-independent enforcement of the single unified PR format. Runs on every
-# PR regardless of how it was created (web UI, `gh pr create`, REST API). The
+# Path-independent enforcement of the PR-format contracts. Runs on every PR
+# regardless of how it was created (web UI, `gh pr create`, REST API). The
 # agent hooks (.cursor/hooks.json, .claude/settings.json) catch the CLI path
-# earlier; this is the backstop that guarantees one format for ALL PRs.
+# earlier; this is the backstop. Human/agent PRs must carry the single
+# unified template. Dependabot PRs CANNOT (GitHub generates their bodies
+# server-side, ignoring .github/pull_request_template.md), so they are held
+# to a separate verifiable bot contract below — never a silent skip. Any
+# other bot author fails closed.
 #
 # Escape hatch for genuine exceptions: add the label `override-pr-template`
 # to the PR.
@@ -30,6 +34,44 @@ jobs:
 
             if (labels.includes("override-pr-template")) {
               core.notice("`override-pr-template` label present — skipping the template check.");
+              return;
+            }
+
+            // Bot contracts. Dependabot bodies are generated server-side and
+            // cannot carry the template, so dependabot gets a DIFFERENT
+            // verifiable contract instead of an exemption (AGENTS.md gate
+            // philosophy: a gate must always answer, never warn-and-skip).
+            // github-actions[bot] (framework-bump) writes a fully compliant
+            // body, so it falls through to the template check like a human.
+            const author = pr.user ? pr.user.login : "";
+            const isBot = Boolean(pr.user && pr.user.type === "Bot");
+            if (author === "dependabot[bot]") {
+              const botProblems = [];
+              if (!/^chore\(deps(-dev)?\): /.test(pr.title || "")) {
+                botProblems.push("title must start with `chore(deps): ` or `chore(deps-dev): ` (set by commit-message.prefix in .github/dependabot.yml)");
+              }
+              if (!/^(Bumps|Updates|Update) /.test(body.trim())) {
+                botProblems.push("body is not a recognizable Dependabot update summary");
+              }
+              if (!pr.head.ref.startsWith("dependabot/")) {
+                botProblems.push("head branch is not a `dependabot/*` branch");
+              }
+              if (botProblems.length) {
+                core.setFailed(
+                  "Dependabot PR fails the bot template contract:\n  - " +
+                  botProblems.join("\n  - ")
+                );
+              } else {
+                core.info("Dependabot PR: bot template contract satisfied. ✔");
+              }
+              return;
+            }
+            if (isBot && author !== "github-actions[bot]") {
+              core.setFailed(
+                `Unknown bot author \`${author}\` — no PR-format contract is defined for it. ` +
+                "Add a contract for this bot here, or have it write a body that follows " +
+                ".github/pull_request_template.md."
+              );
               return;
             }
 

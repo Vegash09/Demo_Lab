@@ -175,7 +175,8 @@ $EDITOR pyproject.toml && make lock && make install
 ## Branching, PRs, releases
 
 Branch from `main` (`feature/…`, `fix/…`, `debug/…`); one PR per branch using
-the unified template (marker `datalab-pr-template` — hook + CI enforce it);
+the unified template (marker `datalab-pr-template` — hook + CI enforce it for
+human/agent PRs; dependabot PRs are held to a separate bot contract in CI);
 head branches are **deleted automatically on merge**. Merge to `main`
 deploys dev; `vX.Y.Z-rcN` tags deploy stage; `vX.Y.Z` tags deploy prod.
 

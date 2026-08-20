@@ -24,8 +24,8 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        # Exact pin: setup-uv publishes no floating `v8` major tag (only v8.x.y);
-        # v8.2.0 is the latest and runs on Node 24. Bump on new releases.
+        # Exact pin: setup-uv publishes no floating major tag (only vX.Y.Z).
+        # Dependabot's `actions` group opens bump PRs on new releases.
         uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true

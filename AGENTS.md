@@ -502,6 +502,25 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   job, no PR, for six weeks while the framework moved 0.6.0 → 0.9.0. Any gate that
   cannot determine an answer must `exit 1` with `::error::`, never `::warning::`
   plus a skip. Use `set -euo pipefail` in such steps.
+- **Dependabot runs live in a separate, initially EMPTY secret store.** Workflow
+  runs triggered by `dependabot[bot]` resolve `secrets.*` from Settings →
+  Secrets and variables → **Dependabot**, not the Actions store (Actions
+  **variables** still resolve normally). Until
+  `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` was mirrored into the Dependabot store,
+  every dependabot PR failed `ci / lint + unit test` at the App-token mint
+  (six weeks of red dependency PRs, July–Aug 2026). Do **not** mirror the
+  Databricks environment secrets there: dependabot runs get a read-only
+  `GITHUB_TOKEN` with no `id-token: write`, so the OIDC steps would fail
+  instead of skipping gracefully. Two adjacent facts in the same failure
+  class: (a) Dependabot's own updater has no repo credentials either — it
+  needs explicit access to the private framework repo (org Settings → Code
+  security → Dependabot) or every `uv` update dies with
+  `git_dependencies_not_reachable`; (b) Dependabot cannot use the PR
+  template (GitHub writes its bodies server-side), so
+  `pr-template-check.yml` holds its PRs to a separate verifiable bot
+  contract — title prefix (pinned via `commit-message.prefix` in
+  `dependabot.yml`), body shape, `dependabot/*` branch — never a silent
+  skip. See `docs/CICD.md` "Private framework dependency".
 - **GitHub OIDC** auth (no stored client secret). The federation policy
   subject must match `repo:<owner>/<repo>:environment:<target>` because the
   CI/CD jobs declare `environment: <target>`. See `docs/CICD.md`.
@@ -817,8 +836,10 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
 - **Open a pull request**: fill `.github/pull_request_template.md` into a body
   file and `gh pr create --body-file <file>` (or `--web`). Keep the
   `datalab-pr-template` marker and the `##` section headings — the hook + CI
-  enforce them. Branch from `main`; the head branch is auto-deleted on merge
-  (see "Branching & releases").
+  enforce them for every human/agent PR (dependabot PRs are the one
+  exception: CI holds them to a separate verifiable bot contract instead —
+  see Critical knowledge). Branch from `main`; the head branch is
+  auto-deleted on merge (see "Branching & releases").
 
 ## Agent don'ts
 

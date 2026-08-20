@@ -99,6 +99,19 @@ Set up once (org owner):
    `lint + test` job declares no `environment:`, so it only sees repo/org
    variables and secrets.
 
+   **Dependabot-triggered runs read `secrets.*` from a different store** —
+   Settings → Secrets and variables → **Dependabot** (Actions *variables*
+   still resolve). Mirror the key there too:
+   `gh secret set DATALAB_FRAMEWORK_APP_PRIVATE_KEY --app dependabot < key.pem`
+   — otherwise every dependabot PR fails CI at the token mint. Do **not**
+   mirror the Databricks environment secrets into the Dependabot store:
+   dependabot runs get a read-only `GITHUB_TOKEN` without `id-token: write`,
+   so the OIDC steps would fail instead of skipping gracefully. Separately,
+   for Dependabot's own **uv updater** to resolve the private framework pin
+   (or it fails with `git_dependencies_not_reachable` and can never open a
+   Python dep PR), grant Dependabot access to `datalab-framework`: org
+   Settings → Code security → Dependabot → private repository access.
+
 In `common-ci-steps.yml` / `common-cd-steps.yml`, the flow is three steps:
 fail fast if the client id / key are missing → `actions/create-github-app-token@v3`
 (`client-id:` input) mints a token scoped to `owner: dediggibyte`,
