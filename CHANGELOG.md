@@ -21,6 +21,31 @@ opens the bump PR automatically; then `make publish-wheel`.
 
 ## [Unreleased]
 
+### Fixed
+- **`publish-wheel` now honors a per-target `datalab_version` override.** It
+  resolved the version from `datalab.__version__` (whatever the repo-wide
+  pyproject pin installed locally) and always built from the pyproject tag, so
+  the soak-test procedure documented in `targets/stage.yml` — override
+  `datalab_version`, then `make publish-wheel TARGET=stage APPLY=1` — could not
+  publish the overridden release. `--target` now resolves the version through the
+  domain registry (new `domains.framework_version()`), builds THAT release, and
+  prints a note when it differs from the pyproject pin.
+- **`check-lockstep` now asserts uv.lock's resolved PACKAGE VERSION equals
+  `var.datalab_version`.** The wheel filename `var.datalab_wheel` points at is
+  composed from the package version, not the tag; the two agreed only by way of a
+  gate in the *framework* repo that runs after the tag already exists. A
+  disagreement passed every gate here and failed only when a serverless
+  environment tried to install a wheel that was not on the Volume.
+- **`check-lockstep` surfaces per-target `datalab_version` overrides.** The gate
+  whose purpose is "the framework version agrees everywhere" never read
+  `targets/*.yml` — the one file where an environment can legitimately disagree.
+  Overrides are now printed with the publish command needed to make them real.
+- **The `adopter scaffold smoke test` job gained the "Missing framework App
+  credentials" preflight** the other three framework-secret consumers already
+  had. Without it, one missing secret produced two unrelated-looking failures on
+  the same run, on a job whose name gives no hint it needs those credentials —
+  which is exactly how the 2026-07/08 outage presented.
+
 ### Changed
 - **Framework pin bumped `0.9.0` → `0.10.0`** and `gold.sales_by_category` no
   longer hardcodes its joined table. The transform used to build the dimension's

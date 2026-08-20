@@ -6,6 +6,9 @@ repo, and every one of them must reference the same release:
     pyproject.toml            [tool.uv.sources].datalab  tag = "vX.Y.Z"
     variables/medallion.yml   datalab_version: default "X.Y.Z"  (the Volume wheel filename)
     uv.lock                   the resolved `datalab` package's git tag
+    uv.lock                   the resolved `datalab` package VERSION (what the built
+                              wheel is named after — the filename var.datalab_wheel
+                              points at is composed from this, not from the tag)
 
 Historically this lockstep was enforced only by prose and a PR-template
 checkbox, and it drifted (docs referenced 0.5.0 while the pin was 0.6.0, and
@@ -63,6 +66,44 @@ def lock_tag() -> str:
     raise SystemExit("uv.lock: no `datalab` package entry found")
 
 
+def lock_version() -> str:
+    """The RESOLVED package version uv recorded for `datalab` in uv.lock.
+
+    Distinct from the tag: the tag says which ref to fetch, this says what the
+    built package calls itself — and the wheel filename
+    (`datalab-<version>-py3-none-any.whl`) that `var.datalab_wheel` points at is
+    composed from THIS. Nothing else in this repo compares the two, so a tag
+    whose package version disagrees would pass every gate and fail only when a
+    serverless environment tried to install a wheel that is not there."""
+    data = tomllib.loads((REPO_ROOT / "uv.lock").read_text())
+    for package in data.get("package", []):
+        if package.get("name") == "datalab":
+            version = package.get("version")
+            if not version:
+                raise SystemExit("uv.lock: datalab entry has no resolved `version`")
+            return str(version)
+    raise SystemExit("uv.lock: no `datalab` package entry found")
+
+
+def target_overrides() -> dict[str, str]:
+    """Per-target `datalab_version` overrides from targets/*.yml.
+
+    A target may deliberately soak-test a newer framework release. That is
+    legitimate, but it must be VISIBLE: the override changes which wheel that
+    target installs, and `make publish-wheel TARGET=<t>` must have published that
+    version. Stdlib-only parse (this script runs `uv run --no-project`)."""
+    found: dict[str, str] = {}
+    targets_dir = REPO_ROOT / "targets"
+    for path in sorted(targets_dir.glob("*.yml")):
+        for match in re.finditer(
+            r"^[ \t]*datalab_version:[ \t]*[\"']?([0-9]+\.[0-9]+\.[0-9]+)[\"']?[ \t]*$",
+            path.read_text(),
+            re.MULTILINE,
+        ):
+            found[path.stem] = match.group(1)
+    return found
+
+
 def main() -> int:
     tag = pyproject_tag()
     version = medallion_version()
@@ -77,6 +118,17 @@ def main() -> int:
         )
     if locked != tag:
         problems.append(f"uv.lock resolved {locked} but pyproject.toml pins {tag} (run `make lock`)")
+    # The wheel filename var.datalab_wheel resolves to is built from the PACKAGE
+    # version, not the tag. If they disagree, every gate here is green and the
+    # failure lands on a serverless environment install.
+    packaged = lock_version()
+    if packaged != version:
+        problems.append(
+            f"uv.lock resolves datalab to package version {packaged!r} but "
+            f"variables/medallion.yml datalab_version is {version!r} — "
+            f"var.datalab_wheel would point at datalab-{version}-py3-none-any.whl "
+            f"while the built wheel is datalab-{packaged}-py3-none-any.whl"
+        )
 
     if problems:
         print("framework version pin is OUT OF LOCKSTEP:", file=sys.stderr)
@@ -84,7 +136,17 @@ def main() -> int:
             print(f"  - {problem}", file=sys.stderr)
         print("\nrun `make bump-framework VERSION=x.y.z` to realign every site.", file=sys.stderr)
         return 1
-    print(f"framework pin is in lockstep: {tag} (pyproject tag == var.datalab_version == uv.lock)")
+    print(
+        f"framework pin is in lockstep: {tag} "
+        "(pyproject tag == var.datalab_version == uv.lock tag == uv.lock package version)"
+    )
+    for target, override in sorted(target_overrides().items()):
+        if override != version:
+            print(
+                f"  note: target {target!r} overrides datalab_version to {override} — "
+                f"publish it there first (`make publish-wheel TARGET={target} APPLY=1`), "
+                "or that target's environments will install a wheel that is not on the Volume"
+            )
     return 0
 
 

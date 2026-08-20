@@ -137,8 +137,8 @@ scripts/domains.py        THE domain registry: which domains this repo deploys; 
                           RESOLVED from variables/ + targets/ + rbac.yml (make check-domains gates CI).
                           Adding a domain = one DOMAINS entry here (+ the usual config/src/resources/vars)
 scripts/bootstrap_uc.py   One-time UC bootstrap per target: every registry domain catalog's schemas/volumes/GRANTs, incl. its artifacts.wheels Volume holding the framework wheel (make bootstrap-uc; catalogs/groups come from scripts/domains.py)
-scripts/publish_wheel.py  Build the FRAMEWORK wheel FROM the pinned git dep + upload it into EACH registry catalog's artifacts.wheels UC Volume (make publish-wheel; CI runs it in deploy-dab before bundle deploy; --catalog-for <domain>=<catalog> mirrors --var catalog overrides)
-scripts/check_lockstep.py  Assert the framework pin agrees everywhere: pyproject git tag == var.datalab_version == uv.lock (make check-lockstep; CI gate)
+scripts/publish_wheel.py  Build the FRAMEWORK wheel for the TARGET's resolved datalab_version + upload it into EACH registry catalog's artifacts.wheels UC Volume (make publish-wheel; CI runs it in deploy-dab before bundle deploy; --catalog-for <domain>=<catalog> mirrors --var catalog overrides)
+scripts/check_lockstep.py  Assert the framework pin agrees everywhere: pyproject git tag == var.datalab_version == uv.lock tag == uv.lock package version; notes any per-target datalab_version override (make check-lockstep; CI gate)
 scripts/bump_framework.py  Rewrite the pin at every site — driven by `make bump-framework VERSION=x.y.z` (edits + lock + schema regen + lockstep check); the framework-bump workflow opens this as a bot PR on new framework tags
 scripts/check_sync_lists.py  Assert databricks.yml sync.exclude == .databricksignore (make check-sync-lists; CI gate)
 pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.sources] (datalab → git tag) + [tool.uv.workspace]; root is package=false (builds nothing); each projects/<domain> is a workspace member building its own <catalog>_etl wheel
@@ -434,7 +434,16 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `make publish-wheel APPLY=1` (record it in CHANGELOG.md; the framework's own
   `__version__` lives in the datalab-framework repo). A target can soak-test a
   newer framework by overriding `datalab_version` in its `targets/<env>.yml`
-  (publish to that target first).
+  (publish to that target first). That override is honored END TO END:
+  `publish-wheel --target <t>` resolves the target's `datalab_version` — NOT the
+  repo-wide pyproject pin — and builds/uploads that release, and
+  `check-lockstep` prints a note naming any target whose override differs so it
+  can never be invisible. `check-lockstep` also asserts uv.lock's resolved
+  PACKAGE VERSION equals `var.datalab_version`: the wheel filename
+  `var.datalab_wheel` points at is composed from the package version, not the
+  tag, so a tag whose package version disagreed would pass every gate and fail
+  only when a serverless environment tried to install a wheel that is not on the
+  Volume.
   `environment_version: "4"` pins Python 3.12 + preinstalled libs. Extra framework
   runtime libs are declared in the framework repo (folded into its wheel) — but
   environments cache dependencies; trigger a full restart (or publish a new

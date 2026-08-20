@@ -91,6 +91,27 @@ def domain_catalogs(target: str) -> dict[str, str]:
     }
 
 
+def framework_version(target: str) -> str:
+    """The framework version THIS target installs — the per-target
+    ``datalab_version`` override from targets/<t>.yml when present, else the
+    ``variables/medallion.yml`` default.
+
+    This is the version the bundle composes ``var.datalab_wheel`` from, so it is
+    the version that must exist on each catalog's artifacts.wheels Volume. A
+    target soak-testing a newer framework (see targets/stage.yml) overrides it,
+    which is exactly why publishing must resolve it per target rather than from
+    the repo-wide pyproject pin."""
+    value = _target_variables(target).get("datalab_version") or _variable_defaults().get(
+        "datalab_version"
+    )
+    if not value:
+        raise SystemExit(
+            f"datalab_version has no value for target {target!r} (checked "
+            f"targets/{target}.yml and variables/medallion.yml)"
+        )
+    return str(value)
+
+
 def groups(target: str) -> dict[str, str]:
     """``{"reader": ..., "engineer": ...}`` from rbac.yml — the target's
     override when present, else the variable default."""

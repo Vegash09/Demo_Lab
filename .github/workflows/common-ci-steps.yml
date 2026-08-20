@@ -198,6 +198,21 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Check framework App credentials are configured
+        # Same fail-fast as the `test` job (see above). Without it this job dies
+        # inside create-github-app-token with a bare "private-key input must be
+        # set" — on a job whose name gives no hint it needs framework credentials,
+        # so one missing secret produces two unrelated-looking failures on the
+        # same run and triage goes to the scaffold generator instead.
+        env:
+          CLIENT_ID: ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
+          APP_KEY:   ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$CLIENT_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error title=Missing framework App credentials::The adopter scaffold smoke test must mint a token from the datalab-framework reader GitHub App to resolve the PRIVATE dediggibyte/datalab-framework git dep in the GENERATED repo, but the DATALAB_FRAMEWORK_APP_CLIENT_ID variable and/or DATALAB_FRAMEWORK_APP_PRIVATE_KEY secret is not set (repo or org scope — NOT environment). See docs/CICD.md."
+            exit 1
+          fi
+
       - name: Mint a read-only token for datalab-framework (GitHub App)
         # The generated repo resolves the same private framework git dep.
         id: framework_token

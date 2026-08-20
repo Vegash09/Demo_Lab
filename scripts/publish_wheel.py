@@ -42,7 +42,13 @@ from pathlib import Path
 
 # Single source of truth for the per-target domain catalogs + the wheel volume
 # location (scripts/ is on sys.path[0] when this file is run directly).
-from domains import ARTIFACTS_SCHEMA, WHEELS_VOLUME, domain_catalogs, targets
+from domains import (
+    ARTIFACTS_SCHEMA,
+    WHEELS_VOLUME,
+    domain_catalogs,
+    framework_version,
+    targets,
+)
 
 ARTIFACTS_PATH = f"{ARTIFACTS_SCHEMA}/{WHEELS_VOLUME}"  # <catalog>.artifacts.wheels Volume
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -59,22 +65,25 @@ def _default_version() -> str:
         return ""
 
 
-def _git_requirement() -> str:
-    """``datalab @ git+<url>@<ref>`` from pyproject's ``[tool.uv.sources].datalab``.
+def _git_requirement(version: str = "") -> str:
+    """``datalab @ git+<url>@<ref>`` — the release that will actually be built.
 
-    This is the single source of truth for which framework release is published —
-    bumping the tag here (in lockstep with ``var.datalab_version``) is the only
-    version knob this repo owns."""
+    ``version`` (the TARGET's resolved ``datalab_version``) selects the ref, so a
+    target soak-testing a newer framework reports and builds that release. With
+    no version it falls back to pyproject's ``[tool.uv.sources].datalab`` pin,
+    which is the repo-wide default every target normally shares."""
     data = tomllib.loads(PYPROJECT.read_text())
     src = data["tool"]["uv"]["sources"]["datalab"]
     git = src["git"]
-    ref = src.get("tag") or src.get("rev") or src.get("branch")
+    ref = f"v{version}" if version else (
+        src.get("tag") or src.get("rev") or src.get("branch")
+    )
     if not ref:
         raise SystemExit("pyproject [tool.uv.sources].datalab needs a tag/rev/branch to publish")
     return f"datalab @ git+{git}@{ref}"
 
 
-def build_wheel(dist_dir: str) -> None:
+def build_wheel(dist_dir: str, version: str = "") -> None:
     """Build ONLY the framework wheel from the pinned git dep into ``dist_dir``.
 
     Shallow-clones the pinned tag into a temp dir and runs ``uv build --wheel``.
@@ -97,11 +106,16 @@ def build_wheel(dist_dir: str) -> None:
     data = tomllib.loads(PYPROJECT.read_text())
     src = data["tool"]["uv"]["sources"]["datalab"]
     url = src["git"]
-    ref = src.get("tag") or src.get("rev") or src.get("branch")
+    # Build the version this TARGET installs. Normally identical to the pyproject
+    # pin; when a target soak-tests a newer framework via a `datalab_version`
+    # override (targets/stage.yml), it is that release that must be built and
+    # published — building the pyproject pin instead would upload a wheel under a
+    # filename var.datalab_wheel never looks for.
+    ref = f"v{version}" if version else (src.get("tag") or src.get("rev") or src.get("branch"))
     out = Path(dist_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    print(f"  building {_git_requirement()} -> {dist_dir}/")
+    print(f"  building datalab @ git+{url}@{ref} -> {dist_dir}/")
     with tempfile.TemporaryDirectory() as tmp:
         checkout = Path(tmp) / "datalab-framework"
         subprocess.run(
@@ -191,7 +205,9 @@ def main(argv: list[str] | None = None) -> None:
         help="build the framework wheel from the pinned git dep before uploading",
     )
     parser.add_argument(
-        "--version", default="", help="framework version (default: datalab.__version__)"
+        "--version",
+        default="",
+        help="framework version (default: the target's resolved var.datalab_version)",
     )
     parser.add_argument(
         "--dist-dir",
@@ -216,16 +232,29 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    if args.build:
-        build_wheel(args.dist_dir)
+    # The version THIS target installs: an explicit --version, else the target's
+    # resolved `datalab_version` (per-target override or the medallion default).
+    # NOT datalab.__version__ — that is whatever the repo-wide pyproject pin
+    # installed locally, which is not what a soak-testing target's
+    # var.datalab_wheel points at.
+    version = args.version or framework_version(args.target)
+    pinned = _default_version()
+    if pinned and version != pinned:
+        print(
+            f"  note: target {args.target!r} installs datalab {version} while this repo's "
+            f"pyproject pin is {pinned} — building and publishing {version} "
+            "(a deliberate per-target override; see targets/)"
+        )
 
-    version = args.version or _default_version()
+    if args.build:
+        build_wheel(args.dist_dir, version)
+
     local = wheel_path(version, args.dist_dir)
     catalogs = target_catalogs(args.target, args.catalog, args.catalog_for)
 
     if not args.apply:
         print(f"-- dry run for target '{args.target}' — re-run with --apply (APPLY=1) to upload\n")
-        print(f"   source: {_git_requirement()}")
+        print(f"   source: {_git_requirement(version)}")
         print(f"   wheel:  {local}" + ("" if local.exists() else "  (not built yet — pass --build)"))
         for catalog in catalogs:
             print(f"   -> {volume_dir(catalog)}/{local.name}")
