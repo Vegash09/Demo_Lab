@@ -67,13 +67,25 @@ lock` → your machine lacks framework read access; `gh auth login` +
 ```bash
 gh variable set DATALAB_FRAMEWORK_APP_CLIENT_ID --body "Iv23li…"
 gh secret set DATALAB_FRAMEWORK_APP_PRIVATE_KEY < path/to/app-key.pem
+gh secret set DATALAB_FRAMEWORK_APP_PRIVATE_KEY --app dependabot < path/to/app-key.pem
 ```
 
 Both at **repo/org scope, NOT per-environment** (the CI test job declares no
-`environment:`). Then create GitHub **Environments** `dev`, `stage`, `prod`,
-each with **secrets** (not variables — set as variables the deploy skips with a
-green run): `DATABRICKS_HOST` and `DATABRICKS_CLIENT_ID` (the SP application
-id). ✅ *Success: push a commit — `ci / lint + unit test` is green.*
+`environment:`). The third line mirrors the key into the **Dependabot**
+secret store — dependabot-triggered CI runs read a separate store and fail
+the App-token mint without it. If this repo lives in the **same org** as the
+framework repo, also grant Dependabot access to the framework repo so its
+`uv` updater can resolve the lockfile (org Settings → Code security →
+Dependabot → private repository access, or the `repository-access` API — see
+[CICD.md](CICD.md#private-framework-dependency-git-auth)); **cross-org** the
+grant can't reach it — give the updater a `registries:` `type: git`
+credential in `dependabot.yml` (PAT in the Dependabot store) or remove the
+`uv` ecosystem there. Then create GitHub **Environments** `dev`, `stage`,
+`prod`, each with **secrets** (not variables — set as variables the deploy
+skips with a green run): `DATABRICKS_HOST` and `DATABRICKS_CLIENT_ID` (the SP
+application id). ✅ *Success: push a commit — `ci / lint + unit test` is
+green; and a dependabot PR (or `@dependabot rebase` on one) is green too,
+its log reading `Secret source: Dependabot`.*
 
 ## 5. Databricks account-level setup (account admin; once per workspace)
 

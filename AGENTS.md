@@ -522,13 +522,21 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   instead of skipping gracefully. Two adjacent facts in the same failure
   class: (a) Dependabot's own updater has no repo credentials either — it
   needs explicit access to the private framework repo (org Settings → Code
-  security → Dependabot) or every `uv` update dies with
-  `git_dependencies_not_reachable`; (b) Dependabot cannot use the PR
-  template (GitHub writes its bodies server-side), so
+  security → Dependabot; scriptable:
+  `gh api -X PATCH /organizations/<org-id>/dependabot/repository-access -F "repository_ids_to_add[]=<repo-id>"`,
+  `-F` because the endpoint 422s on string ids) or every `uv` update dies
+  with `git_dependencies_not_reachable` — even for a bump of an UNRELATED
+  package, since resolving `uv.lock` touches every git dep; (b) Dependabot
+  cannot use the PR template (GitHub writes its bodies server-side), so
   `pr-template-check.yml` holds its PRs to a separate verifiable bot
   contract — title prefix (pinned via `commit-message.prefix` in
   `dependabot.yml`), body shape, `dependabot/*` branch — never a silent
-  skip. See `docs/CICD.md` "Private framework dependency".
+  skip; (c) a rerun of a dependabot run executes in the RE-RUNNER's context
+  (Actions store + environment secrets + `id-token: write`), so
+  `gh run rerun --failed` turns a red dependabot PR green without proving
+  the Dependabot store is right — the conclusive probe is a run Dependabot
+  itself triggers (`@dependabot rebase`; its log reads `Secret source:
+  Dependabot`). See `docs/CICD.md` "Private framework dependency".
 - **GitHub OIDC** auth (no stored client secret). The federation policy
   subject must match `repo:<owner>/<repo>:environment:<target>` because the
   CI/CD jobs declare `environment: <target>`. See `docs/CICD.md`.
@@ -707,6 +715,15 @@ change:
    step + pre-commit reject drift (`scripts/sync_skills.py`). To reach Databricks
    Genie Code, run `make publish-genie-skills` (pushes the skills to the Workspace
    `.assistant/skills/`).
+6. **Fixed something OUTSIDE the repo?** An incident resolved by an
+   operational/admin action — a secret store, an org or repo setting, an
+   access grant, a GitHub App — leaves no diff, so record it in the same
+   session: the reproducible commands go in the matching runbook under
+   `docs/` (CI/CD + GitHub auth → `docs/CICD.md`; UC/data access →
+   `docs/ARCHITECTURE.md`; adopter setup → `docs/NEW_ADOPTER.md` /
+   `docs/ADOPTING.md`), and the why + failure signature goes in "Critical
+   knowledge" here. The test: the next person hitting the same failure finds
+   the fix by grep, not by re-deriving it from CI logs.
 
 ### Protected file surface
 

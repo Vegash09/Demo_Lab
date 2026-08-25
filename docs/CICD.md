@@ -110,7 +110,23 @@ Set up once (org owner):
    for Dependabot's own **uv updater** to resolve the private framework pin
    (or it fails with `git_dependencies_not_reachable` and can never open a
    Python dep PR), grant Dependabot access to `datalab-framework`: org
-   Settings → Code security → Dependabot → private repository access.
+   Settings → Code security → Dependabot → private repository access — or
+   script it:
+   `gh api -X PATCH /organizations/<org-id>/dependabot/repository-access -F "repository_ids_to_add[]=<framework-repo-id>"`
+   (ids via `gh api orgs/<org> --jq .id` and `gh api repos/<owner>/datalab-framework --jq .id`;
+   must be `-F` — the endpoint 422s on string ids; verify with the matching
+   GET). The grant cannot span orgs: a cross-org consumer's updater instead
+   needs a `registries:` entry of `type: git` in `dependabot.yml` backed by a
+   PAT in *its* Dependabot store, or must drop the `uv` ecosystem there.
+
+   To re-validate an already-open dependabot PR after fixing a store, rerun
+   its failed jobs (`gh run rerun <run-id> --failed`) — secrets resolve at
+   run time, no new push needed. Caveat: a rerun executes in the
+   **re-runner's** context (Actions store, environment secrets,
+   `id-token: write`), so a human rerun can go green while the Dependabot
+   store is still wrong; the conclusive probe is a run Dependabot itself
+   triggers (`@dependabot rebase`), whose log reads `Secret source:
+   Dependabot`.
 
 In `common-ci-steps.yml` / `common-cd-steps.yml`, the flow is three steps:
 fail fast if the client id / key are missing → `actions/create-github-app-token@v3`
