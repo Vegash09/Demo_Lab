@@ -17,16 +17,20 @@ ROOT. Replace every placeholder before writing:
   grounding (default `<catalog>_dev`).
 - `<deploy-sp-app-id>` — the CI/CD deploy service principal application id.
 - `<reader-group>` / `<engineer-group>` / `<admin-group>` — workspace groups.
-- `<framework-tag>` — the pinned `datalab` framework release tag (keep the same
-  value in `pyproject.toml` and `var.datalab_version`).
+- `<framework-tag>` — the pinned `datalab` framework release tag (`vX.Y.Z`).
+- `<framework-version>` — the same release **without** the leading `v` — it is
+  the wheel FILENAME (`datalab-<framework-version>-py3-none-any.whl`), which is
+  why only a `vX.Y.Z` tag is accepted.
 
 These mirror `projects/customer_sales/` but with ROOT-relative paths and a
 single root `pyproject.toml`. Field reference: the framework `docs/FRAMEWORK.md`.
 
-> The `scripts/scaffold_adopter.py` engine writes all of these automatically —
-> both `make configure-adopter` (convert a template clone in place) and
-> `make new-adopter` (fresh sibling repo) call it. This doc is the human-readable
-> reference + manual fallback; keep the two in sync when either changes.
+> **The engine is the source of truth.** `scripts/scaffold_adopter.py` writes
+> every file below automatically — both `make configure-adopter` (convert a
+> template clone in place) and `make new-adopter` (fresh sibling repo) call it.
+> This doc is the human-readable record + the manual fallback, and
+> `make check-templates-doc` (CI + pre-commit) fails if any code block below
+> stops matching the engine's template. When they disagree, change the doc.
 
 ---
 
@@ -36,9 +40,13 @@ single root `pyproject.toml`. Field reference: the framework `docs/FRAMEWORK.md`
 
 ```yaml
 # yaml-language-server: $schema=../../schemas/domain_config.schema.json
+#
+# Domain settings — environment-agnostic: catalog/schema values are pipeline-conf
+# KEYS resolved per target (dev/stage/prod) through bundle variables. Never put a
+# literal catalog name here.
 schema_version: 1
 domain: <catalog>
-imports: [] # add python modules (transforms/checks) as you create them
+imports: [] # python modules registering @transform fns + custom checks
 catalog_conf: datalab.catalog
 layers:
   bronze:
@@ -58,11 +66,16 @@ layers:
 ### `config/<catalog>/bronze/events_raw.yml`
 
 One Auto Loader bronze table to prove the toolchain. Add silver/gold later with
-the `author-ldp-artifact` skill (leave empty `config/<catalog>/silver/` and
-`config/<catalog>/gold/` folders).
+the `author-ldp-artifact` skill — it creates each layer folder along with the
+first table in it. **Do NOT pre-create empty `config/<catalog>/silver/` /
+`gold/` folders:** the framework's config validator rejects an empty layer dir,
+so `make validate-configs` fails on the very first run.
 
 ```yaml
 # yaml-language-server: $schema=../../../schemas/table_config.schema.json
+#
+# Starter table: bronze.events_raw — raw incremental ingest (Auto Loader).
+# Add silver/gold with the author-ldp-artifact skill.
 schema_version: 1
 name: events_raw
 comment: Raw events ingested incrementally from the landing volume (Auto Loader).
@@ -113,13 +126,15 @@ spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
 generate(spark, pipeline_conf(spark, "datalab.config_dir"))
 ```
 
-### `src/<catalog>_etl/transforms/__init__.py` and `src/<catalog>_etl/checks/__init__.py`
+### `src/<catalog>_etl/transforms/__init__.py`
 
-Empty package markers (add functions later):
+Package marker (add `@transform` functions here as you need them):
 
 ```python
 """Pure @transform functions for the <catalog> domain (registered via decorators)."""
 ```
+
+### `src/<catalog>_etl/checks/__init__.py`
 
 ```python
 """Custom @check_function dqx checks for the <catalog> domain."""
@@ -147,6 +162,22 @@ def spark():
     session.stop()
 ```
 
+### `tests/test_smoke.py`
+
+Not optional: `pytest` exits **5 ("no tests collected")** on an empty suite, so a
+repo with only `conftest.py` fails its own documented `make test` gate before you
+have written anything.
+
+```python
+"""Smoke test: the domain package imports (keeps `make test` non-empty)."""
+
+import importlib
+
+
+def test_domain_package_imports():
+    assert importlib.import_module("<catalog>_etl") is not None
+```
+
 ---
 
 ## Bundle resources (root-level)
@@ -157,8 +188,14 @@ Paths are relative to THIS file (which now sits at `resources/`, beside `src/`
 and `dist/`): `../src/...` and `../dist/...` (NOT `../../../` as in the
 reference repo, where resources sit under `projects/<catalog>/resources/`).
 
+`environment_version` ships **commented out** — see the comment in the block
+(and `docs/ADOPTING.md` "First-deploy traps"). Uncommenting it on a brand-new
+pipeline trips a Databricks fingerprint gate that leaves the pipeline unable to
+run until the setting is removed again.
+
 ```yaml
 # Lakeflow Spark Declarative Pipeline for the <catalog> domain (bronze→silver→gold).
+# Paths below are relative to THIS file (resources/ sits beside src/ and dist/).
 resources:
   pipelines:
     <catalog>_etl:
@@ -174,7 +211,16 @@ resources:
             include: ../src/<catalog>_etl/transformations/**
 
       environment:
-        environment_version: "4"
+        # Pins the Python runtime + preinstalled library set independently of DBR
+        # upgrades. COMMENTED OUT for the FIRST deploy: Databricks gates enabling
+        # environment_version on a new pipeline behind a fingerprint check that
+        # rejects it (NO_PREVIOUS_FINGERPRINT, then FINGERPRINT_MISMATCH) and
+        # leaves the pipeline unable to run until the setting is removed. Every
+        # documented remedy was tried against a real pipeline (2026-08),
+        # including a compatibility scan that reported ZERO issues while the gate
+        # still refused. Uncomment once the pipeline has a stable update history
+        # — see docs/ADOPTING.md "environment_version".
+        # environment_version: "4"
         dependencies:
           # datalab FRAMEWORK wheel from THIS catalog's artifacts.wheels Volume
           # (make publish-wheel; bump var.datalab_version to roll it). Serverless
@@ -216,6 +262,18 @@ resources:
       permissions: ${var.job_permissions}
 ```
 
+### `sample_data/landing/<catalog>/events/events.json`
+
+Starter sample landing data — `make run-local` reads it (the Makefile's
+`LOCAL_LANDING` points here), and uploading it to the landing volume proves the
+first dev refresh (`docs/NEW_ADOPTER.md` step 9):
+
+```json
+{"event_id": "e-0001", "event_type": "signup", "user_id": "u-001", "ts": "2026-01-15T09:30:00Z"}
+{"event_id": "e-0002", "event_type": "login", "user_id": "u-001", "ts": "2026-01-16T08:02:11Z"}
+{"event_id": "e-0003", "event_type": "purchase", "user_id": "u-002", "ts": "2026-01-16T12:44:03Z"}
+```
+
 ---
 
 ## Repo-level files
@@ -223,11 +281,14 @@ resources:
 ### `databricks.yml`
 
 ```yaml
+# Declarative Automation Bundle for the <catalog> datalab adopter repo.
+# Thin manifest: bundle name + includes. Everything else is deep-merged in.
 bundle:
   name: <catalog>
 
-# One wheel: this domain's package (uv build at the root). The framework wheel
-# is delivered separately from the UC Volume (var.datalab_wheel).
+# One wheel: this domain's package (uv build at the root). The framework wheel is
+# delivered separately from the UC Volume (var.datalab_wheel). uv must be on PATH
+# for `bundle deploy`.
 artifacts:
   <catalog>_etl_wheel:
     type: whl
@@ -240,6 +301,9 @@ include:
   - rbac.yml
   - resources/*.yml
 
+# Dev-only surfaces kept OUT of the deployed workspace files (DAB ignores
+# .databricksignore; sync.exclude is the bundle-effective mechanism). Keep this
+# aligned with .databricksignore — `make check-sync-lists` (CI) enforces it.
 sync:
   exclude:
     - tests
@@ -293,10 +357,13 @@ dev = [
     "ruff>=0.14",
     # Local Spark for tests + the OSS local-run profile. Never add
     # databricks-connect here (conflicts with pyspark; use `make validate-connect`).
-    "pyspark[pipelines]>=4.1.0",
+    # Capped: the OSS SDP subset moves between minors (4.2.0 added an abstract
+    # method to GraphElementRegistry and an SCD1-only create_auto_cdc_flow).
+    # Needs datalab >= 0.8.2 for 4.2. Raise deliberately, after running tests.
+    "pyspark[pipelines]>=4.1.0,<4.3",
     "pandas>=2.0",
-    # The framework, pinned to a release tag (source mapped to git below). Keep
-    # the tag in lockstep with var.datalab_version (the serverless UC-Volume wheel).
+    # The framework, pinned to a release tag (source mapped to git below). Keep the
+    # tag in lockstep with var.datalab_version (the serverless UC-Volume wheel).
     "datalab",
 ]
 
@@ -331,6 +398,8 @@ datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = 
 ### `variables/medallion.yml`
 
 ```yaml
+# Bundle variable declarations + defaults for the <catalog> medallion.
+# Per-target VALUES live in targets/<env>.yml; access control in rbac.yml.
 variables:
   catalog:
     description: Unity Catalog catalog that holds the medallion schemas.
@@ -350,15 +419,21 @@ variables:
   # --- framework wheel distribution (lockstep with the datalab git tag) -------
   datalab_version:
     description: Version of the datalab framework wheel installed from this catalog's artifacts.wheels volume.
-    default: "<framework-tag-without-v>"
+    default: "<framework-version>"
   datalab_wheel:
     description: UC Volume path of the framework wheel in this catalog (var.catalog).
     default: /Volumes/${var.catalog}/artifacts/wheels/datalab-${var.datalab_version}-py3-none-any.whl
 ```
 
+The `landing/<catalog>/` segment is a CONTRACT: `scripts/domains.py`'s
+`edge_volume` must name the same volume, or `make bootstrap-uc` creates a volume
+the pipeline never reads and the first `make run` fails.
+
 ### `targets/dev.yml`
 
 ```yaml
+# dev target — development copies: resources get a '[dev <user>]' prefix and
+# schedules/triggers are paused automatically.
 targets:
   dev:
     mode: development
@@ -372,6 +447,7 @@ targets:
 ### `targets/stage.yml`
 
 ```yaml
+# stage target — production mode, explicit root_path.
 targets:
   stage:
     mode: production
@@ -385,6 +461,7 @@ targets:
 ### `targets/prod.yml`
 
 ```yaml
+# prod target — production mode, explicit root_path.
 targets:
   prod:
     mode: production
@@ -395,10 +472,74 @@ targets:
       catalog: <catalog>_prod
 ```
 
+If stage/prod live in DIFFERENT workspaces, change their `host:` by hand — the
+generator writes the one host you gave it into all three targets.
+
+### `README.md`
+
+````markdown
+# <catalog>-datalab
+
+Single-domain [datalab](https://github.com/dediggibyte/datalab-framework) adopter
+repo for **<catalog>**, generated from the datalab template. Every target table
+is ONE YAML artifact, generated into Lakeflow Spark Declarative Pipelines,
+quality-checked with dqx, and deployed as a Declarative Automation Bundle.
+
+> Document of record for agents + humans: **[AGENTS.md](AGENTS.md)**. Wiring to
+> the framework: **[docs/ADOPTING.md](docs/ADOPTING.md)**. Author your first table:
+> **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**.
+
+## Quick start
+
+```bash
+make lock install                # resolve the framework git dep into .venv
+make enable-githooks             # protected-files pre-commit guard (one-time)
+make validate-configs lint test  # pydantic + dqx · ruff · pytest (local Spark)
+make validate                    # databricks bundle validate -t dev
+```
+
+## First deploy (one-time setup per target)
+
+The full ordered checklist — prerequisites, GitHub/OIDC wiring, and the
+account-level persona groups that must exist BEFORE bootstrap — is
+**[docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md)**. The commands, once those
+prerequisites stand (`PROFILE=` pins the workspace — without it the SDK uses
+your DEFAULT CLI profile, which may point somewhere else):
+
+```bash
+databricks auth login --host <workspace-url> --profile <cli-profile>
+make bootstrap-uc TARGET=dev WAREHOUSE_ID=<id> PROFILE=<cli-profile>
+make publish-wheel TARGET=dev APPLY=1 PROFILE=<cli-profile>
+git add -A && git commit -m "configure <catalog> adopter" && git push  # CI needs the regenerated uv.lock
+make deploy
+databricks fs cp sample_data/landing/<catalog>/events/events.json \
+    dbfs:/Volumes/<catalog>/landing/<catalog>/events/ --profile <cli-profile>
+make run
+```
+
+## Add tables
+
+Use the `author-ldp-artifact` agent skill: one `config/<catalog>/<layer>/<table>.yml`
+artifact per table, pure `@transform` functions in `src/<catalog>_etl/transforms/`,
+registered in `config/<catalog>/domain.yml` `imports:`.
+````
+
+### `CHANGELOG.md`
+
+```markdown
+# Changelog
+
+## Unreleased
+
+- Initial <catalog> adopter repo generated from the datalab template
+  (one minimal bronze table; extend with the author-ldp-artifact skill).
+```
+
 ### `rbac.yml`
 
-Keep the reference `rbac.yml` structure verbatim (the string-var + complex-var
-pivot). Only change the group-name defaults and per-target overrides:
+Not rewritten — keep the reference `rbac.yml` structure verbatim (the string-var
++ complex-var pivot). Only change the group-name defaults and per-target
+overrides:
 
 - `reader_group.default` → `<reader-group>`
 - `engineer_group.default` → `<engineer-group>`
@@ -406,17 +547,11 @@ pivot). Only change the group-name defaults and per-target overrides:
 - in `targets.stage.variables` / `targets.prod.variables`, set the stage/prod
   group names (and prod read levels) for the customer.
 
-### `sample_data/landing/<catalog>/events/events.json`
-
-Starter sample landing data — `make run-local` reads it (the Makefile's
-`LOCAL_LANDING` points here), and uploading it to the landing volume proves the
-first dev refresh (`docs/NEW_ADOPTER.md` step 9):
-
-```json
-{"event_id": "e-0001", "event_type": "signup", "user_id": "u-001", "ts": "2026-01-15T09:30:00Z"}
-{"event_id": "e-0002", "event_type": "login", "user_id": "u-001", "ts": "2026-01-16T08:02:11Z"}
-{"event_id": "e-0003", "event_type": "purchase", "user_id": "u-002", "ts": "2026-01-16T12:44:03Z"}
-```
+The groups must be **account-level** (`databricks account groups create` +
+`databricks account workspace-assignment update`) before `make bootstrap-uc`.
+Workspace-local groups (`databricks groups create`) are invisible to Unity
+Catalog and every GRANT fails `PRINCIPAL_DOES_NOT_EXIST` — `docs/NEW_ADOPTER.md`
+step 5.
 
 ---
 
@@ -486,36 +621,52 @@ Single-domain CD plumbing:
   `sales-landing-path:`/`DATALAB_SALES_LANDING_PATH` forward to
   `landing-path:`/`DATALAB_LANDING_PATH`.
 - `deploy-dab/action.yml`: drop the `sales-catalog`/`sales-landing-path` inputs
-  in favour of one `landing-path` input; in the publish step use
-  `--catalog-for "<catalog>=$IN_CATALOG"`; in the deploy step map
-  `IN_LANDING_PATH` to `--var "landing_path=…"` and drop the `sales_catalog` var.
+  in favour of one `landing-path` input; retitle the remaining `catalog` input
+  for this domain; in the publish step use `--catalog-for "<catalog>=$IN_CATALOG"`;
+  in the deploy step map `IN_LANDING_PATH` to `--var "landing_path=…"` and drop
+  the `sales_catalog` var.
 
-### `docs/CICD.md`
+### `.github/CODEOWNERS`
 
-Repoint the template identity at the adopter, or a first-timer copying the
-federation-policy command from their own docs wires OIDC to the TEMPLATE's SP:
+Reduce to a commented placeholder. Left as-is it routes review at
+`@dediggibyte/datalab-approvers`, a team that does not exist in the adopter's
+org — GitHub then treats the whole file as invalid and the "Require review from
+Code Owners" branch protection silently never applies.
 
-- federation subject `repo:dediggibyte/datalab:environment:<target>` →
-  `repo:<owner>/<repo>:environment:<target>` (both occurrences)
-- SP application id `437346a1-…` → `<deploy-sp-app-id>`
-- workspace host → the adopter's host
+### `.github/dependabot.yml`
+
+Cross-org adopters: the `uv` ecosystem cannot resolve the PRIVATE framework git
+dep (`git_dependencies_not_reachable`) without either a Dependabot
+`registries:` git credential or an org-level Dependabot grant on the framework
+repo. `docs/CICD.md` "Private framework dependency"; the scaffold leaves an
+explanatory comment in place, not a fix.
+
+### `docs/`
+
+The `docs/` are reusable framework guidance — keep them, but they carry
+template-specific identity that must be repointed:
+
+- `docs/CICD.md` — federation subject `repo:dediggibyte/datalab:environment:<target>`
+  → `repo:<owner>/<repo>:environment:<target>` (both occurrences), SP application
+  id `437346a1-…` → `<deploy-sp-app-id>`, workspace host → the adopter's host.
+  Otherwise a first-timer copying the federation-policy command from their OWN
+  docs wires OIDC to the TEMPLATE's service principal.
+- `docs/AGENT_MCP.md` — CLI profile `diggi_dev_aws` → `<cli-profile>`, warehouse
+  id `c1cdbe2406e5cf04` → `<warehouse-id>`, workspace host → the adopter's host.
+- `docs/NAMING.md` — the `sales_landing_path` / `sales_export_path` /
+  `DATALAB_SALES_LANDING_PATH` names become `landing_path` / `export_path` /
+  `DATALAB_LANDING_PATH`; `landing.sales` / `exports.sales` become
+  `landing.<catalog>` / `exports.<catalog>`.
+- `docs/GETTING_STARTED.md`, `docs/ADOPTING.md` — every `projects/…` example path
+  must name the template repo explicitly (those folders are deleted here).
+
+`make check-adopter-docs` (CI) fails the conversion if any of this survives.
 
 ### `.databricksignore`
 
 Align with the new `databricks.yml` `sync.exclude` — remove the `projects/*`,
 `design/` and `omnigent/` lines (those paths don't exist in an adopter); keep
 the rest. `make check-sync-lists` enforces the alignment.
-
-### `README.md`, `CHANGELOG.md`
-
-Rewrite `README.md` for the customer: title, intro, the quick start (`make lock
-install`, `make enable-githooks`, the gates) and a first-deploy block that
-points at `docs/NEW_ADOPTER.md` and carries `PROFILE=<cli-profile>` on BOTH
-`make bootstrap-uc` and `make publish-wheel` (`make run PIPELINE=<catalog>_etl`
-— `run` reads the `PIPELINE` variable, it takes no positional argument). Drop
-the `projects/customer_sales` + `projects/sales` references. Reset
-`CHANGELOG.md`. The `docs/` are reusable framework guidance — keep them, but
-fix repo-specific references (workspace host, any `projects/...` paths).
 
 ### `AGENTS.md`
 
@@ -524,11 +675,20 @@ template's `projects/` + `design/` + `omnigent/` layout the conversion deleted.
 The engine (`patch_agents_md`) swaps every region fenced with
 `<!-- template-only:<name> start/end -->` markers for adopter text (root-level
 layout, `<catalog>_etl` architecture), re-points example file paths at "the
-template repo's `projects/...`", and fails if any dead reference survives.
-Manual fallback: delete each fenced region, write the adopter equivalent
-(layout + architecture for YOUR domain), and verify
+template repo's `projects/...`", rewrites the second domain's
+`var.sales_datalab_wheel` / MCP-profile references, and fails if any dead
+reference survives. Manual fallback: delete each fenced region, write the
+adopter equivalent (layout + architecture for YOUR domain), and verify
 `grep -n "projects/\|design/\|omnigent" AGENTS.md | grep -v "template repo"`
 comes back empty.
+
+### `.cursor/rules/project.mdc` and the agent skills
+
+`project.mdc` and the `author-ldp-artifact` / `deploy-databricks-bundle` skills
+cite `projects/customer_sales/…` paths and the second domain's
+`sales_landing_path` variable. Repoint them at the adopter's root-level layout
+(and re-run `make sync-skills` so the `.claude/skills` copy matches, or
+`make check-skills` fails).
 
 ### `.mcp.json` and `.cursor/mcp.json` (the MCP grounding config)
 

@@ -21,7 +21,73 @@ opens the bump PR automatically; then `make publish-wheel`.
 
 ## [Unreleased]
 
+### Added
+- **`make check-templates-doc`** (CI + pre-commit) — diffs every code block in
+  the `bootstrap-adopter-repo` skill's `references/templates.md` against
+  `scripts/scaffold_adopter.py`'s file templates. That doc is the documented
+  MANUAL FALLBACK for converting a repo by hand, and prose-enforced lockstep had
+  drifted into shipping instructions that break a fresh conversion.
+- **`make check-adopter-docs`** — runs inside a GENERATED adopter and fails if
+  any surface it reads still names the template's workspace, deploy service
+  principal, SQL warehouse or second-domain variables, or references the
+  `projects/` + `design/` + `omnigent` material the conversion deletes.
+  Attribution is checked per paragraph, not per line. No-ops in this repo.
+
 ### Fixed
+- **The adopter templates doc no longer hands out a broken conversion.** It
+  shipped `environment_version: "4"` uncommented (Databricks' fingerprint gate
+  then leaves a brand-new pipeline unable to run), told the reader to pre-create
+  empty `silver/`/`gold/` layer dirs (the config validator rejects them),
+  omitted `tests/test_smoke.py` (pytest exits 5 on an empty suite, failing the
+  `make test` gate the same doc prescribes), and dropped the `pyspark<4.3` cap.
+- **Generated adopters no longer inherit the template's workspace identity in
+  their own docs.** `docs/AGENT_MCP.md` is now repointed at the adopter's host,
+  CLI profile and SQL warehouse (previously it told a new customer to log into
+  the template's workspace while claiming everything had already been
+  rewritten); `docs/ARCHITECTURE.md`, `docs/NAMING.md` and `docs/ADOPTING.md`
+  gained `template-only` regions the scaffold swaps for adopter text;
+  `docs/MIGRATION.md` (this repo's own restructure history) is dropped.
+- **`.github/CODEOWNERS` is reduced to a commented placeholder.** It shipped a
+  team that exists in no other org, which makes the file invalid — so the
+  "Require review from Code Owners" protection it describes silently enforced
+  nothing.
+- **`.cursor/rules/project.mdc` and the `author-ldp-artifact` /
+  `deploy-databricks-bundle` skills are converted too.** The rule file is
+  auto-attached to every Cursor edit and described the `projects/` layout as
+  fact; the skills cited `sales_landing_path` / `DATALAB_SALES_LANDING_PATH`,
+  which do not exist in an adopter.
+- **`docs/GETTING_STARTED.md` stopped giving adopters four broken
+  instructions**: keep `environment_version` (bricks a new pipeline), use
+  `../../../dist/` (wrong depth at the repo root), declare bundle variables in
+  `databricks.yml` (they live in `variables/`), and register a
+  `[tool.uv.workspace]` member (breaks `make lock` in a single-package repo).
+  Also `make install` → `make lock install` (a fresh adopter has no `uv.lock`)
+  and `PROFILE=` restored on `bootstrap-uc`.
+- **`rbac.yml` no longer recommends the command that breaks every UC grant.**
+  It said to create groups with `databricks groups create`; that makes
+  workspace-local groups Unity Catalog cannot see, so grants fail
+  `PRINCIPAL_DOES_NOT_EXIST` — the trap four other documents call out as the
+  number-one first-deploy failure. It also referenced a `GROUPS` dict that no
+  longer exists.
+- **First-deploy ordering is now identical in all three places** that give it
+  (`docs/NEW_ADOPTER.md`, the generated `README.md`, the skill): commit + push
+  before deploy, and the landing-data seed step between `make deploy` and
+  `make run` — without it the documented "bronze materializes" check cannot pass.
+- **A local-path git origin no longer produces a fake OIDC subject.**
+  `repo_slug()` turned `git clone /some/dir` into `datalab/.` and wrote it into
+  `docs/CICD.md` as the federation subject, the one string that must match
+  exactly or every deploy fails `TOKEN_SUBJECT_INVALID`. Non-GitHub remotes now
+  fall back to the `<owner>/<repo>` placeholder.
+- **Stale mechanics corrected across the docs**: the framework wheel is built by
+  a shallow `git clone` + `uv build --wheel`, not `pip wheel` (a uv-created venv
+  has no pip); `make bootstrap-uc` takes `MANAGED_LOCATION=`, not
+  `--managed-location`; `docs/ADOPTING.md`'s template-generation command named
+  the wrong owner for cross-org adopters.
+- **The scaffold smoke test covers what customers actually run.** It exercised
+  only `make new-adopter`, while `docs/NEW_ADOPTER.md` step 2 tells every
+  adopter to run `make configure-adopter` (convert in place) — a materially
+  different path. Both modes now run, plus `check-skills`, `check-templates-doc`,
+  `check-adopter-docs` and `make dry-run-local` on the generated repo.
 - **`publish-wheel` now honors a per-target `datalab_version` override.** It
   resolved the version from `datalab.__version__` (whatever the repo-wide
   pyproject pin installed locally) and always built from the pyproject tag, so

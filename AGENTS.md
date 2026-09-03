@@ -148,6 +148,12 @@ scripts/publish_wheel.py  Build the FRAMEWORK wheel for the TARGET's resolved da
 scripts/check_lockstep.py  Assert the framework pin agrees everywhere: pyproject git tag == var.datalab_version == uv.lock tag == uv.lock package version; notes any per-target datalab_version override (make check-lockstep; CI gate)
 scripts/bump_framework.py  Rewrite the pin at every site — driven by `make bump-framework VERSION=x.y.z` (edits + lock + schema regen + lockstep check); the framework-bump workflow opens this as a bot PR on new framework tags
 scripts/check_sync_lists.py  Assert databricks.yml sync.exclude == .databricksignore (make check-sync-lists; CI gate)
+scripts/check_templates_doc.py  Assert the bootstrap-adopter-repo skill's references/templates.md (the documented MANUAL
+                          fallback) still mirrors scaffold_adopter.py's file templates byte for byte (make check-templates-doc; CI + pre-commit)
+scripts/check_adopter_docs.py  Run INSIDE a GENERATED adopter: fail if any surface it reads (docs/, .cursor/rules,
+                          skills, CODEOWNERS, workflows) still names the template's workspace/SP/warehouse or the
+                          projects//design//omnigent material the conversion deletes (make check-adopter-docs; CI
+                          scaffold smoke test). No-ops in this repo — attribution is per PARAGRAPH, not per line
 pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.sources] (datalab → git tag) + [tool.uv.workspace]; root is package=false (builds nothing); each projects/<domain> is a workspace member building its own <catalog>_etl wheel
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
@@ -413,8 +419,10 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   import with `ModuleNotFoundError: No module named 'datalab'` (verified June 2026
   — the editable form the DAB templates suggest silently installs nothing here).
   So the framework ships as a versioned wheel (`datalab-<ver>-py3-none-any.whl`):
-  this repo BUILDS it FROM the pinned git dep (`pip wheel "datalab @ git+…@<tag>"
-  --no-deps`, NOT `uv build` at the root — the root is package-less) and publishes
+  this repo BUILDS it FROM the pinned git dep (a shallow `git clone --depth 1
+  --branch <tag>` of the framework + `uv build --wheel` there, NOT `uv build` at
+  the root — the root is package-less; and NOT `pip wheel`, since a uv-created
+  venv has no pip) and publishes
   it into an `artifacts.wheels` UC Volume INSIDE EACH project's own catalog
   (`customer_sales.artifacts.wheels`, `sales.artifacts.wheels` — one upload per
   project catalog, NOT a separate shared catalog) — `make publish-wheel` locally,
@@ -637,6 +645,47 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   it with markers (or handle it in `patch_agents_md`), or the CI scaffold
   smoke test fails loudly.
 <!-- template-only:agents-conversion-gotcha end -->
+<!-- template-only:adopter-surface-knowledge start -->
+- **The adopter surface is everything a generated repo READS, not just the four
+  files CI used to check.** The scaffold rewrote `AGENTS.md`, the `Makefile` and
+  the bundle files, and the smoke test grepped exactly those four — so every
+  other surface drifted unnoticed for as long as it existed: `docs/AGENT_MCP.md`
+  told a brand-new customer to `databricks auth login` against the TEMPLATE's
+  workspace and check the template's SQL warehouse (while its own "Adopter
+  setup" section claimed the configurator had already rewritten everything);
+  `docs/NAMING.md` documented `sales_landing_path` / `DATALAB_SALES_LANDING_PATH`,
+  variables an adopter does not have; `docs/GETTING_STARTED.md` said "copy
+  `projects/customer_sales/…`" from a folder the conversion deletes, told
+  adopters to keep `environment_version` (which bricks a new pipeline) and to
+  add a `[tool.uv.workspace]` member (which breaks `make lock`);
+  `.cursor/rules/project.mdc` — auto-attached to every Cursor edit — described
+  the `projects/` layout as fact; `.github/CODEOWNERS` shipped a team that
+  exists in no other org, which makes the file INVALID so "Require review from
+  Code Owners" silently enforces nothing. Two mechanisms fix this class, and
+  both are CI gates: template-only regions fenced
+  `<!-- template-only:<name> start/end -->` (now in `AGENTS.md`, `docs/`
+  `ARCHITECTURE`/`NAMING`/`ADOPTING`) that `scaffold_adopter.py`'s `DOC_REGIONS`
+  swaps for adopter text, and `make check-adopter-docs`, which runs inside the
+  GENERATED repo. Its attribution rule is per **paragraph**, not per line —
+  prose wraps, and a line-scoped grep forces awkward rewrites to keep the words
+  "template repo" on the offending line. **Marker comments must sit OUTSIDE
+  fenced code blocks**: an HTML comment inside ```mermaid breaks rendering.
+- **`references/templates.md` is executable documentation, so it gets a diff
+  gate.** The `bootstrap-adopter-repo` skill calls it the manual fallback and
+  claimed it was "kept in lockstep with the engine"; prose-enforced lockstep
+  drifted, as it always does. It shipped `environment_version: "4"`
+  UNCOMMENTED (the setting the engine deliberately comments out because
+  Databricks' fingerprint gate leaves a new pipeline unable to run), told the
+  reader to pre-create empty `silver/`/`gold/` layer dirs (the config validator
+  rejects an empty layer dir), omitted `tests/test_smoke.py` (pytest exits 5 on
+  an empty suite, so `make test` failed), and dropped the `pyspark<4.3` cap.
+  `make check-templates-doc` now diffs every mirrored code block against the
+  engine's template constants, mapping `@@TOKEN@@` to the doc's
+  `<angle-bracket>` placeholders. **The engine is the source of truth** — when
+  they disagree, change the doc. Adding a file to `write_domain` /
+  `write_repo_level` means adding its block to the doc and its entry to
+  `MIRRORED`.
+<!-- template-only:adopter-surface-knowledge end -->
 - **Permission groups are string variables on purpose — and so are the
   levels.** All access control lives in `rbac.yml` (include'd by
   `databricks.yml` next to `variables/` and `targets/`; `databricks.yml` itself
@@ -739,13 +788,13 @@ change:
 | `^\.cursor/(rules\|hooks)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks (skills are read from `.agents/skills`) |
 | `^\.codex/hooks\.json$`, `^\.agents/skills/.*` | Codex hooks.json + `.agents/skills` (the canonical authored agent-skills source) |
 | `^scripts/sync_skills\.py$` | agent-skills sync generator (canonical `.agents/skills` → `.claude/skills` copy) |
-| `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check |
+| `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists\|check_templates_doc\|check_adopter_docs)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check, adopter-scaffold doc lockstep + adopter doc drift |
 | `^schemas/.*\.json$` | vendored editor schemas — GENERATED from the pinned framework (`make sync-schemas`), never hand-edited |
 | `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) |
 | `^\.githooks/.*` | git pre-commit guard |
 | `^Makefile$` | developer + CI entrypoints |
 | `^\.env(\..*)?$` | secrets — never commit |
-| `^(AGENTS\|CLAUDE\|README)\.md$`, `^docs/(ARCHITECTURE\|CICD\|MIGRATION\|GETTING_STARTED\|NAMING)\.md$` | documents of record |
+| `^(AGENTS\|CLAUDE\|README)\.md$`, `^docs/(ARCHITECTURE\|CICD\|MIGRATION\|GETTING_STARTED\|NAMING\|NEW_ADOPTER\|ADOPTING\|AGENT_MCP)\.md$` | documents of record (incl. the adopter onboarding path) |
 
 The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
 

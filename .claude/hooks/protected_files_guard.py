@@ -44,7 +44,7 @@ PROTECTED: list[tuple[str, str]] = [
      "Codex hooks.json + .agents/skills (the CANONICAL authored agent-skills source)"),
     (r"^scripts/sync_skills\.py$",
      "agent-skills sync generator — canonical (.agents/skills) → .claude/skills copy contract"),
-    (r"^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists)\.py$",
+    (r"^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs)\.py$",
      "repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check"),
     (r"^schemas/.*\.json$",
      "vendored editor schemas — GENERATED from the pinned framework (make sync-schemas), never hand-edited"),
@@ -56,7 +56,7 @@ PROTECTED: list[tuple[str, str]] = [
      "developer + CI entrypoints"),
     (r"^\.env(\..*)?$",
      "secrets file — must never be committed"),
-    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION|GETTING_STARTED|NAMING)\.md$",
+    (r"^(AGENTS|CLAUDE|README)\.md$|^docs/(ARCHITECTURE|CICD|MIGRATION|GETTING_STARTED|NAMING|NEW_ADOPTER|ADOPTING|AGENT_MCP)\.md$",
      "document-of-record for AI coding agents"),
 ]
 

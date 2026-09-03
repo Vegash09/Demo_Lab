@@ -18,12 +18,21 @@
 #   • same SHAPE, different value  → override the string var (stage, prod reads)
 #   • different SHAPE (extra group) → restate the complex var (prod admin group)
 #
-# Groups must already exist in the workspace (account-level for UC) before a
-# deploy — `databricks groups create` or the account console. UC DATA grants
-# that complement these workspace-resource permissions live in
-# scripts/bootstrap_uc.py (keep its GROUPS dict in sync with the group names
-# here). admin_group is workspace-resource manage only; give it UC grants there
-# too only if it must also query the data.
+# Groups must already exist before a deploy, and they must be ACCOUNT-level:
+#
+#   databricks account groups create --display-name <group> --profile <account>
+#   databricks account workspace-assignment update <workspace-id> <group-id> \
+#       --json '{"permissions": ["USER"]}' --profile <account>
+#
+# NOT `databricks groups create` — that makes a workspace-LOCAL group, which
+# works for the pipeline/job ACLs below but is invisible to Unity Catalog, so
+# every UC grant then fails `PRINCIPAL_DOES_NOT_EXIST` with no hint that scope
+# is the problem (docs/NEW_ADOPTER.md step 5; docs/ADOPTING.md "First-deploy
+# traps"). The complementary UC DATA grants are emitted by
+# scripts/bootstrap_uc.py, which RESOLVES these group names from this file
+# through scripts/domains.py — there is no second list to keep in sync.
+# admin_group is workspace-resource manage only; give it UC grants there too
+# only if it must also query the data.
 
 variables:
   # --- WHO: group names (overridable per target + per GitHub Environment) -----

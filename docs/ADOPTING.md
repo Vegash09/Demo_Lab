@@ -37,14 +37,14 @@ left as fill-before-deploy TODOs. Prefill any value to skip its prompt; `YES=1`
 `bootstrap-adopter-repo` skill drive it:
 
 ```bash
-gh repo create <owner>/<customer>-datalab --template <owner>/datalab --private --clone
+gh repo create <owner>/<customer>-datalab --template dediggibyte/datalab --private --clone
 cd <customer>-datalab                  # --clone is a boolean flag: it clones into ./<customer>-datalab
 make configure-adopter             # prompts: catalog + host; prefill any value, e.g. CATALOG=<catalog> WAREHOUSE_ID=<id>
 make lock install && make validate-configs lint test
 ```
 
-(One-time, repo admin: `gh repo edit <owner>/datalab --template` enables the
-template flag.)
+(One-time, template admin: `gh repo edit dediggibyte/datalab --template` enables
+the template flag.)
 
 **Option B — `make new-adopter` (fresh sibling repo).** Run from a clone of THIS
 repo; copies only git-tracked files (never secrets/state/build output) into a new
@@ -95,12 +95,16 @@ The reusable framework was split out of this repo. Two repos now collaborate:
 | Repo | What it is | You edit it to… |
 |---|---|---|
 | [`dediggibyte/datalab-framework`](https://github.com/dediggibyte/datalab-framework) | the **library** (`datalab`): Pydantic models, SDP adapters, dqx engine, devtools, param helpers — zero domain code | change framework behavior (rare); reference is its `docs/FRAMEWORK.md` |
+<!-- template-only:adopting-repo-row start -->
 | this repo (`datalab`, internally the `datalab-projects` uv project) | the **domains + deploy bundle** that CONSUMES the framework — `databricks.yml` + reference domains under `projects/` | add/change tables, jobs, notebooks; deploy |
+<!-- template-only:adopting-repo-row end -->
 
+<!-- template-only:adopting-no-src start -->
 This repo has **no `src/datalab`** — the framework is a dependency, consumed two
 ways (below). Your adopter repo has the same shape, with your domain at the
 **root** (`config/<catalog>/`, `src/<catalog>_etl/`, `resources/`) instead of
 under `projects/`.
+<!-- template-only:adopting-no-src end -->
 
 ## The two consumption paths
 
@@ -125,7 +129,7 @@ place that resolves the git dep needs read access to that repo:
 | Where | Command | Why it clones the framework |
 |---|---|---|
 | your laptop | `make lock install` | `uv` resolves the git dep into `.venv` |
-| your laptop | `make publish-wheel` | builds the wheel via `pip wheel "datalab @ git+…"` |
+| your laptop | `make publish-wheel` | shallow-clones the pinned tag to build the wheel |
 | CI | `uv sync --frozen` | lint/test/validate-configs import `datalab` |
 | CD | publish-wheel step **+** `bundle deploy` | builds + resolves the framework wheel |
 
@@ -144,8 +148,8 @@ Two unrelated auth concerns are in play:
 > to another **private** GitHub repo. The built-in `GITHUB_TOKEN` is likewise
 > scoped to the adopter's own repo only. So neither OIDC nor `GITHUB_TOKEN` can
 > "take the framework from our repo and add it to the wheel" — the wheel build
-> (`pip wheel "datalab @ git+…"`) and `uv sync` both need a **git** credential:
-> a GitHub App token, a PAT, or a vendored wheel.
+> (a shallow `git clone` of the pinned tag) and `uv sync` both need a **git**
+> credential: a GitHub App token, a PAT, or a vendored wheel.
 
 ### CI/CD access — works across orgs (GitHub App)
 
@@ -165,7 +169,7 @@ The CI/CD workflows already carry the token flow (`common-ci-steps.yml` /
 `common-cd-steps.yml`): `actions/create-github-app-token@v3` mints a token scoped
 to `datalab-framework`, then a
 `git config url."https://x-access-token:<token>@github.com/…".insteadOf
-"https://github.com/…"` rewrite so `uv` and `pip wheel` clone over HTTPS. Nothing
+"https://github.com/…"` rewrite so `uv` and the wheel build clone over HTTPS. Nothing
 to author — generating the repo copies these workflows; you only supply the two
 values. (Full mechanics + rotation:
 [CICD.md → Private framework dependency](CICD.md#private-framework-dependency-git-auth).)
@@ -224,8 +228,9 @@ Two places must reference the **same** framework release — keep them in lockst
    datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v<x.y.z>" }
    ```
 
-   (`datalab` is listed under `[dependency-groups].dev`; the root project itself
-   is `package = false` — a uv workspace + dev-env, not a built package.)
+   (`datalab` is listed under `[dependency-groups].dev`. In an adopter repo the
+   root project IS the domain package; only the multi-domain template repo sets
+   `package = false` and uses a uv workspace.)
 
 2. `variables/medallion.yml` → `var.datalab_version` (the wheel filename):
 
@@ -237,17 +242,20 @@ Two places must reference the **same** framework release — keep them in lockst
    (Placeholders on purpose — the real value is whatever `pyproject.toml`
    currently pins; a literal example here would drift every release.)
 
+<!-- template-only:adopting-wheel-path start -->
 `var.datalab_wheel` derives the full path from `var.catalog` +
 `var.datalab_version`, so you never hand-write the wheel path (this repo's second
 domain mirrors the split: `var.sales_datalab_wheel` derives from
 `var.sales_catalog`). **Upgrading the framework = bump the git tag AND
 `datalab_version`, then `make lock` + `make publish-wheel`** (see "Upgrading the
 framework later").
+<!-- template-only:adopting-wheel-path end -->
 
 ## Publish the framework wheel from your repo
 
-`make publish-wheel` builds the framework wheel **from the pinned git dep** (via
-`pip wheel "datalab @ git+…@<tag>" --no-deps`) and uploads it into **each project
+`make publish-wheel` builds the framework wheel **from the pinned git dep** (a
+shallow `git clone --depth 1 --branch <tag>` + `uv build --wheel`; there is no
+`pip` in a uv-created venv) and uploads it into **each project
 catalog's** `artifacts.wheels` UC Volume (`customer_sales.artifacts.wheels`,
 `sales.artifacts.wheels` in this repo) — **one upload per project catalog** (the
 wheel rides in the same catalog as the domain it serves, not a separate shared
@@ -302,6 +310,7 @@ Per-target catalogs and groups are RESOLVED from `variables/`, `targets/` and
 `rbac.yml` through `scripts/domains.py` — there are no `CATALOGS`/`GROUPS` dicts to
 keep in sync (they were removed when the registry landed) (see AGENTS.md "Change access").
 
+<!-- template-only:adopting-second-domain start -->
 ## Adding a SECOND domain to THIS reference repo (not an adopter task)
 
 > **Adopters: this section is not for you.** A generated adopter repo is
@@ -356,7 +365,7 @@ Then wire the domain up in two places outside the copied folder:
 
    ```yaml
    environment:
-     environment_version: "4"
+     # environment_version: "4"   # leave OFF until the pipeline has run history
      dependencies:
        - ${var.datalab_wheel}                       # framework wheel from THIS project's catalog volume
        - ../../../dist/<catalog>_etl-*.whl          # this domain's wheel (bundle-built)
@@ -366,6 +375,7 @@ Then wire the domain up in two places outside the copied folder:
    (`${workspace.file_path}/config/<catalog>` in an adopter repo). `databricks.yml`'s
    `include:` glob already picks up `resources/*.yml`.
 
+<!-- template-only:adopting-second-domain end -->
 ## Validate → deploy → run
 
 Same gates CI runs:
@@ -375,7 +385,7 @@ make install                          # uv sync → .venv (resolves the framewor
 make validate-configs lint test       # pydantic + dqx · ruff · pytest (local Spark, Java 17+)
 make validate                         # databricks bundle validate -t dev
 make deploy                           # validate + bundle deploy -t dev
-make run                              # refresh the customer_sales_etl pipeline on dev
+make run                              # refresh the <catalog>_etl pipeline on dev
 ```
 
 `make deploy` builds the domain wheels (needs `uv` on PATH) and CI publishes the

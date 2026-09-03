@@ -2,11 +2,12 @@
 
 The repo layout is not arbitrary: **every domain folder path spells out where
 its data and resources live in Unity Catalog**. A developer (or agent) reading
-`projects/customer_sales/config/customer_sales/silver/customers.yml` should
+`config/customer_sales/silver/customers.yml` should
 conclude, with no further context, that this artifact defines the table
 `customer_sales.silver.customers`. This page is the contract; the
-`customer_sales` reference domain under `projects/` demonstrates it.
+`customer_sales` reference domain in the datalab template repo demonstrates it.
 
+<!-- template-only:naming-diagram start -->
 ```mermaid
 flowchart LR
   subgraph repo ["Repo layout (adopter root or projects/<catalog>/)"]
@@ -29,17 +30,21 @@ flowchart LR
   E --> H
   E --> I
 ```
+<!-- template-only:naming-diagram end -->
 
 ## The rules
 
 ### 1. Domain folder == base catalog name
 
+<!-- template-only:naming-domain-folder start -->
 The domain folder (`projects/<catalog>/` here; the repo root in an adopter
 repo) is named after the **base catalog** that holds the domain's medallion
 schemas — `customer_sales` in the reference example.
+<!-- template-only:naming-domain-folder end -->
 
 Targets append an environment suffix to the SAME base name via the bundle
-`catalog` variable (`databricks.yml`):
+`catalog` variable (declared in `variables/medallion.yml`, valued per target in
+`targets/<env>.yml`):
 
 | Target | Catalog | Resolved from |
 |---|---|---|
@@ -69,7 +74,7 @@ config/customer_sales/                      → catalog customer_sales
 The schema folders are the medallion layers `bronze`/`silver`/`gold` — the
 framework loader requires exactly these folder names, and the schema variables
 they map to (`bronze_schema`/`silver_schema`/`gold_schema` in
-`databricks.yml`) default to the same names. Keep folder name == schema name;
+`variables/medallion.yml`) default to the same names. Keep folder name == schema name;
 if a deployment must use different schema names, the indirection lives in
 `domain.yml` (`layers.<folder>.schema_conf`) and the target's schema
 variables — never in the artifacts.
@@ -105,6 +110,7 @@ not by its folder path.
 bundle resource key equals the deployed object name, all prefixed with the
 catalog:
 
+<!-- template-only:naming-resource-table start -->
 | File | Resource key / name | Kind |
 |---|---|---|
 | `customer_sales_etl.pipeline.yml` | `customer_sales_etl` | SDP pipeline |
@@ -113,9 +119,11 @@ catalog:
 | `customer_sales_quarantine_report.job.yml` | `customer_sales_quarantine_report` | notebook lane |
 
 The pipeline is `<catalog>_etl`; edge jobs are `<catalog>_<purpose>`.
+<!-- template-only:naming-resource-table end -->
 
 ## Explicitly out of scope
 
+<!-- template-only:naming-out-of-scope start -->
 These keep their existing names; the `sales` in them refers to the **UC
 volume named `sales`**, not the domain folder:
 
@@ -129,6 +137,7 @@ volume named `sales`**, not the domain folder:
   the framework contract (defined in the `datalab-framework` repo's models),
   shared by every adopter; this page only constrains the *values* (e.g.
   `domain: customer_sales`).
+<!-- template-only:naming-out-of-scope end -->
 
 ## Renaming an existing domain (what it costs)
 

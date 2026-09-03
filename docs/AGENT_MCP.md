@@ -11,7 +11,7 @@ CLI profile** — no OAuth app, no token in the repo.
 This is **opt-in, reversible, and dev-time only**. It changes nothing about the
 framework, the bundle, CI, or the deploy surface — `.mcp.json` is excluded from
 the deployed bundle via `.databricksignore`, and the proxy never enters
-`uv.lock` (it runs through `uvx`, like the `omnigent/` pilot).
+`uv.lock` (it runs through `uvx` — never a locked dependency).
 
 ## What's here
 
@@ -26,12 +26,12 @@ the deployed bundle via `.databricksignore`, and the proxy never enters
 - **Databricks CLI authenticated** as a profile (OAuth U2M — no PAT needed):
   ```bash
   databricks auth login --host https://dbc-425be768-f138.cloud.databricks.com
-  # creates/uses a ~/.databrickscfg profile; this repo's default is `diggi_dev_aws`
+  # creates/uses a ~/.databrickscfg profile; this repo is configured for `diggi_dev_aws`
   ```
 - **`uv` / `uvx`** on PATH (already required by the repo). The proxy is fetched
   ephemerally by `uvx` — **do not `uv add` it**; it must not enter
   `pyproject.toml` / `uv.lock` or the bundle.
-- A **running SQL warehouse** you can use (this repo's default is
+- A **running SQL warehouse** you can use (this repo is configured for
   `c1cdbe2406e5cf04`; `databricks warehouses list` shows yours).
 - **Managed MCP enabled** in the workspace (see Verification — it may be a
   Beta/preview feature gated per workspace/region).
@@ -100,7 +100,7 @@ Delete `.mcp.json`, `.cursor/mcp.json`, the two `query-databricks/SKILL.md`
 files, and their `.databricksignore` / protected-list rows — nothing else depends
 on them. `uc-mcp-proxy` is community/fast-moving; pin a version
 (`uvx uc-mcp-proxy@<ver>`) and re-check `uvx uc-mcp-proxy --help` if a flag
-changes. Treat it like the `omnigent/` pilot: opt-in, verify, throwaway.
+changes. Treat it as opt-in, verify, throwaway.
 
 ## Adopter setup
 
@@ -115,7 +115,7 @@ pointing at this template's workspace — point them at yours.) Either way you c
 edit the two JSON files directly, or (Claude Code) export the env overrides the
 defaults already reference:
 
-| Value | This repo's default | Where it lives | Your source |
+| Value | This repo's configured value | Where it lives | Your source |
 |---|---|---|---|
 | CLI profile (`DATABRICKS_CONFIG_PROFILE`) | `diggi_dev_aws` | `~/.databrickscfg` (carries the workspace host + auth) | your `databricks auth login` profile |
 | SQL warehouse id (`DATABRICKS_SQL_WAREHOUSE_ID`) | `c1cdbe2406e5cf04` | a dev SQL warehouse | `databricks warehouses list` |
@@ -127,9 +127,9 @@ carries literal values (most robust across Cursor versions) — edit them direct
 `export DATABRICKS_CONFIG_PROFILE=… DATABRICKS_SQL_WAREHOUSE_ID=…` repoints Claude
 Code without touching the protected file.
 
-> Note: the repo `.env` currently sets `DATABRICKS_PROFILE` (wrong name) — the
+> Note: a `.env` that sets `DATABRICKS_PROFILE` is using the wrong name — the
 > CLI/SDK variable is `DATABRICKS_CONFIG_PROFILE`. The `.mcp.json` default
-> (`diggi_dev_aws`) means you don't depend on `.env`; set
+> (`diggi_dev_aws`) means you don't depend on `.env` at all; set
 > `DATABRICKS_CONFIG_PROFILE` to override.
 
 ## Verification

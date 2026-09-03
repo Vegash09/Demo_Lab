@@ -47,15 +47,17 @@ framework-bump workflow owns that multi-file lockstep.
 
 Reusable pieces:
 
-- `common-ci-steps.yml` — `uv sync --frozen` → `ruff check` (same paths as
-  `make lint`, projects/ included) → skill-mirror, framework-lockstep,
+- `common-ci-steps.yml` — `uv sync --frozen` → `ruff check` (the same paths as
+  `make lint`) → skill-mirror, templates-doc, framework-lockstep,
   vendored-schema, domain-registry and sync-list drift checks (the `make
   check-*` gates) → config validation (`python -m datalab.framework`, the
-  `make validate-configs` loader) → `pytest` (local Spark, Java 21; runs each
-  project's suite) → `databricks bundle validate -t <target>` (OIDC; skipped
+  `make validate-configs` loader) → `pytest` (local Spark, Java 21) →
+  `databricks bundle validate -t <target>` (OIDC; skipped
   gracefully when the target's GitHub Environment has no Databricks secrets
-  yet, same gate as CD) → the adopter-scaffold smoke test (`make new-adopter`
-  into a temp dir, then the GENERATED repo's own quality gates).
+  yet, same gate as CD). In the template repo it additionally runs the
+  adopter-scaffold smoke test (both conversion modes into temp dirs, then the
+  GENERATED repo's own quality gates + adopter invariants); that job is
+  stripped from generated adopters, which have no scaffold to exercise.
 - `common-cd-steps.yml` — OIDC setup → `deploy-dab` composite action
   (validate + deploy with optional `--var` overrides). **dev passes
   `auto-approve: true`** so CI can apply destructive changes (e.g. deleting a
@@ -133,8 +135,8 @@ fail fast if the client id / key are missing → `actions/create-github-app-toke
 (`client-id:` input) mints a token scoped to `owner: dediggibyte`,
 `repositories: datalab-framework` →
 a `git config url."https://x-access-token:<token>@github.com/dediggibyte/datalab-framework".insteadOf
-"https://github.com/dediggibyte/datalab-framework"` rewrite so uv (and `pip wheel`
-/ `bundle deploy` in CD) clone the framework over HTTPS with the token. The App is
+"https://github.com/dediggibyte/datalab-framework"` rewrite so uv (and the wheel
+build / `bundle deploy` in CD) clone the framework over HTTPS with the token. The App is
 installed on `datalab-framework`, so the same client id / key work from **any** consumer
 repo — including cross-org adopters (the token is minted for the
 `datalab-framework` installation regardless of where the run executes).
@@ -192,10 +194,11 @@ For each target (`dev`, `stage`, `prod`):
 3. **GitHub Environment** named exactly `<target>`
    (repo Settings → Environments):
    - secrets: `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` (the SP application ID)
-   - optional variables: `DATALAB_CATALOG`, `DATALAB_SALES_LANDING_PATH`
-     (from `databricks.yml`), `DATALAB_READER_GROUP`, `DATALAB_ENGINEER_GROUP`
+   - optional variables: `DATALAB_CATALOG`, `DATALAB_SALES_CATALOG`,
+     `DATALAB_SALES_LANDING_PATH` (the medallion vars from `variables/`),
+     `DATALAB_READER_GROUP`, `DATALAB_ENGINEER_GROUP`, `DATALAB_ADMIN_GROUP`
      (the group names from `rbac.yml`) — forwarded as `--var` overrides; empty
-     → the committed `databricks.yml` / `rbac.yml` defaults
+     → the committed `variables/` / `rbac.yml` defaults
    - for `prod`: add required reviewers so deploys need approval.
    - Environments without secrets are skipped gracefully by the deploy gate
      (the merge stays green until stage/prod are provisioned).
@@ -218,7 +221,7 @@ For each target (`dev`, `stage`, `prod`):
    groups are rejected) assigned to the workspace via
    `databricks account workspace-assignment update`; metastores without a
    storage root (Default Storage) need
-   `--managed-location s3://.../unity-catalog/<workspace-id>` (match the
+   `MANAGED_LOCATION=s3://.../unity-catalog/<workspace-id>` (match the
    workspace's existing catalogs).
 
 ## Release flow

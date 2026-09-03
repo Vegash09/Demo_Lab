@@ -1,6 +1,6 @@
 ---
 name: query-databricks
-description: Inspect live Unity Catalog tables read-only (preview rows, column names/types, DESCRIBE, SHOW TABLES, value distributions) via the opt-in Databricks SQL MCP server while authoring or changing a pipeline table. Use to ground an artifact in real data before writing config/<catalog>/<schema>/<table>.yml — confirm a source table's real columns + types, sanity-check a candidate dqx rule against actual values, or discover what tables a schema holds. NEVER write: this path is read-only and SDP-owned tables have exactly one owning lane.
+description: Inspect live Unity Catalog tables read-only (preview rows, column names/types, DESCRIBE, SHOW TABLES, value distributions) via the opt-in Databricks SQL MCP server while authoring or changing a pipeline table. Use to ground an artifact in real data before writing config/<catalog>/<schema>/<table>.yml — confirm a source table's real columns + types, sanity-check a candidate dqx rule against actual values, or discover what tables a schema holds. NEVER write; this path is read-only and SDP-owned tables have exactly one owning lane.
 ---
 
 # Query Databricks from the agent (read-only, opt-in MCP)

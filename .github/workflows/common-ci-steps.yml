@@ -88,6 +88,15 @@ jobs:
         # generated copy for Claude Code (scripts/sync_skills.py). Fails on drift.
         run: uv run python scripts/sync_skills.py --check
 
+      - name: Check the adopter templates doc matches the scaffold engine
+        # Mirror of `make check-templates-doc`: the bootstrap-adopter-repo skill's
+        # references/templates.md is the documented MANUAL FALLBACK, so every
+        # code block in it must equal what scaffold_adopter.py writes. It had
+        # drifted into shipping an uncommented environment_version (which bricks
+        # a new pipeline behind Databricks' fingerprint gate) and an
+        # empty-layer-dir instruction the config validator rejects.
+        run: uv run --no-project python scripts/check_templates_doc.py
+
       - name: Check framework version pin is in lockstep
         # Mirror of `make check-lockstep`: the datalab git tag (pyproject.toml
         # [tool.uv.sources]), var.datalab_version (variables/medallion.yml — the
@@ -248,6 +257,25 @@ jobs:
           make check-lockstep
           make check-domains
           make check-sync-lists
+          # check-skills was missing here: the scaffold edits skills under BOTH
+          # .agents/skills and .claude/skills, and patching only one ships an
+          # adopter whose very first `make check-skills` fails.
+          make check-skills
+          make check-templates-doc
+          # Every surface an adopter READS — docs/, the Cursor rule file, the
+          # skills, CODEOWNERS, the workflows — must carry no template identity
+          # (workspace host, CLI profile, SQL warehouse, deploy SP) and no
+          # reference to the projects/ + design/ + omnigent material the
+          # conversion deletes, unless the paragraph names the template repo.
+          make check-adopter-docs
+
+      - name: Local SDP graph dry-run in the generated repo (OSS spark-pipelines)
+        # The scaffold rewrites LOCAL_DOMAIN_CONFIG / LOCAL_TRANSFORMS /
+        # LOCAL_LANDING and the spec-local conf flag. Nothing asserted they still
+        # resolve, so `make run-local` — the first thing a new adopter runs to
+        # see their pipeline work — could break silently.
+        working-directory: ${{ runner.temp }}/acme-datalab
+        run: make dry-run-local
 
       - name: Assert adopter invariants (landing-volume contract, AGENTS.md conversion)
         working-directory: ${{ runner.temp }}/acme-datalab
@@ -275,3 +303,25 @@ jobs:
           if grep -qE '^design:' Makefile; then
             echo "::error::the design target survived into the adopter Makefile"; exit 1
           fi
+
+      # The documented FIRST command a new adopter runs is `make configure-adopter`
+      # (convert a GitHub-template clone IN PLACE) — docs/NEW_ADOPTER.md step 2.
+      # Only `make new-adopter` was ever exercised, so the path every customer
+      # actually takes was untested. It differs materially: it deletes from a real
+      # clone instead of copying tracked files, and it resolves the repo slug from
+      # git origin to rewrite docs/CICD.md's OIDC subject.
+      - name: Convert a clone IN PLACE (make configure-adopter)
+        run: |
+          set -euo pipefail
+          git clone --no-hardlinks . "$RUNNER_TEMP/beta-datalab"
+          cd "$RUNNER_TEMP/beta-datalab"
+          # The engine refuses to convert the canonical template in place; this
+          # clone's origin is a local path, so the guard correctly lets it run.
+          make configure-adopter YES=1 CATALOG=beta \
+            HOST=https://adb-000000000000000.0.azuredatabricks.net \
+            WAREHOUSE_ID=0000000000000000 DEPLOY_SP=00000000-0000-0000-0000-000000000000
+          test -d config/beta && test -f resources/beta_etl.pipeline.yml
+          test ! -d projects && test ! -d design && test ! -d omnigent
+          make lock
+          make validate-configs lint check-skills check-domains check-sync-lists
+          make check-adopter-docs

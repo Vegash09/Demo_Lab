@@ -15,7 +15,7 @@ TARGET ?= dev
         deploy run destroy publish-wheel bootstrap-uc enable-githooks \
         commit-protected clean sync-skills check-skills publish-genie-skills \
         sync-schemas check-schemas check-lockstep bump-framework check-domains \
-        check-sync-lists \
+        check-sync-lists check-templates-doc check-adopter-docs \
         spec-local dry-run-local run-local validate-connect design \
         new-adopter configure-adopter
 
@@ -80,6 +80,20 @@ check-domains: install  ## Resolve the domain registry against variables/, targe
 
 check-sync-lists: install  ## Fail if databricks.yml sync.exclude and .databricksignore diverged (CI)
 	$(UV) run python scripts/check_sync_lists.py
+
+# The bootstrap-adopter-repo skill's references/templates.md is the documented
+# MANUAL FALLBACK for converting a repo by hand. It only earns that role while
+# it matches the engine byte for byte — it had silently drifted into shipping an
+# uncommentable environment_version and an empty-layer-dir instruction that the
+# config validator rejects. This diffs every mirrored code block.
+check-templates-doc:  ## Fail if the adopter templates doc drifted from scripts/scaffold_adopter.py (CI + pre-commit)
+	$(UV) run --no-project python scripts/check_templates_doc.py
+
+# Run INSIDE a generated adopter repo (the scaffold smoke test does): fails if
+# any surface an adopter reads still names the template's workspace, deploy SP,
+# SQL warehouse or the directories the conversion deletes. No-ops in this repo.
+check-adopter-docs:  ## Fail if a generated adopter still carries template identity/layout (CI)
+	$(UV) run --no-project python scripts/check_adopter_docs.py
 
 bump-framework:  ## Upgrade the framework pin end to end (VERSION=x.y.z): pyproject tag + datalab_version + uv.lock + schemas
 	@if [ -z "$(VERSION)" ]; then \

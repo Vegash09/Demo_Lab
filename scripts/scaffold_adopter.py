@@ -82,6 +82,13 @@ TEMPLATE_SLUG = "dediggibyte/datalab"
 TEMPLATE_MCP_PROFILE = "diggi_dev_aws"
 TEMPLATE_WAREHOUSE_ID = "c1cdbe2406e5cf04"
 
+# The template's own Databricks workspace + CI/CD deploy service principal, both
+# baked into docs/ (CICD.md's federation-policy command, AGENT_MCP.md's auth
+# commands). Repointed at the adopter's, or a first-timer copying a command out
+# of their OWN docs authenticates against the template's workspace/SP.
+TEMPLATE_HOST = "https://dbc-425be768-f138.cloud.databricks.com"
+TEMPLATE_DEPLOY_SP = "437346a1-0b53-418a-80d4-abaf2586ed97"
+
 # Placeholder default for --host: interactive mode prompts only while the flag
 # still holds this sentinel (a passed flag skips the prompt).
 HOST_PLACEHOLDER = "https://<your-workspace-host>"
@@ -475,8 +482,11 @@ your DEFAULT CLI profile, which may point somewhere else):
 databricks auth login --host <workspace-url> --profile <cli-profile>
 make bootstrap-uc TARGET=dev WAREHOUSE_ID=<id> PROFILE=<cli-profile>
 make publish-wheel TARGET=dev APPLY=1 PROFILE=<cli-profile>
-make deploy && make run
 git add -A && git commit -m "configure @@CATALOG@@ adopter" && git push  # CI needs the regenerated uv.lock
+make deploy
+databricks fs cp sample_data/landing/@@CATALOG@@/events/events.json \\
+    dbfs:/Volumes/@@CATALOG@@/landing/@@CATALOG@@/events/ --profile <cli-profile>
+make run
 ```
 
 ## Add tables
@@ -533,7 +543,16 @@ def check_catalog(catalog: str, allow_suffix: bool) -> tuple[bool, str]:
 
 
 def repo_slug(path: Path) -> str:
-    """`<owner>/<repo>` from the git origin of `path` (empty if none)."""
+    """`<owner>/<repo>` from the git origin of `path` (empty if none).
+
+    Only a real GitHub remote yields a slug. A LOCAL-path origin (a
+    `git clone /some/dir` used for testing, or a repo with no GitHub remote
+    yet) has no owner, and naively taking its last two path segments produced
+    nonsense like `datalab/.` — which then landed in docs/CICD.md as the OIDC
+    federation SUBJECT, the one string that must match exactly or every deploy
+    fails TOKEN_SUBJECT_INVALID. Returning "" makes the caller fall back to the
+    honest `<owner>/<repo>` placeholder.
+    """
     try:
         url = subprocess.run(
             ["git", "-C", str(path), "remote", "get-url", "origin"],
@@ -543,8 +562,17 @@ def repo_slug(path: Path) -> str:
         return ""
     url = url.removesuffix(".git")
     if url.startswith("git@") and ":" in url:  # git@github.com:owner/repo
-        url = url.split(":", 1)[1]
-    parts = [p for p in url.replace("https://", "").split("/") if p]
+        host, url = url[4:].split(":", 1)
+        if "github" not in host:
+            return ""
+    elif "://" in url:
+        scheme_less = url.split("://", 1)[1]
+        host, _, url = scheme_less.partition("/")
+        if "github" not in host:
+            return ""
+    else:
+        return ""  # a bare local path — no owner to name
+    parts = [p for p in url.split("/") if p and p != "."]
     return "/".join(parts[-2:]) if len(parts) >= 2 else ""
 
 
@@ -570,6 +598,10 @@ TEMPLATE_ONLY_PATHS = [
     "scripts/export_design.py",                # exports the deleted design/*.drawio
     ".agents/skills/maintain-design-diagram",  # skill for the deleted design/ package
     ".claude/skills/maintain-design-diagram",  # its generated Claude Code copy
+    # THIS repo's restructure history ("this repo has been through two
+    # restructures", legacy DLT -> SDP). A brand-new customer repo has no such
+    # history, so it reads as a false statement about their own code.
+    "docs/MIGRATION.md",
 ]
 
 
@@ -658,6 +690,19 @@ def patch_makefile(out: Path, catalog: str) -> None:
         "Makefile",
     )
     text = text.replace("datalab.sales_landing_path=file://", "datalab.landing_path=file://")
+    # The publish-wheel comment block names the template's SECOND domain wheel
+    # variable, which does not exist here (one domain, one var.datalab_wheel).
+    text = require_replace(
+        text,
+        "# UC Volume inside EACH project's own catalog (one upload per project catalog). CI\n"
+        "# runs this in the deploy-dab action BEFORE `bundle deploy` (the version each domain\n"
+        "# references via var.datalab_wheel / var.sales_datalab_wheel must be on its volume\n"
+        "# first). Bump the git tag + var.datalab_version in lockstep when upgrading.",
+        "# UC Volume inside this catalog. CI runs it in the deploy-dab action BEFORE\n"
+        "# `bundle deploy` (the version var.datalab_wheel references must be on the volume\n"
+        "# first). Bump the git tag + var.datalab_version in lockstep when upgrading.",
+        "Makefile (publish-wheel comment)",
+    )
     # Adopters have no design/ assets — drop the export target (its script and
     # the maintain-design-diagram skill are removed by remove_template_only_paths).
     text = require_replace(
@@ -734,6 +779,23 @@ def patch_ci(out: Path) -> None:
     text = require_replace(
         text, "ruff check scripts projects", "ruff check scripts src", "common-ci-steps.yml"
     )
+    for old, new in (
+        (
+            "        # Same paths as `make lint` — the framework moved to the datalab-framework\n"
+            "        # repo; here we lint scripts/ + the reference domains under projects/.",
+            "        # Same paths as `make lint`: the repo's scripts/ + the domain package.",
+        ),
+        (
+            "        # the Makefile's CONFIG_DIRS (root config/ for adopters, projects/*/config here).\n"
+            "        run: |\n"
+            "          dirs=()\n"
+            '          for d in config projects/*/config; do [ -d "$d" ] && dirs+=("$d"); done\n'
+            '          uv run python -m datalab.framework "${dirs[@]}"',
+            "        # the Makefile's CONFIG_DIRS (the root-level config/ directory).\n"
+            "        run: uv run python -m datalab.framework config",
+        ),
+    ):
+        text = require_replace(text, old, new, "common-ci-steps.yml")
     # Strip the template-only trailing jobs (the scaffold smoke test exercises
     # the TEMPLATE layout — its Makefile anchors don't exist in an adopter).
     if CI_TEMPLATE_ONLY_MARKER not in text:
@@ -811,6 +873,38 @@ def patch_cd(out: Path, catalog: str) -> None:
     text = text.replace(
         "        IN_SALES_CATALOG: ${{ inputs.sales-catalog }}\n", ""
     )
+    # The surviving `catalog` input + the comments around the publish/deploy
+    # steps still advertised the template's two domains. No runtime effect, but
+    # the input description is what a maintainer reads in the Actions UI — and
+    # the "no template identity" done-check deliberately skips .github/, so this
+    # is exactly the drift nobody would catch.
+    text = require_replace(
+        text,
+        '    description: "Unity Catalog catalog override for the customer_sales '
+        'domain (overrides var.catalog)."',
+        f'    description: "Unity Catalog catalog override for the {catalog} '
+        'domain (overrides var.catalog)."',
+        "deploy-dab/action.yml",
+    )
+    for old, new in (
+        (
+            "references (var.datalab_wheel / var.sales_datalab_wheel) is present when a",
+            "references (var.datalab_wheel) is present when a",
+        ),
+        (
+            "publish_wheel uploads to the per-target domain catalogs (bootstrap_uc.CATALOGS)",
+            "publish_wheel uploads to the per-target domain catalogs (scripts/domains.py)",
+        ),
+        (
+            "# When a domain catalog is overridden below (--var catalog / sales_catalog),",
+            "# When the domain catalog is overridden below (--var catalog),",
+        ),
+        (
+            "# it (var.datalab_wheel / var.sales_datalab_wheel derive from the same vars).",
+            "# it (var.datalab_wheel derives from the same var).",
+        ),
+    ):
+        text = text.replace(old, new)
     action.write_text(text, encoding="utf-8")
 
 
@@ -828,8 +922,18 @@ def patch_cicd_docs(out: Path, ctx: dict[str, str], slug: str) -> None:
     text = require_replace(
         text, "repo:dediggibyte/datalab:environment:", f"repo:{slug}:environment:", "docs/CICD.md"
     )
-    text = text.replace("437346a1-0b53-418a-80d4-abaf2586ed97", ctx["@@DEPLOY_SP@@"])
-    text = text.replace("https://dbc-425be768-f138.cloud.databricks.com", ctx["@@HOST@@"])
+    text = text.replace(TEMPLATE_DEPLOY_SP, ctx["@@DEPLOY_SP@@"])
+    text = text.replace(TEMPLATE_HOST, ctx["@@HOST@@"])
+    # docs/MIGRATION.md is template history and is deleted from adopters, so its
+    # nav link would 404 in the generated repo.
+    text = require_replace(
+        text,
+        "[← README](../README.md) · [Architecture](ARCHITECTURE.md) · "
+        "[Framework](FRAMEWORK.md) · **CI/CD** · [Migration](MIGRATION.md)",
+        "[← README](../README.md) · [Architecture](ARCHITECTURE.md) · "
+        "[Framework](FRAMEWORK.md) · **CI/CD**",
+        "docs/CICD.md",
+    )
     # Template-workspace identity that used to survive into adopters: the shared-SP
     # sentence, the SP's display name, and the sales-domain landing-path variable
     # (patch_cd already renamed the workflow input to DATALAB_LANDING_PATH).
@@ -844,9 +948,339 @@ def patch_cicd_docs(out: Path, ctx: dict[str, str], slug: str) -> None:
         text, "\n  (`access-management-sp-rulebook`)", "", "docs/CICD.md"
     )
     text = require_replace(
-        text, "DATALAB_SALES_LANDING_PATH", "DATALAB_LANDING_PATH", "docs/CICD.md"
+        text,
+        "   - optional variables: `DATALAB_CATALOG`, `DATALAB_SALES_CATALOG`,\n"
+        "     `DATALAB_SALES_LANDING_PATH` (the medallion vars from `variables/`),",
+        "   - optional variables: `DATALAB_CATALOG`, `DATALAB_LANDING_PATH`\n"
+        "     (the medallion vars from `variables/`),",
+        "docs/CICD.md",
+    )
+    text = text.replace("DATALAB_SALES_LANDING_PATH", "DATALAB_LANDING_PATH")
+    path.write_text(text, encoding="utf-8")
+
+
+# --- docs/, harness + CI surfaces that also carry template identity ----------
+# patch_cicd_docs used to be the ONLY doc rewrite, which left an adopter reading
+# their OWN docs pointed at the template's workspace, deleted folders and
+# second-domain variables. Everything below closes that gap; `make
+# check-adopter-docs` (run on the generated repo in CI) fails if any of it
+# regresses.
+
+# Template-only regions in docs/, swapped exactly like AGENTS.md's. Markers must
+# sit OUTSIDE fenced code blocks — a comment inside ```mermaid breaks rendering.
+DOC_REGIONS: dict[str, dict[str, str]] = {
+    "docs/ARCHITECTURE.md": {
+        # docs/MIGRATION.md is template history and is deleted from adopters.
+        "arch-nav": (
+            "[← README](../README.md) · **Architecture** · "
+            "[Framework](FRAMEWORK.md) · [CI/CD](CICD.md)\n"
+        ),
+        "arch-design-banner": "",       # no design/ package in an adopter
+        "arch-design-section": "",      # ...and no `make design` to document
+        "arch-code-diagram": """\
+```mermaid
+flowchart TD
+    FW["datalab framework — EXTERNAL dependency<br/>(dediggibyte/datalab-framework: git dep + UC-Volume wheel)<br/>models · adapters · generator · devtools · param helpers"]
+    subgraph REPO["this repo — the @@CATALOG@@ domain + deploy bundle"]
+        subgraph DOMAIN["repo root — the domain"]
+            CFG["config/@@CATALOG@@/<br/>domain.yml + &lt;layer&gt;/&lt;table&gt;.yml"]
+            DOM["src/@@CATALOG@@_etl/<br/>pure @transform fns · custom dqx checks ·<br/>3-line pipeline entrypoint"]
+            JOBS["src/jobs/ + notebooks/<br/>edge lanes"]
+            RES["resources/<br/>the domain's bundle resources"]
+            DTESTS["tests/<br/>the domain's own tests"]
+        end
+    end
+    CFG -->|consumed by| FW
+    DOM -->|registered into| FW
+    DTESTS -->|exercise| FW
+```
+""",
+        "arch-layer-rule": """\
+2. **The repo root** — this adopter's single domain: the YAML artifacts
+   (`config/@@CATALOG@@/`), the domain package (`src/@@CATALOG@@_etl/`), the
+   edge-lane entry points (`src/jobs/@@CATALOG@@/`, `notebooks/@@CATALOG@@/`),
+   the bundle `resources/`, and `tests/`. The datalab template repo carries the
+   same shape nested under `projects/<domain>/`, one folder per reference domain.
+""",
+    },
+    "docs/ADOPTING.md": {
+        "adopting-repo-row": (
+            "| this repo | the **domain + deploy bundle** that CONSUMES the framework "
+            "— `databricks.yml` + your domain at the repo root | add/change tables, "
+            "jobs, notebooks; deploy |\n"
+        ),
+        "adopting-no-src": (
+            "This repo has **no `src/datalab`** — the framework is a dependency,\n"
+            "consumed two ways (below). Your domain lives at the repo **root**\n"
+            "(`config/@@CATALOG@@/`, `src/@@CATALOG@@_etl/`, `resources/`).\n"
+        ),
+        "adopting-wheel-path": (
+            "`var.datalab_wheel` derives the full path from `var.catalog` +\n"
+            "`var.datalab_version`, so you never hand-write the wheel path.\n"
+            "**Upgrading the framework = bump the git tag AND `datalab_version`, then\n"
+            '`make lock` + `make publish-wheel`** (see "Upgrading the framework later").\n'
+        ),
+        # "Adopters: this section is not for you" — so don't ship it to them.
+        "adopting-second-domain": (
+            "## Adding a second domain\n"
+            "\n"
+            "This repo is deliberately SINGLE-domain: the root-level layout\n"
+            "(`config/@@CATALOG@@/`, `src/@@CATALOG@@_etl/`, `resources/`) has exactly\n"
+            "one domain in it, and `pyproject.toml` is one package with no uv\n"
+            "workspace. For another domain or customer, stand up a separate adopter\n"
+            "repo ([NEW_ADOPTER.md](NEW_ADOPTER.md)) rather than grafting a second one\n"
+            "on here.\n"
+            "\n"
+        ),
+    },
+    "docs/NAMING.md": {
+        "naming-diagram": """\
+```mermaid
+flowchart LR
+  subgraph repo ["Repo layout (the repo root IS the domain)"]
+    A["&lt;repo root&gt;"]
+    B["config/@@CATALOG@@/silver/customers.yml"]
+    C["src/@@CATALOG@@_etl/"]
+    D["src/jobs/@@CATALOG@@/ + notebooks/@@CATALOG@@/"]
+    E["resources/@@CATALOG@@_*.yml"]
+  end
+  subgraph uc ["Unity Catalog + workspace"]
+    F["catalog @@CATALOG@@ (dev)<br/>@@CATALOG@@_stage / @@CATALOG@@_prod"]
+    G["table @@CATALOG@@.silver.customers"]
+    H["pipeline @@CATALOG@@_etl (workspace object)"]
+    I["jobs @@CATALOG@@_export, @@CATALOG@@_quarantine_report, ... (workspace objects)"]
+  end
+  A --> F
+  B --> G
+  C --> H
+  D --> I
+  E --> H
+  E --> I
+```
+""",
+        "naming-domain-folder": """\
+The domain folder is the repo ROOT here, and the repo is named after the
+**base catalog** that holds the domain's medallion schemas — `@@CATALOG@@`.
+(The datalab template repo nests each reference domain under
+`projects/<catalog>/` instead; the contract is identical.)
+""",
+        "naming-resource-table": """\
+| File | Resource key / name | Kind |
+|---|---|---|
+| `@@CATALOG@@_etl.pipeline.yml` | `@@CATALOG@@_etl` | SDP pipeline |
+| `@@CATALOG@@_etl.job.yml` | `@@CATALOG@@_etl_refresh` | scheduled `pipeline_task` |
+| `@@CATALOG@@_export.job.yml` | `@@CATALOG@@_export` | python-file lane (when you add one) |
+| `@@CATALOG@@_quarantine_report.job.yml` | `@@CATALOG@@_quarantine_report` | notebook lane (when you add one) |
+
+The pipeline is `<catalog>_etl`; edge jobs are `<catalog>_<purpose>`.
+""",
+        "naming-out-of-scope": """\
+These are fixed by the framework or by Unity Catalog, not by this page:
+
+- The `landing`/`exports` UC volumes (`landing.@@CATALOG@@`,
+  `exports.@@CATALOG@@`) — UC objects can't be renamed in place; they are
+  out-of-band governance state created by `scripts/bootstrap_uc.py`, and the
+  name must match `scripts/domains.py`'s `edge_volume` and the volume segment
+  of `var.landing_path`.
+- `domain.yml`'s file name and the `layers:`/`domain:` model fields — that is
+  the framework contract (defined in the `datalab-framework` repo's models),
+  shared by every adopter; this page only constrains the *values* (e.g.
+  `domain: @@CATALOG@@`).
+""",
+    },
+}
+
+
+def patch_doc_regions(out: Path, subst) -> None:
+    """Swap every `<!-- template-only:… -->` region in docs/ for adopter text."""
+    for rel, regions in DOC_REGIONS.items():
+        path = out / rel
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for name, replacement in regions.items():
+            text = _replace_template_region(text, name, subst(replacement), rel)
+        path.write_text(text, encoding="utf-8")
+
+
+def patch_agent_mcp(out: Path, ctx: dict[str, str]) -> None:
+    """Repoint docs/AGENT_MCP.md at the adopter's workspace.
+
+    patch_mcp rewrites the two JSON files; this doc carries the SAME identity in
+    copy-pasteable `databricks auth login` / `databricks warehouses get`
+    commands and in its value table. Left alone it tells a new adopter to log
+    into the TEMPLATE's workspace — while its own "Adopter setup" section claims
+    everything has already been rewritten for them."""
+    path = out / "docs" / "AGENT_MCP.md"
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    text = require_replace(text, TEMPLATE_MCP_PROFILE, ctx["@@MCP_PROFILE@@"], "docs/AGENT_MCP.md")
+    text = require_replace(
+        text, TEMPLATE_WAREHOUSE_ID, ctx["@@WAREHOUSE_ID@@"], "docs/AGENT_MCP.md"
+    )
+    text = text.replace(TEMPLATE_HOST, ctx["@@HOST@@"])
+    path.write_text(text, encoding="utf-8")
+
+
+CODEOWNERS_ADOPTER = """\
+# Code owners — review routing for pull requests.
+#
+# Intentionally empty: the datalab template routed reviews at its own approvers
+# team, which does not exist in this org. A CODEOWNERS file naming a team GitHub
+# cannot resolve is INVALID, and GitHub then silently
+# never applies the "Require review from Code Owners" branch protection — the
+# rule looks enabled and enforces nothing.
+#
+# To enable it here: create a team with write access, uncomment the line below
+# with that team (or a user), then turn on "Require review from Code Owners"
+# in the branch protection rule for `main`.
+#
+# *   @<your-org>/<your-review-team>
+"""
+
+
+def patch_codeowners(out: Path) -> None:
+    path = out / ".github" / "CODEOWNERS"
+    if path.exists():
+        path.write_text(CODEOWNERS_ADOPTER, encoding="utf-8")
+
+
+DEPENDABOT_CROSS_ORG_NOTE = """\
+  - package-ecosystem: uv
+    directory: /
+    # CROSS-ORG ADOPTERS READ THIS FIRST. Resolving uv.lock touches EVERY git
+    # dependency, including the PRIVATE dediggibyte/datalab-framework — so
+    # without read access the updater fails `git_dependencies_not_reachable` on
+    # every PR, even a bump of an unrelated package. Two working setups:
+    #   * same org as the framework → grant Dependabot access to it (org
+    #     Settings → Code security → Dependabot → private repository access);
+    #   * different org → add a `registries:` entry of `type: git` backed by a
+    #     PAT stored in THIS repo's *Dependabot* secret store (a separate store
+    #     from Actions), or drop this ecosystem block entirely.
+    # docs/CICD.md "Private framework dependency".
+"""
+
+
+def patch_dependabot(out: Path) -> None:
+    """Leave the cross-org framework-access trap where the reader will hit it.
+
+    An adopter in another org gets a permanently red `uv` ecosystem until they
+    wire a git credential. That is documented in docs/CICD.md, but nobody reads
+    CICD.md because of a dependabot failure — they open dependabot.yml."""
+    path = out / ".github" / "dependabot.yml"
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    text = require_replace(
+        text,
+        "  - package-ecosystem: uv\n    directory: /\n",
+        DEPENDABOT_CROSS_ORG_NOTE,
+        ".github/dependabot.yml",
     )
     path.write_text(text, encoding="utf-8")
+
+
+def patch_workflow_comments(out: Path) -> None:
+    """Drop header comments naming workflows that no longer exist (there is one
+    ci-cd.yml now, not ci-cd-{dev,stage,prod}.yml)."""
+    for rel in ("common-ci-steps.yml", "common-cd-steps.yml"):
+        path = out / ".github" / "workflows" / rel
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            "# Reusable workflow. Called by ci-cd-{dev,stage,prod}.yml.",
+            "# Reusable workflow. Called by ci-cd.yml (one workflow; the target is\n"
+            "# derived from the trigger).",
+        )
+        path.write_text(text, encoding="utf-8")
+
+
+def patch_cursor_rules(out: Path, catalog: str) -> None:
+    """.cursor/rules/project.mdc is auto-attached context for every Cursor edit,
+    so it must describe the adopter's root-level layout, not projects/."""
+    path = out / ".cursor" / "rules" / "project.mdc"
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    for old, new in (
+        (
+            "  (`config/<catalog>/<schema>/<table>.yml`; in this repo the example lives at\n"
+            "  `projects/customer_sales/config/customer_sales/`) — author it with the",
+            f"  (`config/<catalog>/<schema>/<table>.yml`; here `config/{catalog}/`)"
+            " — author it with the",
+        ),
+        (
+            "  domain package (`src/<catalog>_etl/transforms/`, in this repo under\n"
+            "  `projects/customer_sales/`) as pure, unit-tested `@transform` functions.",
+            f"  domain package (here `src/{catalog}_etl/transforms/`) as pure,\n"
+            "  unit-tested `@transform` functions.",
+        ),
+        (
+            "  `projects/*/resources/*.yml` (adopters: `resources/*.yml`), targets `dev`",
+            "  `resources/*.yml`, targets `dev`",
+        ),
+    ):
+        text = require_replace(text, old, new, ".cursor/rules/project.mdc")
+    path.write_text(text, encoding="utf-8")
+
+
+# Each entry is (skill-relative path, [(old, new), ...]) applied to BOTH the
+# canonical .agents/skills copy and the generated .claude/skills mirror — patch
+# one and `make check-skills` fails on drift.
+SKILL_EDITS: dict[str, list[tuple[str, str]]] = {
+    "deploy-databricks-bundle/SKILL.md": [
+        (
+            "per-domain resource files — in this repo `projects/*/resources/*.yml`",
+            "per-domain resource files — in this repo `resources/*.yml`",
+        ),
+        (
+            "  `sales_landing_path`, permission lists) and per-target values. Resources",
+            "  `landing_path`, permission lists) and per-target values. Resources",
+        ),
+        (
+            "   `DATALAB_CATALOG`, `DATALAB_SALES_LANDING_PATH`).",
+            "   `DATALAB_CATALOG`, `DATALAB_LANDING_PATH`).",
+        ),
+        (
+            "| Auto Loader path errors on first run | The landing volume "
+            "(`${var.sales_landing_path}`) doesn't exist",
+            "| Auto Loader path errors on first run | The landing volume "
+            "(`${var.landing_path}`) doesn't exist",
+        ),
+    ],
+    "author-ldp-artifact/SKILL.md": [
+        (
+            "live under `projects/<catalog>/config/`\n"
+            "(e.g. `projects/customer_sales/config/customer_sales/silver/customers.yml`);",
+            "live under `config/<catalog>/`\n"
+            "(e.g. `config/@@CATALOG@@/silver/customers.yml`);",
+        ),
+        (
+            "Live example: `projects/sales/config/sales/gold/sales_by_category.yml`.",
+            "Live example: the datalab template repo's "
+            "`projects/sales/config/sales/gold/sales_by_category.yml`.",
+        ),
+        (
+            "`projects/customer_sales/` shape; naming contract: `docs/NAMING.md`).",
+            "the datalab template repo's `projects/customer_sales/` shape; naming "
+            "contract: `docs/NAMING.md`).",
+        ),
+    ],
+}
+
+
+def patch_skills(out: Path, subst) -> None:
+    for rel, edits in SKILL_EDITS.items():
+        for root in (".agents/skills", ".claude/skills"):
+            path = out / root / rel
+            if not path.exists():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for old, new in edits:
+                text = require_replace(text, subst(old), subst(new), f"{root}/{rel}")
+            path.write_text(text, encoding="utf-8")
 
 
 # --- AGENTS.md adopter conversion -------------------------------------------
@@ -967,6 +1401,10 @@ def patch_agents_md(out: Path, catalog: str, subst) -> None:
         ("common-task-new-domain", ADOPTER_COMMON_TASK_NEW_DOMAIN),
         ("common-task-design", ""),
         ("agents-conversion-gotcha", ""),
+        # Template-maintenance knowledge about the conversion itself. An adopter
+        # never runs the scaffold, and the passage necessarily names the
+        # projects/ + design/ material this repo just deleted.
+        ("adopter-surface-knowledge", ""),
     ):
         text = _replace_template_region(text, name, subst(replacement), "AGENTS.md")
 
@@ -1026,8 +1464,52 @@ def patch_agents_md(out: Path, catalog: str, subst) -> None:
             r"`^(config\|projects/[^/]+/config)/.*\.ya?ml$`",
             r"`^config/.*\.ya?ml$`",
         ),
+        # docs/MIGRATION.md is template history; the scaffold deletes it, so the
+        # protected-surface table must stop naming it (the table is the thing
+        # people edit that surface FROM).
+        (
+            r"`^docs/(ARCHITECTURE\|CICD\|MIGRATION\|GETTING_STARTED\|NAMING"
+            r"\|NEW_ADOPTER\|ADOPTING\|AGENT_MCP)\.md$`",
+            r"`^docs/(ARCHITECTURE\|CICD\|GETTING_STARTED\|NAMING"
+            r"\|NEW_ADOPTER\|ADOPTING\|AGENT_MCP)\.md$`",
+        ),
+        # Second-domain (sales) wheel plumbing: an adopter has ONE domain, so
+        # var.sales_datalab_wheel does not exist and the domain wheel sits one
+        # directory up, not three.
+        (
+            "- Serverless `environments:` block installs the framework wheel from THIS\n"
+            "  domain's catalog artifacts.wheels Volume (`${var.datalab_wheel}` /\n"
+            "  `${var.sales_datalab_wheel}`) plus this domain's wheel\n"
+            "  (`../../../dist/<catalog>_etl-*.whl`)",
+            "- Serverless `environments:` block installs the framework wheel from THIS\n"
+            "  domain's catalog artifacts.wheels Volume (`${var.datalab_wheel}`) plus\n"
+            "  this domain's wheel (`../dist/<catalog>_etl-*.whl`)",
+        ),
+        (
+            "  framework wheel from THIS domain's catalog — `${var.datalab_wheel}`\n"
+            "  (customer_sales: `/Volumes/${var.catalog}/artifacts/wheels/...`) or\n"
+            "  `${var.sales_datalab_wheel}` (sales: `/Volumes/${var.sales_catalog}/...`) — and\n"
+            "  `../../../dist/<catalog>_etl-*.whl` (this domain's own wheel, built by the\n"
+            "  bundle's `artifacts:` — `uv build --package <catalog>_etl`, relative to the\n"
+            "  resource file).",
+            "  framework wheel from THIS domain's catalog — `${var.datalab_wheel}`\n"
+            "  (`/Volumes/${var.catalog}/artifacts/wheels/...`) — and\n"
+            "  `../dist/<catalog>_etl-*.whl` (this domain's own wheel, built by the\n"
+            "  bundle's `artifacts:` — `uv build --wheel`, relative to the\n"
+            "  resource file).",
+        ),
+        (
+            "  (`customer_sales.artifacts.wheels`, `sales.artifacts.wheels` — one upload per\n"
+            "  project catalog, NOT a separate shared catalog)",
+            "  (`<catalog>.artifacts.wheels` — the wheel rides in the domain's own catalog,\n"
+            "  NOT a separate shared catalog)",
+        ),
     ):
         text = require_replace(text, old, new, "AGENTS.md")
+
+    # The MCP grounding profile: patch_mcp rewires the JSON, so AGENTS.md must
+    # not keep telling the agent to authenticate as the template's profile.
+    text = text.replace(TEMPLATE_MCP_PROFILE, subst("@@MCP_PROFILE@@"))
 
     # Drift guard: nothing may still point at material the scaffold removed,
     # unless the line explicitly attributes it to the template repo.
@@ -1316,6 +1798,16 @@ def main(argv: list[str] | None = None) -> int:
     patch_agents_md(out, catalog, subst)
     patch_databricksignore(out)
     patch_mcp(out, ctx)
+    # The rest of the surfaces an adopter actually reads: the remaining docs,
+    # the Cursor rule file, the two domain-aware skills, CODEOWNERS, dependabot
+    # and the stale workflow headers.
+    patch_doc_regions(out, subst)
+    patch_agent_mcp(out, ctx)
+    patch_cursor_rules(out, catalog)
+    patch_skills(out, subst)
+    patch_codeowners(out)
+    patch_dependabot(out)
+    patch_workflow_comments(out)
 
     print("scaffold: done. Next:")
     if args.in_place:

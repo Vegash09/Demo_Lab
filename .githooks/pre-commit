@@ -51,6 +51,22 @@ if [[ -f scripts/sync_skills.py ]] && command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
+# ---- the adopter templates doc must match the scaffold engine ---------------
+# references/templates.md is the documented MANUAL FALLBACK for converting a
+# repo by hand, so a drifted code block there hands the next customer a repo
+# that fails its own gates. Stdlib-only, same as the check above.
+if [[ -f scripts/check_templates_doc.py ]] && command -v python3 >/dev/null 2>&1; then
+  if ! python3 scripts/check_templates_doc.py >/dev/null 2>&1; then
+    {
+      printf '\n  COMMIT BLOCKED — the adopter templates doc drifted from the scaffold.\n\n'
+      printf '  .agents/skills/bootstrap-adopter-repo/references/templates.md must\n'
+      printf '  mirror scripts/scaffold_adopter.py byte for byte. See the diff:\n\n'
+      printf '      make check-templates-doc\n\n'
+    } >&2
+    exit 1
+  fi
+fi
+
 PATTERNS=(
   '^databricks\.yml$'
   '^rbac\.yml$'
@@ -68,7 +84,7 @@ PATTERNS=(
   '^\.codex/hooks\.json$'
   '^\.agents/skills/.*'
   '^scripts/sync_skills\.py$'
-  '^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists)\.py$'
+  '^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs)\.py$'
   '^schemas/.*\.json$'
   '^\.mcp\.json$'
   '^\.cursor/mcp\.json$'
@@ -76,7 +92,7 @@ PATTERNS=(
   '^Makefile$'
   '^\.env(\..*)?$'
   '^(AGENTS|CLAUDE|README)\.md$'
-  '^docs/(ARCHITECTURE|CICD|MIGRATION|GETTING_STARTED|NAMING)\.md$'
+  '^docs/(ARCHITECTURE|CICD|MIGRATION|GETTING_STARTED|NAMING|NEW_ADOPTER|ADOPTING|AGENT_MCP)\.md$'
 )
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
