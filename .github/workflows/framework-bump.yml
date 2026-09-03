@@ -35,7 +35,7 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Set up Java (local Spark for the pre-PR test run)
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
