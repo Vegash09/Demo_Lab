@@ -22,6 +22,11 @@ opens the bump PR automatically; then `make publish-wheel`.
 ## [Unreleased]
 
 ### Added
+- **`make check-agent-settings`** (CI + pre-commit) — fails if a COMMITTED
+  agent-harness config (`.claude/settings.json`, `.cursor/hooks.json`,
+  `.codex/hooks.json`) contains a machine-specific absolute path, or a hook
+  pointing at a script that does not exist. Those files are shared with every
+  developer and copied verbatim into every generated adopter repo.
 - **`make check-templates-doc`** (CI + pre-commit) — diffs every code block in
   the `bootstrap-adopter-repo` skill's `references/templates.md` against
   `scripts/scaffold_adopter.py`'s file templates. That doc is the documented

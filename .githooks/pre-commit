@@ -51,6 +51,22 @@ if [[ -f scripts/sync_skills.py ]] && command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
+# ---- committed agent configs must be machine-independent --------------------
+# .claude/settings.json is tracked and ships to adopters; an absolute path or a
+# scratch-dir grant in it is inert elsewhere and leaks local paths. Personal
+# grants belong in the gitignored .claude/settings.local.json.
+if [[ -f scripts/check_agent_settings.py ]] && command -v python3 >/dev/null 2>&1; then
+  if ! python3 scripts/check_agent_settings.py >/dev/null 2>&1; then
+    {
+      printf '\n  COMMIT BLOCKED — a committed agent config is tied to this machine.\n\n'
+      printf '  Move the offending grant to .claude/settings.local.json (gitignored,\n'
+      printf '  per-developer). See the details:\n\n'
+      printf '      make check-agent-settings\n\n'
+    } >&2
+    exit 1
+  fi
+fi
+
 # ---- the adopter templates doc must match the scaffold engine ---------------
 # references/templates.md is the documented MANUAL FALLBACK for converting a
 # repo by hand, so a drifted code block there hands the next customer a repo
@@ -84,7 +100,7 @@ PATTERNS=(
   '^\.codex/hooks\.json$'
   '^\.agents/skills/.*'
   '^scripts/sync_skills\.py$'
-  '^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs)\.py$'
+  '^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs|check_agent_settings)\.py$'
   '^schemas/.*\.json$'
   '^\.mcp\.json$'
   '^\.cursor/mcp\.json$'

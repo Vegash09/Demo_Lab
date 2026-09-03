@@ -15,7 +15,7 @@ TARGET ?= dev
         deploy run destroy publish-wheel bootstrap-uc enable-githooks \
         commit-protected clean sync-skills check-skills publish-genie-skills \
         sync-schemas check-schemas check-lockstep bump-framework check-domains \
-        check-sync-lists check-templates-doc check-adopter-docs \
+        check-sync-lists check-templates-doc check-adopter-docs check-agent-settings \
         spec-local dry-run-local run-local validate-connect design \
         new-adopter configure-adopter
 
@@ -94,6 +94,14 @@ check-templates-doc:  ## Fail if the adopter templates doc drifted from scripts/
 # SQL warehouse or the directories the conversion deletes. No-ops in this repo.
 check-adopter-docs:  ## Fail if a generated adopter still carries template identity/layout (CI)
 	$(UV) run --no-project python scripts/check_adopter_docs.py
+
+# The COMMITTED agent configs (.claude/settings.json, .cursor/hooks.json,
+# .codex/hooks.json) are shared with every developer AND copied into every
+# generated adopter repo, so a machine-specific path in them is dead weight in
+# one place and a leak in the other. Per-developer grants belong in the
+# gitignored .claude/settings.local.json, which overrides the tracked file.
+check-agent-settings:  ## Fail if a committed agent-harness config is tied to one machine (CI + pre-commit)
+	$(UV) run --no-project python scripts/check_agent_settings.py
 
 bump-framework:  ## Upgrade the framework pin end to end (VERSION=x.y.z): pyproject tag + datalab_version + uv.lock + schemas
 	@if [ -z "$(VERSION)" ]; then \

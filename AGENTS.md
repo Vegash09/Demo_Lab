@@ -686,6 +686,26 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `write_repo_level` means adding its block to the doc and its entry to
   `MIRRORED`.
 <!-- template-only:adopter-surface-knowledge end -->
+- **The committed agent config is shared; per-developer grants are not.**
+  `.claude/settings.json`, `.cursor/hooks.json` and `.codex/hooks.json` are
+  TRACKED — every developer gets them, and the scaffold copies them into every
+  adopter repo. So the tracked files carry only what means the same thing on any
+  machine: the **hooks** that enforce repo policy (each locating its script
+  through `$CLAUDE_PROJECT_DIR`, never an absolute path) and READ-ONLY
+  verification grants (`make lint` / `test` / `validate-configs` / `check-*`).
+  Anything personal or that WRITES — commits, `make new-adopter`, deploys, a
+  path under your home directory — belongs in **`.claude/settings.local.json`**,
+  which is gitignored and overrides the tracked file (settings load
+  user → project → local). This is not hypothetical: Claude Code appends "always
+  allow" grants to a settings file, and a run of them landed in the tracked one,
+  including `Bash(/Users/<someone>/datalab/.venv/bin/python
+  /private/tmp/claude-502/<dead session id>/…/bootstrap_uc.py --target dev)`
+  plus one-shot noise like `Bash(exit 1)` — inert for every teammate, and a leak
+  of local paths into customer repos. `make check-agent-settings` (CI +
+  pre-commit) fails on any machine-specific path in a tracked config, and on a
+  hook pointing at a script that does not exist (a hook with a bad path never
+  runs and never says why). When a permission prompt offers a scope, choose the
+  LOCAL one unless the grant is read-only and repo-wide.
 - **Permission groups are string variables on purpose — and so are the
   levels.** All access control lives in `rbac.yml` (include'd by
   `databricks.yml` next to `variables/` and `targets/`; `databricks.yml` itself
@@ -788,7 +808,7 @@ change:
 | `^\.cursor/(rules\|hooks)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks (skills are read from `.agents/skills`) |
 | `^\.codex/hooks\.json$`, `^\.agents/skills/.*` | Codex hooks.json + `.agents/skills` (the canonical authored agent-skills source) |
 | `^scripts/sync_skills\.py$` | agent-skills sync generator (canonical `.agents/skills` → `.claude/skills` copy) |
-| `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists\|check_templates_doc\|check_adopter_docs)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check, adopter-scaffold doc lockstep + adopter doc drift |
+| `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists\|check_templates_doc\|check_adopter_docs\|check_agent_settings)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check, adopter-scaffold doc lockstep, adopter doc drift, agent-config portability |
 | `^schemas/.*\.json$` | vendored editor schemas — GENERATED from the pinned framework (`make sync-schemas`), never hand-edited |
 | `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) |
 | `^\.githooks/.*` | git pre-commit guard |

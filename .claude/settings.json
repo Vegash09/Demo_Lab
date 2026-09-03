@@ -1,5 +1,23 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make help)",
+      "Bash(make lint)",
+      "Bash(make test)",
+      "Bash(make validate-configs)",
+      "Bash(make check-adopter-docs)",
+      "Bash(make check-agent-settings)",
+      "Bash(make check-domains)",
+      "Bash(make check-lockstep)",
+      "Bash(make check-schemas)",
+      "Bash(make check-skills)",
+      "Bash(make check-sync-lists)",
+      "Bash(make check-templates-doc)",
+      "Bash(make dry-run-local)",
+      "Bash(PROTECTED_EDIT_OK=1 git commit -q -m ' *)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {

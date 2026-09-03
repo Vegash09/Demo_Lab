@@ -88,6 +88,16 @@ jobs:
         # generated copy for Claude Code (scripts/sync_skills.py). Fails on drift.
         run: uv run python scripts/sync_skills.py --check
 
+      - name: Check committed agent configs are machine-independent
+        # Mirror of `make check-agent-settings`. Claude Code appends "always
+        # allow" grants to a settings file, and a run of them landed in the
+        # TRACKED .claude/settings.json — including an absolute path into a dead
+        # session's scratch directory. That file is shared with every developer
+        # and copied into every adopter repo, so such a grant is inert for them
+        # and leaks the author's local paths. Per-developer grants belong in the
+        # gitignored .claude/settings.local.json.
+        run: uv run --no-project python scripts/check_agent_settings.py
+
       - name: Check the adopter templates doc matches the scaffold engine
         # Mirror of `make check-templates-doc`: the bootstrap-adopter-repo skill's
         # references/templates.md is the documented MANUAL FALLBACK, so every
@@ -262,6 +272,9 @@ jobs:
           # adopter whose very first `make check-skills` fails.
           make check-skills
           make check-templates-doc
+          # The tracked agent config is copied verbatim into the adopter, so a
+          # machine-specific grant in the template lands in a customer's repo.
+          make check-agent-settings
           # Every surface an adopter READS — docs/, the Cursor rule file, the
           # skills, CODEOWNERS, the workflows — must carry no template identity
           # (workspace host, CLI profile, SQL warehouse, deploy SP) and no
@@ -324,4 +337,4 @@ jobs:
           test ! -d projects && test ! -d design && test ! -d omnigent
           make lock
           make validate-configs lint check-skills check-domains check-sync-lists
-          make check-adopter-docs
+          make check-adopter-docs check-agent-settings
