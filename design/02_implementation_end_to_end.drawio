@@ -212,7 +212,7 @@
         <mxCell id="s_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcdcf0;strokeColor=#3366bb;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="silver — AUTO CDC SCD1 + dqx&#10;{customers, products, orders, order_items}&#10;+ customers_history (SCD2) · product_catalog&#10;(snapshot CDC) · per-table _quarantine" vertex="1">
           <mxGeometry x="430" y="1380" width="300" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="s_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="gold MVs&#10;daily_sales · revenue_per_customer&#10;sales_by_category · templated (sql source):&#10;revenue_by_state · revenue_by_country" vertex="1">
+        <mxCell id="s_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;fontSize=10;arcSize=4;" value="gold MVs&#10;daily_sales · daily_sales_by_currency&#10;revenue_per_customer · sales_by_category&#10;templated (sql): revenue_by_state · revenue_by_country" vertex="1">
           <mxGeometry x="800" y="1380" width="340" height="78" as="geometry" />
         </mxCell>
         <mxCell id="e_s_bronze_silver" edge="1" parent="1" source="s_bronze" target="s_silver" style="endArrow=classic;html=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="AUTO CDC">

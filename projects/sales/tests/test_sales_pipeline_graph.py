@@ -48,10 +48,12 @@ def test_sales_graph_shape(configured_spark):
             f"cat.silver.{table}_quarantine",
         } <= names, table
 
-    # 3 gold materialized views
+    # 4 gold materialized views
     assert {
         "daily_sales__input",
         "cat.gold.daily_sales",
+        "daily_sales_by_currency__input",
+        "cat.gold.daily_sales_by_currency",
         "revenue_per_customer__input",
         "cat.gold.revenue_per_customer",
         "sales_by_category__input",
@@ -86,6 +88,7 @@ def test_sales_graph_shape(configured_spark):
     assert kinds["product_catalog__snapshot_cdc_flow"] == "auto_cdc_from_snapshot_flow"
     assert kinds["cat.silver.product_catalog_quarantine"] == "MaterializedView"
     assert kinds["cat.gold.daily_sales"] == "MaterializedView"
+    assert kinds["cat.gold.daily_sales_by_currency"] == "MaterializedView"
     assert kinds["cat.gold.sales_by_category"] == "MaterializedView"
     assert kinds["cat.gold.revenue_by_state"] == "MaterializedView"
     assert kinds["orders__valid"] == "TemporaryView"

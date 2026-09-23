@@ -95,7 +95,8 @@ landing volume ─▶ │ bronze.customers_raw ─▶ silver.customers (AUTO CDC
 sales.bronze.*  ─▶│ orders · order_items · customers · products                            │
 (pre-existing)    │   ─▶ silver (AUTO CDC SCD1 + dqx, per-table _quarantine)               │
                   │      + customers_history (SCD2) · product_catalog (snapshot CDC)       │
-                  │   ─▶ gold MVs: daily_sales · revenue_per_customer · sales_by_category  │
+                  │   ─▶ gold MVs: daily_sales · daily_sales_by_currency                   │
+                  │      · revenue_per_customer · sales_by_category                        │
                   │      + templated (sql source): revenue_by_state · revenue_by_country   │
                   │   domain-wide operational_metadata stamps (_loaded_at, _record_source) │
                   └────────────────────────────────────────────────────────────────────────┘

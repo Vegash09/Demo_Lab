@@ -12,6 +12,7 @@ from datalab.framework.registry import TRANSFORMS, import_modules
 from sales_etl.transforms.sales import (
     category_rollup,
     daily_sales,
+    daily_sales_by_currency,
     normalize_email,
     revenue_per_customer,
     sales_by_category,
@@ -32,6 +33,7 @@ def test_transforms_are_registered_for_yaml():
     import_modules(["sales_etl.transforms.sales"])
     assert TRANSFORMS["sales.normalize_email"] is normalize_email
     assert TRANSFORMS["sales.daily_sales"] is daily_sales
+    assert TRANSFORMS["sales.daily_sales_by_currency"] is daily_sales_by_currency
     assert TRANSFORMS["sales.revenue_per_customer"] is revenue_per_customer
     assert TRANSFORMS["sales.sales_by_category"] is sales_by_category
 
@@ -48,6 +50,26 @@ def test_daily_sales_excludes_cancelled_and_returned(spark):
     assert row.num_orders == 3  # every order counted
     assert row.gross_revenue == 100.0  # cancelled + returned excluded from revenue
     assert row.avg_order_value == 60.0  # avg over all three: (100+50+30)/3
+
+
+def test_daily_sales_by_currency_groups_by_day_and_currency(spark):
+    orders = spark.createDataFrame(
+        [
+            Row(order_id=1, order_date="2025-01-01", currency="USD", order_status="completed", total_amount=100.0),
+            Row(order_id=2, order_date="2025-01-01", currency="USD", order_status="cancelled", total_amount=50.0),
+            Row(order_id=3, order_date="2025-01-01", currency="EUR", order_status="shipped", total_amount=80.0),
+            Row(order_id=4, order_date="2025-01-02", currency="USD", order_status="completed", total_amount=20.0),
+        ]
+    )
+    out = {(r.order_date, r.currency): r for r in daily_sales_by_currency(orders).collect()}
+    assert set(out) == {("2025-01-01", "USD"), ("2025-01-01", "EUR"), ("2025-01-02", "USD")}
+
+    usd = out[("2025-01-01", "USD")]
+    assert usd.num_orders == 2  # cancelled still counted as an order
+    assert usd.gross_revenue == 100.0  # ...but excluded from revenue
+    assert usd.avg_order_value == 75.0  # (100 + 50) / 2
+
+    assert out[("2025-01-01", "EUR")].gross_revenue == 80.0  # never summed with USD
 
 
 def test_revenue_per_customer(spark):

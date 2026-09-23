@@ -22,6 +22,12 @@ opens the bump PR automatically; then `make publish-wheel`.
 ## [Unreleased]
 
 ### Added
+- **`sales.gold.daily_sales_by_currency`** — a new gold materialized view over
+  `silver.orders`: order count, recognized revenue and average order value per
+  `order_date` and `currency`. Amounts are not FX-converted, so currency is a
+  grouping key. An `is_unique` check on the grain gates it. The
+  `sales.daily_sales_by_currency` transform shares its measures with
+  `daily_sales` through the `_order_rollup` helper.
 - **Adopting every datalab-framework release is MANDATORY in the template.**
   New `make check-framework-current` (its own CI job, every PR + main) fails
   while a newer PUBLISHED framework release exists than the pinned tag — merge

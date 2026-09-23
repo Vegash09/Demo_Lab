@@ -34,19 +34,34 @@ def normalize_email(df: DataFrame) -> DataFrame:
     return df.withColumn("email", F.lower(F.trim("email")))
 
 
-@transform("sales.daily_sales")
-def daily_sales(df: DataFrame) -> DataFrame:
-    """Gold aggregate: per-day order count, recognized revenue and average order
-    value over ``silver.orders``. Cancelled/returned orders are excluded from
-    revenue but still counted as orders."""
+def _order_rollup(df: DataFrame, *keys: str) -> DataFrame:
+    """Order count, recognized revenue and average order value per ``keys``.
+    Cancelled/returned orders are excluded from revenue but still counted as
+    orders."""
     recognized = ~F.col("order_status").isin(*_NON_REVENUE_STATUSES)
-    return df.groupBy("order_date").agg(
+    return df.groupBy(*keys).agg(
         F.count("*").alias("num_orders"),
         F.round(
             F.sum(F.when(recognized, F.col("total_amount")).otherwise(F.lit(0.0))), 2
         ).alias("gross_revenue"),
         F.round(F.avg("total_amount"), 2).alias("avg_order_value"),
     )
+
+
+@transform("sales.daily_sales")
+def daily_sales(df: DataFrame) -> DataFrame:
+    """Gold aggregate: per-day order count, recognized revenue and average order
+    value over ``silver.orders``."""
+    return _order_rollup(df, "order_date")
+
+
+@transform("sales.daily_sales_by_currency")
+def daily_sales_by_currency(df: DataFrame) -> DataFrame:
+    """Gold aggregate: the ``daily_sales`` measures per day AND currency over
+    ``silver.orders``. Amounts stay in their original currency — summing across
+    currencies without FX conversion would be meaningless, so ``currency`` is a
+    grouping key, never collapsed."""
+    return _order_rollup(df, "order_date", "currency")
 
 
 @transform("sales.revenue_per_customer")

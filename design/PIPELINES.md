@@ -61,6 +61,8 @@ flowchart LR
   end
   subgraph sales__layer__gold["gold"]
     sales__gold__daily_sales["daily_sales<br/>materialized view"]
+    sales__gold__daily_sales_by_currency["daily_sales_by_currency<br/>materialized view"]
+    sales__gold__daily_sales_by_currency_quarantine["daily_sales_by_currency_quarantine"]:::quarantine
     sales__gold__revenue_per_customer["revenue_per_customer<br/>materialized view"]
     sales__gold__revenue_by_state["revenue_by_state<br/>materialized view"]
     sales__gold__revenue_by_country["revenue_by_country<br/>materialized view"]
@@ -79,6 +81,8 @@ flowchart LR
   sales__bronze__products -->|"stream"| sales__silver__products
   sales__silver__products -.->|"dqx error rows"| sales__silver__products_quarantine
   sales__silver__orders -->|"read"| sales__gold__daily_sales
+  sales__silver__orders -->|"read"| sales__gold__daily_sales_by_currency
+  sales__gold__daily_sales_by_currency -.->|"dqx error rows"| sales__gold__daily_sales_by_currency_quarantine
   sales__silver__orders -->|"read"| sales__gold__revenue_per_customer
   sales__silver__orders -->|"sql"| sales__gold__revenue_by_state
   sales__silver__customers -->|"sql"| sales__gold__revenue_by_state
@@ -99,6 +103,7 @@ flowchart LR
 | silver | `product_catalog` | `bronze.products` | streaming table · snapshot CDC SCD1 on `product_id` | 1 error → `product_catalog_quarantine` · 2 warn | — | [`silver/product_catalog.yml`](../projects/sales/config/sales/silver/product_catalog.yml) |
 | silver | `products` | `bronze.products` (stream) | streaming table · AUTO CDC SCD1 on `product_id` | 1 error → `products_quarantine` · 5 warn | — | [`silver/products.yml`](../projects/sales/config/sales/silver/products.yml) |
 | gold | `daily_sales` | `silver.orders` | materialized view | — | `sales.daily_sales` | [`gold/daily_sales.yml`](../projects/sales/config/sales/gold/daily_sales.yml) |
+| gold | `daily_sales_by_currency` | `silver.orders` | materialized view | 1 error → `daily_sales_by_currency_quarantine` | `sales.daily_sales_by_currency` | [`gold/daily_sales_by_currency.yml`](../projects/sales/config/sales/gold/daily_sales_by_currency.yml) |
 | gold | `revenue_per_customer` | `silver.orders` | materialized view | — | `sales.revenue_per_customer` | [`gold/revenue_per_customer.yml`](../projects/sales/config/sales/gold/revenue_per_customer.yml) |
 | gold | `revenue_by_state` | SQL over `orders`, `customers` | materialized view | — | — | [`gold/revenue_rollups.yml`](../projects/sales/config/sales/gold/revenue_rollups.yml) |
 | gold | `revenue_by_country` | SQL over `orders`, `customers` | materialized view | — | — | [`gold/revenue_rollups.yml`](../projects/sales/config/sales/gold/revenue_rollups.yml) |

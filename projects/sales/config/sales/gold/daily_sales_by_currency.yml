@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../../../../schemas/table_config.schema.json
+#
+# Target table: gold.daily_sales_by_currency — business aggregate (batch MV):
+# per-day, per-currency order count, recognized revenue and average order value.
+# Amounts are NOT FX-converted, so currency is a grouping key. The transform
+# produces the final shape, so there is no columns: mapping (see docs/FRAMEWORK.md).
+schema_version: 1
+name: daily_sales_by_currency
+comment: Per-day, per-currency order count, recognized revenue and average order value.
+source:
+  kind: table
+  name: orders
+  layer: silver
+transform:
+  - function: sales.daily_sales_by_currency
+quality:
+  checks:
+    - criticality: error # one row per (day, currency) — the grain of this table
+      check:
+        function: is_unique
+        arguments:
+          columns: [order_date, currency]
+target:
+  kind: materialized_view
