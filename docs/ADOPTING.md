@@ -9,6 +9,7 @@ publishing its wheel, provisioning Unity Catalog, and laying out a domain.
 > doc is the *reference* behind it. To author your first **table** once the
 > repo stands, follow [GETTING_STARTED.md](GETTING_STARTED.md).
 
+<!-- template-only:adopting-quick-start start -->
 ## Quick start: stand up a new customer repo
 
 This repo doubles as the starting point for a new single-customer repo. Both
@@ -19,27 +20,43 @@ skill. The rest of this doc is the reference for what that conversion does.
 
 Both options run the SAME deterministic engine (`scripts/scaffold_adopter.py`),
 so the adopter always matches the template structure and **every**
-workspace-specific surface is repointed in one shot — host/targets, RBAC groups,
-deploy SP, and the read-only MCP grounding config (`.mcp.json` /
-`.cursor/mcp.json`: SQL warehouse id + CLI profile). Never hand-edit the
-conversion — that is what drifts (a `config/<catalog>_databricks_prod` folder, an
-`.mcp.json` still on the template's warehouse). `<catalog>` is the **base** name —
-no `_dev`/`_stage`/`_prod` suffix (the bundle appends the env per target); the
-engine rejects a suffixed name.
+workspace-specific surface is repointed in one shot — per-target hosts and
+catalogs, RBAC groups, deploy SP, and the read-only MCP grounding config
+(`.mcp.json` / `.cursor/mcp.json`: SQL warehouse id + CLI profile). Never
+hand-edit the conversion — that is what drifts (a `config/<catalog>_databricks_prod`
+folder, an `.mcp.json` still on the template's warehouse). `<catalog>` is the
+**base** name — no `_dev`/`_stage`/`_prod` suffix (the bundle appends the env per
+target); the engine rejects a suffixed name.
+
+**What the new repo carries is a choice.** The configurator's form asks, and the
+flags / make variables set:
+
+| Choice | Flag · make variable | Options (default) |
+|---|---|---|
+| Coding agents | `--agents` · `AGENTS=` | `claude`, `codex`, `cursor`, `genie` — any subset, `all` or `none` (all four) |
+| Components | `--components` · `COMPONENTS=` | `docs`, `design`, `schemas`, `local-dev`, `githooks`, `pr-template`, `dependabot`, `framework-bot`, `mcp` — a list, `all`, `none`, or `+x`/`-x` edits of the defaults (all but `design`) |
+| Environments | `--host`, `--host-stage`, `--host-prod` · `HOST=`, `HOST_STAGE=`, `HOST_PROD=`; `--catalog-{dev,stage,prod}` · `CATALOG_DEV=` … | one workspace for all three targets; `<catalog>`, `<catalog>_stage`, `<catalog>_prod` |
+| Customer | `--customer`, `--description`, `--repo` · `CUSTOMER=`, `DESCRIPTION=`, `REPO=` | derived from the catalog; the repo's git origin |
+
+Each agent brings only its own harness (`.agents/skills` ships with any of
+them), and a component that is left out takes its files, make targets, CI steps
+and doc passages with it — see [What each choice ships](#what-each-choice-ships).
+Every answer is recorded in the new repo's `.datalab-adopter.json`, and
+`ANSWERS=<file>` replays it (e.g. to regenerate with a newer template and diff).
 
 **Option A — GitHub template + `make configure-adopter` (convert in place).** This
 repo is a **GitHub template repository**; generate from it, then convert the clone
-in place. `configure-adopter` prompts for the two irreducible values — catalog and
-host — confirms a summary, and defaults everything else (warehouse id, MCP CLI
-profile, RBAC groups, deploy SP, framework tag), printing the placeholders you
-left as fill-before-deploy TODOs. Prefill any value to skip its prompt; `YES=1`
-(with `CATALOG=`) runs it fully non-interactive — or let the
+in place. `configure-adopter` walks the form (identity → workspace & environments
+→ access → coding agents → components → framework), shows what will ship and what
+is left out, and asks you to confirm; placeholders you leave are printed as
+fill-before-deploy TODOs. Prefill any value to skip its question; `YES=1` (with
+`CATALOG=` or `ANSWERS=`) runs it fully non-interactive — or let the
 `bootstrap-adopter-repo` skill drive it:
 
 ```bash
 gh repo create <owner>/<customer>-datalab --template dediggibyte/datalab --private --clone
 cd <customer>-datalab                  # --clone is a boolean flag: it clones into ./<customer>-datalab
-make configure-adopter             # prompts: catalog + host; prefill any value, e.g. CATALOG=<catalog> WAREHOUSE_ID=<id>
+make configure-adopter             # the form; prefill e.g. CATALOG=<catalog> AGENTS=claude,cursor COMPONENTS=+design
 make lock install && make validate-configs lint test
 ```
 
@@ -48,15 +65,20 @@ the template flag.)
 
 **Option B — `make new-adopter` (fresh sibling repo).** Run from a clone of THIS
 repo; copies only git-tracked files (never secrets/state/build output) into a new
-sibling dir:
+sibling dir. With `CATALOG=` (or `ANSWERS=`) it runs non-interactively; with
+neither it walks the same form:
 
 ```bash
 make new-adopter CATALOG=<catalog> OUT=../<catalog>-datalab \
-    HOST=https://<workspace> WAREHOUSE_ID=<id> MCP_PROFILE=<catalog>_dev DEPLOY_SP=<app-id>
+    HOST=https://<workspace> WAREHOUSE_ID=<id> DEPLOY_SP=<app-id> AGENTS=claude,genie
 cd ../<catalog>-datalab && git init -b main && make lock install \
     && make validate-configs lint test
 # then publish it:  gh repo create <owner>/<catalog>-datalab --source=. --private --push
 ```
+
+Both build the adopter in a scratch directory and write it only after every
+patch and doc check passed — a failure never leaves a half-converted clone — and
+both refuse to run inside an already-generated adopter.
 
 **Creating it in another organization?** Both paths are org-agnostic — point them
 at any `<owner>` you can push to (`make new-adopter … OUT=…` then push, or
@@ -72,6 +94,34 @@ things to know up front:
    framework across the org boundary with its own credential — see
    [Accessing the private framework repo](#accessing-the-private-framework-repo-local--ci-cross-org).
 
+## What each choice ships
+
+| Choice | Ships only when chosen |
+|---|---|
+| `claude` | `CLAUDE.md`; `.claude/` — settings (read-only `make` grants, regenerated per repo), the protected-files hook, the generated `.claude/skills` copy; `scripts/sync_skills.py` + `make sync-skills` / `check-skills` |
+| `codex` | `.codex/hooks.json` (it runs the shared guard scripts) |
+| `cursor` | `.cursor/` rules and hooks (and `mcp.json` with `mcp`) |
+| `genie` | `scripts/publish_genie_skills.py` + `make publish-genie-skills` |
+| any agent | `.agents/skills/` (the canonical skills); with claude/codex/cursor also the shared guards in `.cursor/hooks/` and `scripts/check_agent_settings.py` |
+| `docs` | `docs/` — NEW_ADOPTER, ADOPTING, GETTING_STARTED, NAMING, CICD, ARCHITECTURE (+ AGENT_MCP with `mcp`); without it, references point at this template repo's copies |
+| `design` | a `design/` package generated for the customer — OVERVIEW.md, the implementation map + design-spec diagrams, and `design/PIPELINES.md` rendered from `config/` (`make design`; CI runs `make check-design`) |
+| `schemas` | `schemas/` + `make sync-schemas` / `check-schemas`, and the `$schema` editor header in each config file |
+| `local-dev` | `sample_data/`, `make run-local` / `dry-run-local` / `validate-connect`, `scripts/validate_connect.py` |
+| `githooks` | `.githooks/pre-commit` + `make enable-githooks` / `commit-protected` |
+| `pr-template` | `.github/pull_request_template.md`, its CI check, and the agents' PR-creation guard |
+| `dependabot` | `.github/dependabot.yml` |
+| `framework-bot` | `.github/workflows/framework-bump.yml` |
+| `mcp` | `.mcp.json` / `.cursor/mcp.json`, `docs/AGENT_MCP.md`, the `query-databricks` skill — needs `claude` or `cursor` |
+
+Always shipped: the domain (`config/`, `src/`, `resources/`, `tests/`), the
+bundle (`databricks.yml`, `variables/`, `targets/`, `rbac.yml`),
+`pyproject.toml`, the `Makefile`, `README.md`, `AGENTS.md`, `CHANGELOG.md`, the
+CI/CD workflows, and the operational scripts (`bootstrap_uc`, `publish_wheel`,
+`domains`, `check_lockstep`, `bump_framework`, `check_sync_lists`). Never
+shipped: the reference domains, `omnigent/`, and the scaffold tooling itself
+(`scaffold_adopter.py`, its doc checks, the `bootstrap-adopter-repo` skill) —
+an adopter is not a template.
+
 ## Adopter onboarding checklist
 
 Moved: **[NEW_ADOPTER.md](NEW_ADOPTER.md)** is the single ordered checklist
@@ -80,13 +130,13 @@ failure pointers). This doc used to carry a second copy; two competing
 checklists is how first-timers got lost. Everything below is the *reference*
 the checklist links into.
 
-Two checklist steps worth restating here because they are pure environment
-facts the generator cannot fill: if stage/prod are **different** workspaces,
-edit `targets/stage.yml` / `targets/prod.yml` (the generator writes one host
-into all three targets); and on Option B (`make new-adopter` into a sibling
-dir) the repo does not exist on GitHub yet — publish it with `gh repo create
-<owner>/<repo> --source=. --private --push` (Option A's template generation
-already created it).
+One checklist step worth restating here because the generator cannot do it: on
+Option B (`make new-adopter` into a sibling dir) the repo does not exist on
+GitHub yet — publish it with `gh repo create <owner>/<repo> --source=. --private
+--push` (Option A's template generation already created it). A workspace that
+changes later (stage or prod moving to its own workspace) is a one-line edit of
+`targets/stage.yml` / `targets/prod.yml`.
+<!-- template-only:adopting-quick-start end -->
 
 ## What this is / how the pieces relate
 
@@ -298,8 +348,8 @@ and add `SKIP_CATALOGS=1` — bootstrap then just ensures the schemas, the
 It creates, per target — **no separate artifacts catalog**; the framework wheel
 rides in each domain's own catalog:
 
-- each **domain catalog** (`customer_sales` + `sales` in this repo →
-  `CATALOGS`; just `<your_catalog>` for a single-domain adopter):
+- each **domain catalog** (`customer_sales` + `sales` in this repo, resolved
+  through `scripts/domains.py`; just `<your_catalog>` for a single-domain adopter):
   `bronze`/`silver`/`gold` schemas, the edge-lane `landing`/`exports` volumes
   (volume catalogs only), persona grants, **and an `artifacts.wheels` UC Volume**
   for the framework wheel — the deploy SP writes to it via its catalog-level ALL,
@@ -407,25 +457,29 @@ framework repo (docs, skills) to the new tag, runs `make lock` (CI runs
 from the newly pinned models (`make sync-schemas`), and asserts the lockstep
 (`make check-lockstep` — also a CI gate, so a partial bump can't merge). Then:
 
+<!-- template-only:adopting-bump-changes start -->
 1. Add the release's corresponding changes: read the framework CHANGELOG
    between the two versions, migrate anything flagged **BREAKING**, and document
    every new target/source kind in `.agents/skills/author-ldp-artifact/SKILL.md`
    (`make check-framework-surface` names them; `make sync-skills` after).
    Commit everything the bump touched (`git status` — pyproject, medallion.yml,
    uv.lock, schemas/, the re-pinned docs, the skill).
+<!-- template-only:adopting-bump-changes end -->
 2. `make publish-wheel TARGET=<t> APPLY=1` — build the new version from the new
    tag and upload it into each project catalog's `artifacts.wheels` volume
    (CI's deploy also publishes before `bundle deploy`).
 3. Redeploy (`make deploy`, or merge → CI).
 
+<!-- adopter-if:framework-bot start -->
 You usually don't even start this by hand: the scheduled **framework-bump
 workflow** (`.github/workflows/framework-bump.yml`) watches the framework repo
 for new releases and opens the lockstep PR for you — a draft listing the
-corresponding changes when the new version needs any. The template treats that
-PR as mandatory (`make check-framework-current` fails CI until it merges); in
-your adopter repo the same check only warns unless you set the
-`DATALAB_FRAMEWORK_MANDATE` variable to `enforce` (docs/CICD.md "Framework
-bumps").
+corresponding changes when the new version needs any.
+<!-- adopter-if:framework-bot end -->
+The template treats adopting each release as mandatory (`make
+check-framework-current` fails CI until the bump merges); in your adopter repo
+the same check only warns unless you set the `DATALAB_FRAMEWORK_MANDATE`
+variable to `enforce` (docs/CICD.md "Framework bumps").
 
 **Caching gotcha:** pipeline/job environments cache dependencies. A new framework
 version may not appear until the environment rebuilds — trigger a full pipeline

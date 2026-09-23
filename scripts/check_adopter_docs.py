@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail if a GENERATED adopter repo still carries the template's identity or layout.
+"""Fail if a GENERATED adopter repo carries template identity or dangling references.
 
 The scaffold rewrites AGENTS.md, the Makefile and the bundle files, and CI has
 long asserted those four are clean. Everything else an adopter reads was
@@ -11,7 +11,13 @@ template's SQL warehouse; `docs/NAMING.md` documented `sales_landing_path` and
 folder the scaffold deletes; `.cursor/rules/project.mdc` (auto-attached to every
 Cursor edit) described the `projects/` layout as fact.
 
-Three classes of finding, because they need different escapes:
+Since adopters choose their coding agents and components, "the files the
+conversion deletes" is no longer a fixed list — a repo without `docs/` must not
+link into it, one without Codex must not tell the agent about `.codex/`. So the
+layout check is general: a path (or `make` target) that EXISTS IN THE TEMPLATE
+but NOT in the adopter is a dangling reference.
+
+Four classes of finding, because they need different escapes:
 
 * **workspace identity** — the template's host, CLI profile, SQL warehouse and
   deploy service principal. Flagged unless THIS repo declares the same value in
@@ -21,27 +27,38 @@ Three classes of finding, because they need different escapes:
 * **identity with no adopter form** — the template's review team (a team in
   another org makes CODEOWNERS invalid) and its SECOND domain's bundle variables
   (`sales_*`, `DATALAB_SALES*`). No escape hatch.
-* **layout** — `projects/`, `design/`, `omnigent`, `make design`: material the
-  conversion deletes. Allowed only where the surrounding paragraph names the
-  *template repo*, so worked examples can still be cited by address.
+* **layout** — `projects/`, `omnigent`, `customer_sales` (and `design/`, `make
+  design` when the adopter has no design package): template material, in any
+  checked file.
+* **dangling references** (Markdown) — a repo path under a template directory
+  (`docs/…`, `.cursor/…`, `scripts/….py`, …) or a `make` target the template
+  has and the adopter does not.
 
-Attribution is checked per PARAGRAPH (a blank-line-separated block; a fenced
-code block counts as one), not per line — prose wraps, and a line-by-line grep
-forced awkward rewrites to keep "template repo" on the offending line itself.
+Layout and dangling references are allowed where the surrounding paragraph
+names the *template repo* or the *framework repo* (or links into them), so
+worked examples can still be cited by address. Attribution is checked per
+PARAGRAPH (a blank-line-separated block; a fenced code block counts as one) —
+prose wraps, and a line-scoped grep forced awkward rewrites.
 
-Runs against the repo it is invoked in. In the template repo itself every hit
-is legitimate, so it detects that (a `projects/` directory at the root) and
-skips.
+This checker is template-only tooling: it runs FROM the template against a
+generated repo. The scaffold runs it on every adopter before writing it, and
+the CI smoke test runs it on each generated profile:
 
-    make check-adopter-docs
+    make check-adopter-docs ADOPTER=<dir>
+
+Without ADOPTER it checks the current directory, and no-ops in the template
+itself (a `projects/` directory at the root).
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # The template's own workspace identity. Each entry is a leak UNLESS the adopter
 # genuinely configured the same value — standing a second repo up in the SAME
@@ -65,6 +82,61 @@ IDENTITY = {
     "sales_catalog": "the template's second-domain catalog variable",
     "DATALAB_SALES": "the template's second-domain GitHub variable",
 }
+
+# Allowed where the paragraph points at the repo the material lives in.
+ATTRIBUTIONS = (
+    "template repo",
+    "framework repo",
+    "github.com/dediggibyte/datalab/",
+    "github.com/dediggibyte/datalab-framework",
+)
+
+# What an adopter actually reads. `scripts/*.py` is excluded on purpose: tools
+# name paths in constants and regexes; scripts/README.md is the prose index.
+CHECKED_GLOBS = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "CHANGELOG.md",
+    "Makefile",
+    "databricks.yml",
+    "rbac.yml",
+    ".databricksignore",
+    ".mcp.json",
+    "docs/*.md",
+    "design/*.md",
+    "scripts/README.md",
+    "variables/*.yml",
+    "targets/*.yml",
+    "resources/*.yml",
+    ".cursor/rules/*.mdc",
+    ".cursor/mcp.json",
+    ".github/CODEOWNERS",
+    ".github/dependabot.yml",
+    ".github/pull_request_template.md",
+    ".github/workflows/*.yml",
+    ".github/actions/*/action.yml",
+    ".agents/skills/*/SKILL.md",
+    ".agents/skills/*/references/*.md",
+    # .claude/skills is a byte-identical copy of .agents/skills (check-skills).
+)
+
+MARKDOWN = (".md", ".mdc")
+
+# Repo paths under a directory the template has — the only kind that can
+# dangle. The lookbehind skips URLs, other paths' tails and regexes (`^docs/…`,
+# `\.claude/…` in the protected-file table).
+PATH_TOKEN = re.compile(
+    r"(?<![\w./\\^-])(?:\.\./)*"
+    r"((?:\.agents|\.claude|\.cursor|\.codex|\.githooks|\.github|docs|design|schemas|"
+    r"scripts|sample_data)/[\w./*<>{}@-]*"
+    r"|CLAUDE\.md|\.mcp\.json|\.gitattributes)"
+)
+# `make <target> [<target> …]` in a code span, or a code-block line.
+MAKE_SPAN = re.compile(r"`make\s+([^`]*)`")
+MAKE_LINE = re.compile(r"^\s*make\s+(.*)$", re.M)
+# Produced by a command, not committed — present as soon as its parent is.
+GENERATED = ("design/images/",)
 
 
 def configured_identity(root: Path) -> str:
@@ -92,39 +164,27 @@ def configured_identity(root: Path) -> str:
     return "\n".join(blob)
 
 
-# Deleted by the conversion. Allowed when the paragraph names the template repo.
-LAYOUT = ("projects/", "design/", "omnigent", "make design")
-ATTRIBUTION = "template repo"
+def makefile_targets(root: Path) -> set[str]:
+    path = root / "Makefile"
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    return set(re.findall(r"^([A-Za-z][\w-]*):(?!=)", text, re.M))
 
-# What an adopter actually reads. `scripts/` is excluded on purpose: the scaffold
-# engine and this checker legitimately name the template in constants, and the
-# bootstrap-adopter-repo skill's whole job is describing the conversion.
-CHECKED_GLOBS = (
-    "AGENTS.md",
-    "CLAUDE.md",
-    "README.md",
-    "CHANGELOG.md",
-    "Makefile",
-    "databricks.yml",
-    "rbac.yml",
-    ".databricksignore",
-    ".mcp.json",
-    "docs/*.md",
-    "variables/*.yml",
-    "targets/*.yml",
-    "resources/*.yml",
-    ".cursor/rules/*.mdc",
-    ".cursor/mcp.json",
-    ".github/CODEOWNERS",
-    ".github/dependabot.yml",
-    ".github/workflows/*.yml",
-    ".github/actions/*/action.yml",
-    ".agents/skills/*/SKILL.md",
-    ".claude/skills/*/SKILL.md",
-)
 
-# The conversion is this skill's subject matter — it must name the template.
-EXCLUDE_SUBSTRINGS = ("skills/bootstrap-adopter-repo/",)
+def template_paths(template_root: Path) -> set[str]:
+    """Every tracked template file plus each of its parent directories (with a
+    trailing slash) — the universe of paths an adopter reference can dangle
+    from. Tracked-only, so a developer's gitignored files never count."""
+    out = subprocess.run(
+        ["git", "-C", str(template_root), "ls-files", "-z"],
+        capture_output=True, text=True, check=False,
+    ).stdout
+    paths: set[str] = set()
+    for rel in filter(None, out.split("\0")):
+        paths.add(rel)
+        parts = rel.split("/")
+        for i in range(1, len(parts)):
+            paths.add("/".join(parts[:i]) + "/")
+    return paths
 
 
 def units(text: str) -> list[tuple[int, str]]:
@@ -163,47 +223,119 @@ def units(text: str) -> list[tuple[int, str]]:
     return out
 
 
-def check_file(
-    path: Path, rel: str, identity: dict[str, str], workspace: set[str]
-) -> list[str]:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
-        return []
-    problems: list[str] = []
-    for line_no, block in units(text):
-        attributed = ATTRIBUTION in block
-        for token, what in identity.items():
-            if token not in block:
-                continue
-            remedy = (
-                "this repo does not declare that value anywhere, so it was left "
-                "UNSUBSTITUTED"
-                if token in workspace
-                else "there is no valid adopter form of this"
-            )
-            problems.append(
-                f"{rel}:{line_no}: {token!r} — {what}. {remedy}; add or extend the "
-                f"substitution in scripts/scaffold_adopter.py."
-            )
-        if attributed:
-            continue
-        for token in LAYOUT:
-            if token in block:
-                problems.append(
-                    f"{rel}:{line_no}: {token!r} — deleted by the conversion. Either "
-                    f"say it lives in the template repo (the paragraph must contain "
-                    f'"{ATTRIBUTION}"), fence it '
-                    f"<!-- template-only:<name> start/end --> and swap it in "
-                    f"scaffold_adopter.py's DOC_REGIONS, or rewrite it for the "
-                    f"root-level layout."
+def _make_targets_in(block: str) -> set[str]:
+    found: set[str] = set()
+    for args in [*MAKE_SPAN.findall(block), *MAKE_LINE.findall(block)]:
+        for word in args.split():
+            if word.startswith("#") or word in ("&&", "||", ";", "\\", "|"):
+                break
+            if "=" not in word and not word.startswith("-"):
+                found.add(word.strip("`.,;:)"))
+    return found
+
+
+class Checker:
+    def __init__(self, root: Path, template_root: Path, template_files: set[str] | None = None):
+        self.root = root
+        self.template = template_files if template_files is not None else template_paths(template_root)
+        self.adopter_targets = makefile_targets(root)
+        self.template_targets = makefile_targets(template_root)
+        declared = configured_identity(root)
+        self.identity = dict(IDENTITY)
+        self.shared: list[str] = []
+        for token, what in WORKSPACE_IDENTITY.items():
+            if token in declared:
+                self.shared.append(token)
+            else:
+                self.identity[token] = what
+        # Markdown gets the general dangling-reference check below; other files
+        # (Makefile, workflows, bundle YAML) keep the fixed layout tokens.
+        self.layout = ("projects/", "omnigent", "customer_sales")
+        self.layout_non_md = () if (root / "design").is_dir() else ("design/", "make design")
+
+    def _dangles(self, token: str) -> bool:
+        """Does a path token name template material this repo lacks?"""
+        token = token.rstrip(".,;:)`'\"")
+        cut = re.search(r"[<*{]", token)
+        if cut:  # a placeholder: check the directory it lives in
+            token = token[: cut.start()]
+            token = token if token.endswith("/") else token.rsplit("/", 1)[0] + "/"
+        if not token.strip("/"):
+            return False
+        if token not in self.template and token.rstrip("/") + "/" not in self.template:
+            return False  # generic or placeholder path — not template material
+        if any(token.startswith(g) for g in GENERATED) and (self.root / token.split("/")[0]).is_dir():
+            return False
+        return not (self.root / token.rstrip("/")).exists()
+
+    def check_file(self, path: Path, rel: str) -> list[str]:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            return []
+        problems: list[str] = []
+        markdown = path.suffix in MARKDOWN
+        for line_no, block in units(text):
+            for token, what in self.identity.items():
+                if token not in block:
+                    continue
+                remedy = (
+                    "this repo does not declare that value anywhere, so it was left "
+                    "UNSUBSTITUTED"
+                    if token in WORKSPACE_IDENTITY
+                    else "there is no valid adopter form of this"
                 )
+                problems.append(
+                    f"{rel}:{line_no}: {token!r} — {what}. {remedy}; add or extend the "
+                    f"substitution in scripts/scaffold_adopter.py."
+                )
+            if any(a in block for a in ATTRIBUTIONS):
+                continue
+            for token in self.layout + (() if markdown else self.layout_non_md):
+                if token in block:
+                    problems.append(
+                        f"{rel}:{line_no}: {token!r} — template material this repo does not "
+                        "have. Say it lives in the template repo (the paragraph must contain "
+                        '"template repo"), fence it with an adopter-if / template-only '
+                        "marker, or rewrite it for the adopter layout."
+                    )
+            if not markdown:
+                continue
+            for token in sorted(set(PATH_TOKEN.findall(block))):
+                if self._dangles(token):
+                    problems.append(
+                        f"{rel}:{line_no}: {token!r} — this repo has no such path (a component "
+                        "it did not choose, or template-only material). Fence the passage "
+                        "with <!-- adopter-if:<feature> start/end -->, attribute it to the "
+                        "template repo, or rewrite it."
+                    )
+            for target in sorted(_make_targets_in(block)):
+                if target in self.template_targets and target not in self.adopter_targets:
+                    problems.append(
+                        f"{rel}:{line_no}: `make {target}` — this repo's Makefile has no such "
+                        "target (its section was dropped with a component). Fence the passage "
+                        "with an adopter-if marker, or attribute it to the template repo."
+                    )
+        return problems
+
+
+def collect_problems(
+    root: Path, template_root: Path = REPO_ROOT, template_files: set[str] | None = None
+) -> list[str]:
+    """Every finding for the adopter at `root` (the scaffold calls this on its
+    staged output before writing anything)."""
+    checker = Checker(root.resolve(), template_root.resolve(), template_files)
+    problems: list[str] = []
+    for pattern in CHECKED_GLOBS:
+        for path in sorted(root.glob(pattern)):
+            if path.is_file():
+                problems.extend(checker.check_file(path, path.relative_to(root).as_posix()))
     return problems
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", default=".", help="repo to check (default: cwd)")
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--root", default=".", help="generated adopter repo to check (default: cwd)")
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
 
@@ -211,35 +343,16 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "check-adopter-docs: this is the multi-domain template repo "
             "(projects/ exists) — its template references are legitimate, skipping. "
-            "The generated adopter is checked by the scaffold smoke test."
+            "Point it at a generated adopter: make check-adopter-docs ADOPTER=<dir>."
         )
         return 0
 
-    # A template workspace value this repo genuinely configured for itself is
-    # not a leak — only an UNsubstituted one is.
-    declared = configured_identity(root)
-    identity = dict(IDENTITY)
-    shared = []
-    for token, what in WORKSPACE_IDENTITY.items():
-        if token in declared:
-            shared.append(token)
-        else:
-            identity[token] = what
-
-    problems: list[str] = []
-    checked = 0
-    for pattern in CHECKED_GLOBS:
-        for path in sorted(root.glob(pattern)):
-            rel = path.relative_to(root).as_posix()
-            if not path.is_file() or any(x in rel for x in EXCLUDE_SUBSTRINGS):
-                continue
-            checked += 1
-            problems.extend(check_file(path, rel, identity, set(WORKSPACE_IDENTITY)))
-
+    problems = collect_problems(root)
+    checked = sum(1 for pattern in CHECKED_GLOBS for p in root.glob(pattern) if p.is_file())
     if problems:
         print(
-            "check-adopter-docs: this generated adopter repo still carries the "
-            "datalab template's identity or layout.\n",
+            "check-adopter-docs: this generated adopter repo still carries the datalab "
+            "template's identity, or points at material it does not have.\n",
             file=sys.stderr,
         )
         for problem in problems:
@@ -247,6 +360,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n{len(problems)} problem(s) across {checked} files.", file=sys.stderr)
         return 1
 
+    shared = [t for t in WORKSPACE_IDENTITY if t in configured_identity(root)]
     note = (
         f" (this repo shares {', '.join(shared)} with the template, so those are"
         " treated as its own)"
@@ -254,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         else ""
     )
     print(
-        f"adopter docs carry no template identity or layout "
+        f"adopter docs carry no template identity and no dangling references "
         f"({checked} files checked){note}"
     )
     return 0

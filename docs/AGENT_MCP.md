@@ -17,8 +17,8 @@ the deployed bundle via `.databricksignore`, and the proxy never enters
 
 | File | Purpose |
 |---|---|
-| [`.mcp.json`](../.mcp.json) | Claude Code project-scoped MCP config — a `uvx` stdio proxy (`uc-mcp-proxy`) to the workspace's managed Databricks **SQL** MCP endpoint. Uses `${VAR:-default}` so env vars can repoint it without editing the file. |
-| [`.cursor/mcp.json`](../.cursor/mcp.json) | Cursor counterpart (same server; literal values — edit them, or set env, for your workspace). |
+| [`.mcp.json`](../.mcp.json) | Claude Code project-scoped MCP config — a `uvx` stdio proxy (`uc-mcp-proxy`) to the workspace's managed Databricks **SQL** MCP endpoint. Uses `${VAR:-default}` so env vars can repoint it without editing the file. | <!-- adopter-if:agent-claude -->
+| [`.cursor/mcp.json`](../.cursor/mcp.json) | Cursor counterpart (same server; literal values — edit them, or set env, for your workspace). | <!-- adopter-if:agent-cursor -->
 | `.agents/skills/query-databricks/SKILL.md` (canonical; generated copy in `.claude/skills/` via `make sync-skills`) | The `query-databricks` skill — teaches the agent *when* to query and the **read-only / single-writer** guardrail. |
 
 ## Prerequisites
@@ -74,12 +74,17 @@ block in `.mcp.json`, rename it, and swap the `--url` (e.g.
 
 ## Use it
 
+<!-- adopter-if:agent-claude start -->
 - **Claude Code**: open the repo; it detects `.mcp.json` and asks you to approve
   the `databricks-sql` server (approve once). `/mcp` lists its tools. Then ask,
   e.g. *"List tables in `customer_sales.silver`, then show 5 rows of
   `silver.customers`."* The `query-databricks` skill guides when to reach for it.
+<!-- adopter-if:agent-claude end -->
+<!-- adopter-if:agent-cursor start -->
 - **Cursor**: enable `databricks-sql` under **Settings → MCP**, then prompt the
-  same way in chat.
+  same way in chat (e.g. *"List the tables in the silver schema, then show 5
+  rows of one"*); the `query-databricks` skill guides when to reach for it.
+<!-- adopter-if:agent-cursor end -->
 
 ## Safety
 
@@ -102,6 +107,7 @@ on them. `uc-mcp-proxy` is community/fast-moving; pin a version
 (`uvx uc-mcp-proxy@<ver>`) and re-check `uvx uc-mcp-proxy --help` if a flag
 changes. Treat it as opt-in, verify, throwaway.
 
+<!-- template-only:agent-mcp-adopter-setup start -->
 ## Adopter setup
 
 When you stand up an adopter repo with `make configure-adopter` (in place) or
@@ -114,6 +120,7 @@ doc, and the `.databricksignore` / protected-list rows come along **as-is**, sti
 pointing at this template's workspace — point them at yours.) Either way you can
 edit the two JSON files directly, or (Claude Code) export the env overrides the
 defaults already reference:
+<!-- template-only:agent-mcp-adopter-setup end -->
 
 | Value | This repo's configured value | Where it lives | Your source |
 |---|---|---|---|
@@ -121,8 +128,12 @@ defaults already reference:
 | SQL warehouse id (`DATABRICKS_SQL_WAREHOUSE_ID`) | `c1cdbe2406e5cf04` | a dev SQL warehouse | `databricks warehouses list` |
 
 The **workspace host comes from your CLI profile** (the `--url` is
-workspace-relative), so there is no host to set separately. `.cursor/mcp.json`
-carries literal values (most robust across Cursor versions) — edit them directly.
+workspace-relative), so there is no host to set separately.
+<!-- adopter-if:agent-cursor start -->
+`.cursor/mcp.json` carries literal values (most robust across Cursor versions) —
+edit them directly.
+<!-- adopter-if:agent-cursor end -->
+<!-- adopter-if:agent-claude start -->
 `.mcp.json` uses `${VAR:-default}`, so
 `export DATABRICKS_CONFIG_PROFILE=… DATABRICKS_SQL_WAREHOUSE_ID=…` repoints Claude
 Code without touching the protected file.
@@ -131,6 +142,7 @@ Code without touching the protected file.
 > CLI/SDK variable is `DATABRICKS_CONFIG_PROFILE`. The `.mcp.json` default
 > (`diggi_dev_aws`) means you don't depend on `.env` at all; set
 > `DATABRICKS_CONFIG_PROFILE` to override.
+<!-- adopter-if:agent-claude end -->
 
 ## Verification
 
@@ -143,9 +155,8 @@ Code without touching the protected file.
    uvx uc-mcp-proxy --help            # confirm the package name + flags first
    databricks warehouses get c1cdbe2406e5cf04 --profile diggi_dev_aws   # → RUNNING
    ```
-3. **Claude Code end-to-end** — approve the server, run `/mcp`, then ask for a
-   `SHOW TABLES` + a `SELECT … LIMIT 5`. Expect results (subject to UC grants).
-4. **Cursor end-to-end** — enable the server in Settings → MCP, same prompt.
+3. **Claude Code end-to-end** — approve the server, run `/mcp`, then ask for a `SHOW TABLES` + a `SELECT … LIMIT 5`; expect results (subject to UC grants). <!-- adopter-if:agent-claude -->
+4. **Cursor end-to-end** — enable the server in Settings → MCP, then ask for a `SHOW TABLES` + a `SELECT … LIMIT 5`. <!-- adopter-if:agent-cursor -->
 5. **Read-only check** — ask the agent to `CREATE`/`INSERT`; confirm it refuses
    (skill) and that the warehouse/UC grants would reject it anyway.
 

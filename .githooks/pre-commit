@@ -98,6 +98,9 @@ if [[ -f scripts/check_framework_surface.py ]] && command -v python3 >/dev/null 
   fi
 fi
 
+# Entries fenced `# adopter-if:<feature>` are dropped from generated adopters
+# that did not choose the feature (scripts/scaffold_adopter.py) — the same rows
+# as AGENTS.md's table and the agent guard, so the three stay aligned there too.
 PATTERNS=(
   '^databricks\.yml$'
   '^rbac\.yml$'
@@ -108,17 +111,31 @@ PATTERNS=(
   '^\.databricksignore$'
   '^(config|projects/[^/]+/config)/.*\.ya?ml$'
   '^\.github/(workflows|actions)/.*'
+  # adopter-if:pr-template start
   '^\.github/pull_request_template\.md$'
+  # adopter-if:pr-template end
+  # adopter-if:agent-claude|agent-codex start
   '^\.claude/(settings\.json|hooks/.*|skills/.*)'
+  # adopter-if:agent-claude|agent-codex end
+  # adopter-if:hooked-agent start
   '^\.cursor/(rules|hooks)/.*'
   '^\.cursor/hooks\.json$'
+  # adopter-if:hooked-agent end
+  # adopter-if:any-agent start
   '^\.codex/hooks\.json$'
   '^\.agents/skills/.*'
+  # adopter-if:any-agent end
+  # adopter-if:agent-claude start
   '^scripts/sync_skills\.py$'
+  # adopter-if:agent-claude end
   '^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs|check_agent_settings|check_framework_current|check_framework_surface)\.py$'
+  # adopter-if:schemas start
   '^schemas/.*\.json$'
+  # adopter-if:schemas end
+  # adopter-if:mcp start
   '^\.mcp\.json$'
   '^\.cursor/mcp\.json$'
+  # adopter-if:mcp end
   '^\.githooks/.*'
   '^Makefile$'
   '^\.env(\..*)?$'

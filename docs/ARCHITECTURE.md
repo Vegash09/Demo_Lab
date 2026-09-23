@@ -16,10 +16,11 @@ governance.
 
 ## System view
 
+<!-- template-only:arch-system-view start -->
 ```mermaid
 flowchart LR
     subgraph GH["GitHub"]
-        DEV["developer / agent<br/>push · PR"] --> CI["Actions: ci-cd-{dev,stage,prod}<br/>common-ci: ruff + pytest + bundle validate"]
+        DEV["developer / agent<br/>push · PR"] --> CI["Actions: ci-cd.yml (target from the trigger)<br/>common-ci: ruff + pytest + bundle validate"]
         CI -->|"OIDC — no stored secret"| CD["common-cd: bundle deploy"]
     end
 
@@ -32,11 +33,13 @@ flowchart LR
         JOB --> PL
     end
 ```
+<!-- template-only:arch-system-view end -->
 
 The bundle is the only thing that touches the workspace. CI validates it on
 every PR; CD deploys it on merge (dev) and tags (stage/prod) — details in
 [CICD.md](CICD.md).
 
+<!-- adopter-if:local-dev start -->
 ## Execution profiles (run anywhere)
 
 One config-driven codebase runs three ways; `datalab.profile` (a pipeline
@@ -64,12 +67,14 @@ flowchart TD
   AUTO CDC dedup / dqx / Auto Loader (OSS SDP can't express them).
 - **Databricks Connect** — runs one dataset's mapping/transforms/dqx via
   `run_dataset` on a live cluster from an isolated, out-of-lock overlay.
+<!-- adopter-if:local-dev end -->
 
 ## Three authoring lanes
 
 The SDP pipeline owns **all medallion tables** (single-writer invariant).
 Jobs work the lakehouse edges and only *read* pipeline-owned tables:
 
+<!-- template-only:arch-lanes-diagram start -->
 ```mermaid
 flowchart LR
     PL["SDP pipeline customer_sales_etl<br/>bronze → silver → gold<br/>(owns every medallion table)"]
@@ -77,6 +82,7 @@ flowchart LR
     PL -->|read-only| QR["customer_sales_quarantine_report · notebook lane<br/>notebooks/&lt;catalog&gt;/quarantine_report.py<br/>→ owns customers_quarantine_report"]
     QR -.->|"repaired rows re-enter<br/>via landing"| PL
 ```
+<!-- template-only:arch-lanes-diagram end -->
 
 Routing is the 3-question router (AGENTS.md, "Authoring rules"):
 
@@ -86,6 +92,7 @@ Routing is the 3-question router (AGENTS.md, "Authoring rules"):
 | headless, side-effectful edge work | **python-file** | `spark_python_task`: argparse + explicit `main()` |
 | human-must-decide | **notebook** | `notebook_task`, no trigger; widgets mirror job parameters |
 
+<!-- template-only:arch-data-view start -->
 ## Data view (medallion, generated from the customer_sales example's artifacts)
 
 ```mermaid
@@ -98,6 +105,7 @@ flowchart LR
     VAL -->|"AUTO CDC flow<br/>keys=[customer_id] · sequence_by=_ingest_ts · SCD1"| SIL["silver.customers<br/>create_streaming_table"]
     SIL --> GOLD["gold.customers_by_city<br/>materialized_view<br/>(customer_sales.summarize_customers_by_city)"]
 ```
+<!-- template-only:arch-data-view end -->
 
 Developers (and agents) edit YAML only; the framework validates configs with
 Pydantic at pipeline import and registers every LDP object through
@@ -154,11 +162,13 @@ never diverge; evidence lands as `_errors`/`_warnings` structs.
 
 ## Environments
 
+<!-- template-only:arch-env-table start -->
 | Target | Mode | Catalog (default) | Trigger state |
 |---|---|---|---|
 | dev | development — resources prefixed `[dev <user>]`, isolated per user | `customer_sales` | paused |
 | stage | production | `customer_sales_stage` | live |
 | prod | production | `customer_sales_prod` | live |
+<!-- template-only:arch-env-table end -->
 
 Catalogs and schemas are bundle variables; the same artifacts deploy to all
 three targets unchanged.
@@ -219,6 +229,7 @@ listed in `.databricksignore`, so none of it ships with the bundle.
 | `design/01_design_config_driven_medallion.drawio` | Multi-page **design spec** (Context → Author → Generate → Run → Ship) | the *design intent* changes — a new principle, authoring lane, or conceptual flow |
 | `design/02_implementation_end_to_end.drawio` | Single-page **living implementation** map (config / framework / domain / pipeline / edge bands + a CI-CD · profiles · bundle · bootstrap · docs column) | the *implemented architecture* changes — a new table artifact, framework module, edge job/notebook, execution profile, or bundle resource |
 | `design/images/*.png` | **Generated** PNG exports of the diagrams above | never by hand — run `make design` after editing a `.drawio` source |
+| `design/PIPELINES.md` | **Generated** pipeline inventory + mermaid lineage, rendered from the `config/` artifacts (`scripts/design_inventory.py`) | every table change — `make design` re-renders it; CI's `make check-design` fails while it is stale |
 | `design/OVERVIEW.md` | Customer-facing tour that embeds the images | the customer narrative changes (a new capability, layer behaviour, or value point) |
 | `design/datalab-customer-overview.html` | Standalone self-contained share (built out-of-band) | `OVERVIEW.md` changes materially — regenerate the snapshot separately; never hand-edit |
 
@@ -242,7 +253,8 @@ your setup:
 make design
 ```
 
-This regenerates every `design/images/*.png` from the `.drawio` sources via the
+This re-renders `design/PIPELINES.md` from the `config/` artifacts, then
+regenerates every `design/images/*.png` from the `.drawio` sources via the
 draw.io Desktop CLI (`scripts/export_design.py` splits the multi-page `01_*`
 file page by page, working around draw.io's unreliable `--page-index`). The CLI
 is **not** available in CI, so this is a developer/agent step: run it after

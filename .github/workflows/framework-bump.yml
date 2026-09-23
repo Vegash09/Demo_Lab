@@ -215,9 +215,29 @@ jobs:
               echo '  ```'
             } >> "$report"
           fi
-          for gate in lint validate-configs test check-lockstep check-schemas \
-                      check-framework-current check-framework-surface check-domains \
-                      check-sync-lists check-templates-doc check-skills check-agent-settings; do
+          gates="lint validate-configs test check-lockstep check-framework-current check-domains check-sync-lists"
+          # Optional gates are fenced `# adopter-if:<feature>`: the adopter
+          # scaffold keeps a gate only when the generated repo has its make
+          # target (a missing target would fail here and draft every bump PR).
+          # adopter-if:schemas start
+          gates="$gates check-schemas"
+          # adopter-if:schemas end
+          # adopter-if:schemas&any-agent start
+          gates="$gates check-framework-surface"
+          # adopter-if:schemas&any-agent end
+          # adopter-if:design start
+          gates="$gates check-design"
+          # adopter-if:design end
+          # adopter-if:template start
+          gates="$gates check-templates-doc"
+          # adopter-if:template end
+          # adopter-if:agent-claude start
+          gates="$gates check-skills"
+          # adopter-if:agent-claude end
+          # adopter-if:hooked-agent start
+          gates="$gates check-agent-settings"
+          # adopter-if:hooked-agent end
+          for gate in $gates; do
             if make "$gate" > "$RUNNER_TEMP/gate-$gate.log" 2>&1; then
               echo "- [x] \`make $gate\`" >> "$report"
             else
@@ -277,12 +297,17 @@ jobs:
           notes = ["### Corresponding changes this release needs", ""]
           notes.append("- [ ] **Breaking changes migrated** in configs / code: "
                        + ("; ".join(breaking) if breaking else "none flagged BREAKING by the framework"))
-          notes.append("- [ ] **New capabilities documented for authors** — every new `kind` must be in "
-                       "`.agents/skills/author-ldp-artifact/SKILL.md` (`make check-framework-surface` gates "
-                       "it); consider an NL cue for each new option"
+          # schemas/ and the authoring skill are optional in generated adopters
+          skill, schemas = Path(".agents/skills/author-ldp-artifact/SKILL.md"), Path("schemas").is_dir()
+          if skill.exists():
+              gate = " (`make check-framework-surface` gates it)" if schemas else ""
+              where = f"every new `kind` must be in `{skill}`{gate}; consider an NL cue for each new option"
+          else:
+              where = "in the docs this repo's authors read"
+          notes.append("- [ ] **New capabilities documented for authors** — " + where
                        + (": " + "; ".join(added) if added else ""))
-          notes.append("- [x] Pin, `var.datalab_version`, `uv.lock`, `schemas/` and framework-doc links "
-                       "moved by `make bump-framework`")
+          notes.append("- [x] Pin, `var.datalab_version`, `uv.lock`, " + ("`schemas/` " if schemas else "")
+                       + "and framework-doc links moved by `make bump-framework`")
           notes += ["", "<details><summary>Framework CHANGELOG, "
                     f"{os.environ['CURRENT']} → {os.environ['LATEST']}</summary>", "",
                     "\n\n".join(sections) or "_(no sections found)_", "", "</details>"]
@@ -313,7 +338,7 @@ jobs:
             echo "- \`pyproject.toml\`: datalab git tag $CURRENT -> $LATEST"
             echo "- \`variables/medallion.yml\`: datalab_version -> $VERSION"
             echo "- \`uv.lock\`: re-resolved"
-            echo "- \`schemas/*.json\`: regenerated from the $LATEST models"
+            if [ -d schemas ]; then echo "- \`schemas/*.json\`: regenerated from the $LATEST models"; fi
             echo "- framework-doc links re-pinned to $LATEST"
             echo
             cat "$RUNNER_TEMP/framework-notes.md"

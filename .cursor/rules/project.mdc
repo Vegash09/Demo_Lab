@@ -15,8 +15,9 @@ Quick pointers:
 - **Pipelines are config-driven**: a target table is ONE YAML artifact
   (`config/<catalog>/<schema>/<table>.yml`; in this repo the example lives at
   `projects/customer_sales/config/customer_sales/`) — author it with the
-  `author-ldp-artifact` skill; full reference + SDP capability matrix in
-  docs/FRAMEWORK.md. Folder paths mirror the UC namespace (docs/NAMING.md).
+  `author-ldp-artifact` skill; full reference + SDP capability matrix in the
+  framework repo's docs/FRAMEWORK.md. Folder paths mirror the UC namespace
+  (docs/NAMING.md).
   Never hand-write `dp.*` wiring unless the matrix says the framework can't
   express it (`author-sdp-pipeline` skill).
 - When SDP code IS written: **`from pyspark import pipelines as dp`** — never

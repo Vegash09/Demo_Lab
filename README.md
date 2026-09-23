@@ -27,8 +27,11 @@ versioned **UC-Volume wheel** (serverless) this repo builds + publishes on deplo
 > **[docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md)** — generate from this **GitHub
 > template repository**, then `make configure-adopter` (or let the
 > `bootstrap-adopter-repo` skill drive it) converts the clone into a minimal,
-> root-level single-domain adopter repo. Reference for what the conversion
-> does: [docs/ADOPTING.md](docs/ADOPTING.md).
+> root-level single-domain adopter repo — carrying only the coding agents
+> (claude / codex / cursor / genie) and optional components (docs, a design
+> package generated for the customer, schemas, local-dev tooling, git hooks, …)
+> you confirm in its short form. Reference for what the conversion does and
+> what each choice ships: [docs/ADOPTING.md](docs/ADOPTING.md).
 
 ## Architecture at a glance
 

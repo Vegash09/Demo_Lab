@@ -30,7 +30,13 @@ Checks run per tracked file:
 2. hook commands locate their scripts through `$CLAUDE_PROJECT_DIR` or a
    repo-relative path, never an absolute one;
 3. every path a hook command references actually exists in the repo, so a
-   renamed guard script fails here instead of silently never running.
+   renamed guard script fails here instead of silently never running;
+4. every `permissions.allow` grant is a READ-ONLY `make` verification target.
+   The first three checks let a portable WRITE grant through — and one did:
+   `Bash(PROTECTED_EDIT_OK=1 git commit …)` (a commit that skips the
+   protected-files guard) sat in the tracked file, shipping to every adopter,
+   while the commit that "moved the write grants to the local file" said
+   otherwise.
 
     make check-agent-settings      # CI + pre-commit
 """
@@ -65,6 +71,14 @@ MACHINE_PATHS = (
 
 # A hook command may name a script; these are the forms that travel.
 PORTABLE_PREFIXES = ("$CLAUDE_PROJECT_DIR/", "${CLAUDE_PROJECT_DIR}/")
+
+# The only grants a TRACKED allow-list may carry: read-only verification `make`
+# targets that mean the same thing on every machine (optionally with trailing
+# arguments). Anything else — commits, deploys, shell one-offs — is personal.
+READ_ONLY_GRANT = re.compile(
+    r"^Bash\(make (help|lint|test|validate|validate-configs|dry-run-local|run-local"
+    r"|check-[a-z-]+)( \*)?\)$"
+)
 
 # Repo-relative script path inside a hook command, e.g. ".cursor/hooks/x.py"
 SCRIPT_RE = re.compile(r"(?:\$\{?CLAUDE_PROJECT_DIR\}?/)?((?:\.[\w-]+/)[\w./-]+\.py)")
@@ -111,6 +125,17 @@ def check_config(rel: str) -> list[str]:
                 )
                 break
 
+    # 4. The tracked allow-list holds read-only verification grants only.
+    allow = (data.get("permissions") or {}).get("allow") or [] if isinstance(data, dict) else []
+    for i, grant in enumerate(allow):
+        if isinstance(grant, str) and not READ_ONLY_GRANT.match(grant):
+            problems.append(
+                f"{rel} at $.permissions.allow[{i}]: {grant!r} is not a read-only `make` "
+                f"verification grant. A TRACKED allow-list is shared with every developer "
+                f"and copied into adopter repos; keep only `Bash(make help|lint|test|"
+                f"validate-configs|check-*…)` here and move this one to {LOCAL_FILE}."
+            )
+
     # 2 + 3. Hook commands must resolve portably, and to a file that exists.
     for where, text in walk_strings(data):
         if not where.endswith(".command"):
@@ -142,8 +167,8 @@ def main() -> int:
 
     if problems:
         print(
-            "check-agent-settings: a committed agent-harness config is tied to one "
-            "machine.\n",
+            "check-agent-settings: a committed agent-harness config carries something "
+            "personal, machine-specific or broken.\n",
             file=sys.stderr,
         )
         for problem in problems:

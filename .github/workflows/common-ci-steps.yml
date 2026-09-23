@@ -82,12 +82,17 @@ jobs:
         # repo; here we lint scripts/ + the reference domains under projects/.
         run: uv run ruff check scripts projects
 
+      # Optional gates are fenced `# adopter-if:<feature>`: the adopter scaffold
+      # keeps a step only when the generated repo has what it checks.
+      # adopter-if:agent-claude start
       - name: Check agent-skill mirror is in sync (no drift from .agents/skills)
         # Mirror of `make check-skills`. Skills are authored once under
         # .agents/skills/ (read natively by Cursor + Codex); .claude/skills is a
         # generated copy for Claude Code (scripts/sync_skills.py). Fails on drift.
         run: uv run python scripts/sync_skills.py --check
+      # adopter-if:agent-claude end
 
+      # adopter-if:hooked-agent start
       - name: Check committed agent configs are machine-independent
         # Mirror of `make check-agent-settings`. Claude Code appends "always
         # allow" grants to a settings file, and a run of them landed in the
@@ -97,7 +102,9 @@ jobs:
         # and leaks the author's local paths. Per-developer grants belong in the
         # gitignored .claude/settings.local.json.
         run: uv run --no-project python scripts/check_agent_settings.py
+      # adopter-if:hooked-agent end
 
+      # adopter-if:template start
       - name: Check the adopter templates doc matches the scaffold engine
         # Mirror of `make check-templates-doc`: the bootstrap-adopter-repo skill's
         # references/templates.md is the documented MANUAL FALLBACK, so every
@@ -106,6 +113,7 @@ jobs:
         # a new pipeline behind Databricks' fingerprint gate) and an
         # empty-layer-dir instruction the config validator rejects.
         run: uv run --no-project python scripts/check_templates_doc.py
+      # adopter-if:template end
 
       - name: Check framework version pin is in lockstep
         # Mirror of `make check-lockstep`: the datalab git tag (pyproject.toml
@@ -114,11 +122,22 @@ jobs:
         # same framework release. Historically prose-enforced and it drifted.
         run: uv run --no-project python scripts/check_lockstep.py
 
+      # adopter-if:schemas start
       - name: Check vendored schemas match the pinned framework (no drift)
         # Mirror of `make check-schemas`: schemas/*.json are GENERATED from the
         # pinned framework's Pydantic models (scripts/sync_schemas.py); hand-copied
         # vendoring went stale two releases in a row before this check existed.
         run: uv run python scripts/sync_schemas.py --check
+      # adopter-if:schemas end
+
+      # adopter-if:design start
+      - name: Check the design pipeline inventory is current
+        # Mirror of `make check-design`: design/PIPELINES.md is RENDERED from the
+        # config/ artifacts (scripts/design_inventory.py). A table added without
+        # `make design` leaves the design describing a pipeline that no longer
+        # exists — the design travels with the code, in the same PR.
+        run: uv run python scripts/design_inventory.py --check
+      # adopter-if:design end
 
       - name: Check the domain registry resolves against the bundle files
         # Mirror of `make check-domains`: scripts/domains.py must resolve every
@@ -144,6 +163,7 @@ jobs:
       - name: Unit tests (local Spark)
         run: uv run pytest
 
+      # adopter-if:schemas&any-agent start
       - name: Authoring skill documents every kind of the pinned framework
         # Mirror of `make check-framework-surface`: a framework release that adds
         # a target/source kind needs that kind documented in the author-ldp-artifact
@@ -151,10 +171,13 @@ jobs:
         # learned foreach_batch_sink until this gate existed). Last among the
         # blocking steps, so a gap never hides lint/test results. Enforced in the
         # template; a warning in generated adopters (DATALAB_FRAMEWORK_MANDATE).
+        # Reads schemas/ + the .agents skill, so it ships only with both.
         env:
           DATALAB_FRAMEWORK_MANDATE: ${{ vars.DATALAB_FRAMEWORK_MANDATE }}
         run: python3 scripts/check_framework_surface.py
+      # adopter-if:schemas&any-agent end
 
+      # adopter-if:local-dev start
       - name: Local SDP graph dry-run (OSS spark-pipelines)
         # Guards the local-run profile (datalab.framework.local): generates the
         # spark-pipeline.yml and runs `spark-pipelines dry-run` (syntax/analysis/
@@ -164,6 +187,7 @@ jobs:
         # end while the SDP + dqx + Spark Connect path stabilizes upstream.
         run: make dry-run-local
         continue-on-error: true
+      # adopter-if:local-dev end
 
   framework-current:
     name: "framework pin is the latest release"
@@ -308,14 +332,25 @@ jobs:
             url."https://x-access-token:${FRAMEWORK_TOKEN}@github.com/dediggibyte/datalab-framework".insteadOf \
             "https://github.com/dediggibyte/datalab-framework"
 
-      - name: Generate an adopter repo (make new-adopter)
+      # Adopters choose their coding agents and components, so one profile proves
+      # nothing about the others. Three are built here: FULL (every agent +
+      # component, incl. the generated design package), MINIMAL (none — converted
+      # in place, the path customers take) and MIXED (claude + genie, docs + mcp:
+      # a partial harness). Each is also checked FROM the template by
+      # `make check-adopter-docs ADOPTER=…` for template identity and dangling
+      # references to anything the profile dropped.
+      - name: Generate the FULL adopter (make new-adopter — every agent + component)
         run: |
           uv sync --frozen
           make new-adopter CATALOG=acme OUT="$RUNNER_TEMP/acme-datalab" \
+            CUSTOMER="Acme Corp" REPO=acme-corp/acme-datalab \
             HOST=https://adb-000000000000000.0.azuredatabricks.net \
-            WAREHOUSE_ID=0000000000000000 DEPLOY_SP=00000000-0000-0000-0000-000000000000
+            HOST_PROD=https://adb-111111111111111.1.azuredatabricks.net \
+            WAREHOUSE_ID=0000000000000000 DEPLOY_SP=00000000-0000-0000-0000-000000000000 \
+            AGENTS=all COMPONENTS=all
+          make check-adopter-docs ADOPTER="$RUNNER_TEMP/acme-datalab"
 
-      - name: Run the generated repo's quality gates
+      - name: Run the FULL adopter's quality gates
         working-directory: ${{ runner.temp }}/acme-datalab
         run: |
           make validate-configs
@@ -326,20 +361,15 @@ jobs:
           make check-framework-surface
           make check-domains
           make check-sync-lists
-          # check-skills was missing here: the scaffold edits skills under BOTH
-          # .agents/skills and .claude/skills, and patching only one ships an
-          # adopter whose very first `make check-skills` fails.
+          # The skills mirror is regenerated from the pruned, patched canonical
+          # copy — an adopter whose first `make check-skills` fails ships broken.
           make check-skills
-          make check-templates-doc
-          # The tracked agent config is copied verbatim into the adopter, so a
-          # machine-specific grant in the template lands in a customer's repo.
+          # The tracked agent configs are regenerated per adopter (read-only make
+          # grants, hooks only for scripts it has) — the check proves both.
           make check-agent-settings
-          # Every surface an adopter READS — docs/, the Cursor rule file, the
-          # skills, CODEOWNERS, the workflows — must carry no template identity
-          # (workspace host, CLI profile, SQL warehouse, deploy SP) and no
-          # reference to the projects/ + design/ + omnigent material the
-          # conversion deletes, unless the paragraph names the template repo.
-          make check-adopter-docs
+          # design/PIPELINES.md is pre-rendered by the scaffold; the adopter's own
+          # renderer must agree with it from day one.
+          make check-design
 
       - name: Local SDP graph dry-run in the generated repo (OSS spark-pipelines)
         # The scaffold rewrites LOCAL_DOMAIN_CONFIG / LOCAL_TRANSFORMS /
@@ -361,28 +391,35 @@ jobs:
             || { echo "::error::var.landing_path does not follow the landing/<catalog>/ contract"; exit 1; }
           # 2. AGENTS.md (auto-loaded by CLAUDE.md) and the operational surfaces
           #    must describe the ADOPTER repo — no reference to the deleted
-          #    projects/ design/ omnigent/ material except lines explicitly
-          #    naming the template repo.
-          if grep -n "projects/\|design/\|omnigent\|make design" AGENTS.md Makefile databricks.yml .databricksignore | grep -v "template repo"; then
+          #    projects/ + omnigent/ material except lines explicitly naming the
+          #    template repo. (design/ is legitimately present in this profile;
+          #    check-adopter-docs covers it for the profiles without it.)
+          if grep -n "projects/\|omnigent" AGENTS.md Makefile databricks.yml .databricksignore | grep -v "template repo"; then
             echo "::error::template-only references survived the conversion"; exit 1
           fi
           # 3. Deployed surfaces carry no template identity.
           if grep -rn "customer_sales\|diggi_dev_aws\|c1cdbe2406e5cf04" config src resources variables targets rbac.yml databricks.yml pyproject.toml README.md; then
             echo "::error::template identity leaked into a deployed surface"; exit 1
           fi
-          # 4. The starter sample data + no dead design target.
+          # 4. The starter sample data, the customer's own design package, the
+          #    per-target hosts, the recorded answers — and no template tooling.
           test -f sample_data/landing/acme/events/events.json
-          if grep -qE '^design:' Makefile; then
-            echo "::error::the design target survived into the adopter Makefile"; exit 1
-          fi
+          test -f design/OVERVIEW.md && test -f design/PIPELINES.md
+          grep -F 'adb-111111111111111' targets/prod.yml >/dev/null \
+            || { echo "::error::the prod host did not reach targets/prod.yml"; exit 1; }
+          python3 -c 'import json; a=json.load(open(".datalab-adopter.json"))["answers"]; assert a["catalog"]=="acme" and len(a["agents"])==4, a'
+          for gone in scripts/scaffold_adopter.py scripts/check_adopter_docs.py \
+                      scripts/check_templates_doc.py scripts/tests .agents/skills/bootstrap-adopter-repo; do
+            if [ -e "$gone" ]; then echo "::error::template-only $gone shipped to the adopter"; exit 1; fi
+          done
 
       # The documented FIRST command a new adopter runs is `make configure-adopter`
       # (convert a GitHub-template clone IN PLACE) — docs/NEW_ADOPTER.md step 2.
-      # Only `make new-adopter` was ever exercised, so the path every customer
-      # actually takes was untested. It differs materially: it deletes from a real
-      # clone instead of copying tracked files, and it resolves the repo slug from
-      # git origin to rewrite docs/CICD.md's OIDC subject.
-      - name: Convert a clone IN PLACE (make configure-adopter)
+      # It differs materially from new-adopter: it deletes from a real clone
+      # instead of copying tracked files, and it resolves the repo slug from git
+      # origin to rewrite docs/CICD.md's OIDC subject. Built here as the MINIMAL
+      # profile: no coding agents, no optional components.
+      - name: Convert a clone IN PLACE — MINIMAL (make configure-adopter, nothing optional)
         run: |
           set -euo pipefail
           git clone --no-hardlinks . "$RUNNER_TEMP/beta-datalab"
@@ -391,9 +428,43 @@ jobs:
           # clone's origin is a local path, so the guard correctly lets it run.
           make configure-adopter YES=1 CATALOG=beta \
             HOST=https://adb-000000000000000.0.azuredatabricks.net \
-            WAREHOUSE_ID=0000000000000000 DEPLOY_SP=00000000-0000-0000-0000-000000000000
+            WAREHOUSE_ID=0000000000000000 DEPLOY_SP=00000000-0000-0000-0000-000000000000 \
+            AGENTS=none COMPONENTS=none
           test -d config/beta && test -f resources/beta_etl.pipeline.yml
           test ! -d projects && test ! -d design && test ! -d omnigent
+          for gone in .agents .claude .cursor .codex CLAUDE.md .mcp.json docs schemas \
+                      sample_data .githooks .gitattributes .github/dependabot.yml \
+                      .github/pull_request_template.md .github/workflows/framework-bump.yml \
+                      .github/workflows/pr-template-check.yml scripts/sync_skills.py \
+                      scripts/validate_connect.py scripts/check_framework_surface.py \
+                      scripts/scaffold_adopter.py scripts/tests; do
+            if [ -e "$gone" ]; then echo "::error::$gone survived a no-agent, no-component profile"; exit 1; fi
+          done
+          # Re-running the configurator inside the adopter must be impossible and
+          # write NOTHING — it used to overwrite pyproject/databricks.yml/targets
+          # and add a second domain before crashing on the first missing anchor.
+          # The scaffold tooling no longer ships (and the engine refuses a repo
+          # without projects/ even where an old copy of it survives).
+          before=$(git status --porcelain | sha1sum)
+          if make configure-adopter YES=1 CATALOG=other 2>/dev/null; then
+            echo "::error::configure-adopter ran inside an already-generated adopter"; exit 1
+          fi
+          [ "$before" = "$(git status --porcelain | sha1sum)" ] \
+            || { echo "::error::a refused re-run still changed the repo"; exit 1; }
           make lock
-          make validate-configs lint check-skills check-domains check-sync-lists
-          make check-adopter-docs check-agent-settings
+          make validate-configs lint test check-lockstep check-domains check-sync-lists
+
+      - name: Check the MINIMAL adopter from the template (dangling references)
+        run: make check-adopter-docs ADOPTER="$RUNNER_TEMP/beta-datalab"
+
+      - name: Generate + check a MIXED adopter (claude + genie · docs + mcp)
+        run: |
+          set -euo pipefail
+          make new-adopter CATALOG=gamma OUT="$RUNNER_TEMP/gamma-datalab" \
+            AGENTS=claude,genie COMPONENTS=docs,mcp
+          make check-adopter-docs ADOPTER="$RUNNER_TEMP/gamma-datalab"
+          cd "$RUNNER_TEMP/gamma-datalab"
+          test -f .claude/settings.json && test -f .mcp.json && test ! -d .cursor/rules
+          test -f scripts/publish_genie_skills.py && test ! -e .codex
+          make lock
+          make lint validate-configs check-skills check-agent-settings check-sync-lists

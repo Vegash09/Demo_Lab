@@ -152,10 +152,15 @@ scripts/check_framework_surface.py  Fail while the author-ldp-artifact skill mis
 scripts/check_sync_lists.py  Assert databricks.yml sync.exclude == .databricksignore (make check-sync-lists; CI gate)
 scripts/check_templates_doc.py  Assert the bootstrap-adopter-repo skill's references/templates.md (the documented MANUAL
                           fallback) still mirrors scaffold_adopter.py's file templates byte for byte (make check-templates-doc; CI + pre-commit)
-scripts/check_adopter_docs.py  Run INSIDE a GENERATED adopter: fail if any surface it reads (docs/, .cursor/rules,
-                          skills, CODEOWNERS, workflows) still names the template's workspace/SP/warehouse or the
-                          projects//design//omnigent material the conversion deletes (make check-adopter-docs; CI
-                          scaffold smoke test). No-ops in this repo — attribution is per PARAGRAPH, not per line
+scripts/scaffold_adopter.py  The adopter configurator (make configure-adopter / new-adopter): an interactive form or
+                          flags/ANSWERS= → a single-domain adopter carrying only the chosen coding agents + components
+                          (TOP_LEVEL/PATH_RULES own the files; adopter-if markers the passages); template-only
+scripts/check_adopter_docs.py  Run FROM here against a GENERATED adopter (make check-adopter-docs ADOPTER=<dir>; the
+                          configurator runs it on every build before writing): fail on template workspace/SP/warehouse
+                          identity, or a reference to a path, doc or make target the adopter does not have (a dropped
+                          component, template-only material). Attribution is per PARAGRAPH, not per line
+scripts/design_inventory.py  Render design/PIPELINES.md (every table, source, target kind, quality gate + mermaid
+                          lineage) from the config/ artifacts (make design; make check-design gates CI)
 pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.sources] (datalab → git tag) + [tool.uv.workspace]; root is package=false (builds nothing); each projects/<domain> is a workspace member building its own <catalog>_etl wheel
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
@@ -171,7 +176,8 @@ docs/                     GETTING_STARTED, FRAMEWORK (reference), NAMING (folder
                           ARCHITECTURE, CICD, MIGRATION
 design/                   Customer-facing OVERVIEW.md + architecture diagrams (drawio):
                           01_*=multi-page design spec, 02_*=living end-to-end implementation,
-                          images/=PNG exports (make design), datalab-customer-overview.html
+                          images/=PNG exports (make design), PIPELINES.md=GENERATED pipeline
+                          inventory (make design; make check-design in CI), datalab-customer-overview.html
                           (standalone share). Kept in sync via the maintain-design-diagram
                           skill; excluded from the deployed workspace files via databricks.yml sync.exclude
 omnigent/                 Opt-in, dev-time pilot: an Omnigent agent spec (datalab-author.yaml,
@@ -204,19 +210,21 @@ make run              # databricks bundle run customer_sales_etl -t dev (dev ref
 make run-local        # materialize the medallion on sample data via OSS spark-pipelines
 make dry-run-local    # spark-pipelines dry-run (graph validation, no data)
 make validate-connect # run one dataset on a LIVE cluster via isolated Databricks Connect
-make design           # re-export design/*.drawio diagrams to design/images/*.png (needs draw.io Desktop)
+make design           # re-render design/PIPELINES.md from config/ + re-export design/*.drawio to PNG (draw.io Desktop)
 ```
 
 Python: 3.12+ (serverless environment v4 ships 3.12). Java 17+ locally for the
 unit-test Spark and the OSS `spark-pipelines` local run. Databricks CLI ≥
 v0.294.0 (pipeline `environment_version` support).
 
+<!-- adopter-if:local-dev start -->
 **Three execution profiles** (same configs, one codebase; `datalab.profile`
 selects the graph — default `databricks`): the Databricks deploy path; a
 **local** OSS `spark-pipelines` run (`make run-local`, a batch
 materialized-view downgrade — no AUTO CDC dedup, no dqx, no Auto Loader/sinks);
 and **Databricks Connect** validation from local (`make validate-connect`, an
 isolated out-of-lock overlay). Full reference: the framework repo's FRAMEWORK.md "Run anywhere".
+<!-- adopter-if:local-dev end -->
 
 ## Authoring rules
 
@@ -301,7 +309,10 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   the framework hardcodes none.
 - Validate early: `make validate-configs` (same loader as CI, pytest and the
   pipeline); verify behavior with `datalab.framework.run_dataset` (call it from
-  a test or a notebook/REPL) or `make validate-connect` — no deploy needed.
+  a test or a notebook/REPL) — no deploy needed.
+  <!-- adopter-if:local-dev start -->
+  On a LIVE cluster, still without deploying: `make validate-connect`.
+  <!-- adopter-if:local-dev end -->
 - Hand-written `dp.*` wiring in transformation files is reserved for cases the
   framework genuinely cannot express (see the capability matrix in the
   framework repo's `docs/FRAMEWORK.md` for what's deliberately out) — extend the framework
@@ -471,7 +482,9 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   version) if a new dep doesn't show up.
 - **Never install `databricks-connect` into the dev venv / `uv.lock`.** It
   conflicts with the `pyspark` dev dependency (both own the `pyspark`
-  namespace). The sanctioned way to drive a live cluster from local is
+  namespace).
+  <!-- adopter-if:local-dev start -->
+  The sanctioned way to drive a live cluster from local is
   `make validate-connect`, which installs it into a THROWAWAY overlay (`uv run
   --no-project` with the framework git dep + the editable domain package + `--with
   databricks-connect`, mirroring the `--with databricks-sdk` bootstrap pattern) —
@@ -485,6 +498,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   is not installed`) — expected and advisory (it powers only interactive cell
   run/debug, never sync/deploy/run); keep `.venv` as the interpreter and use
   `make validate-connect` (see the framework repo's FRAMEWORK.md "Run anywhere").
+  <!-- adopter-if:local-dev end -->
 - **Dev target uses `mode: development`**: resources get a `[dev <user>]`
   prefix and the daily trigger is paused. Stage/prod use `mode: production`
   with explicit `root_path`s.
@@ -516,6 +530,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `git -c http.https://github.com/.extraheader= …` (leave the header intact
   elsewhere, or the bot's own `git push` breaks). This cost six weeks of a silently
   stale framework pin — see `.github/workflows/framework-bump.yml`.
+<!-- template-only:framework-mandate start -->
 - **Framework bumps are mandatory in the template, and a bump carries its
   corresponding changes.** The datalab template must run the LATEST
   datalab-framework release: `make check-framework-current` (its own CI job)
@@ -541,6 +556,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   incident only: the `DATALAB_FRAMEWORK_MANDATE=warn` repo/org variable
   downgrades the framework gates to warnings — remove it once the bump merges.
   Details: `docs/CICD.md` "Framework bumps".
+<!-- template-only:framework-mandate end -->
 - **A version/staleness check that finds NOTHING must fail, not warn.** The bump
   bot read its tag list through a pipeline (`$(git ls-remote … | grep … | tail -1)`);
   when the git call failed, the pipeline's status came from `tail` (success), the
@@ -548,6 +564,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   job, no PR, for six weeks while the framework moved 0.6.0 → 0.9.0. Any gate that
   cannot determine an answer must `exit 1` with `::error::`, never `::warning::`
   plus a skip. Use `set -euo pipefail` in such steps.
+<!-- adopter-if:dependabot start -->
 - **Dependabot runs live in a separate, initially EMPTY secret store.** Workflow
   runs triggered by `dependabot[bot]` resolve `secrets.*` from Settings →
   Secrets and variables → **Dependabot**, not the Actions store (Actions
@@ -557,24 +574,29 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   (six weeks of red dependency PRs, July–Aug 2026). Do **not** mirror the
   Databricks environment secrets there: dependabot runs get a read-only
   `GITHUB_TOKEN` with no `id-token: write`, so the OIDC steps would fail
-  instead of skipping gracefully. Two adjacent facts in the same failure
-  class: (a) Dependabot's own updater has no repo credentials either — it
-  needs explicit access to the private framework repo (org Settings → Code
-  security → Dependabot; scriptable:
-  `gh api -X PATCH /organizations/<org-id>/dependabot/repository-access -F "repository_ids_to_add[]=<repo-id>"`,
-  `-F` because the endpoint 422s on string ids) or every `uv` update dies
-  with `git_dependencies_not_reachable` — even for a bump of an UNRELATED
-  package, since resolving `uv.lock` touches every git dep; (b) Dependabot
-  cannot use the PR template (GitHub writes its bodies server-side), so
-  `pr-template-check.yml` holds its PRs to a separate verifiable bot
-  contract — title prefix (pinned via `commit-message.prefix` in
-  `dependabot.yml`), body shape, `dependabot/*` branch — never a silent
-  skip; (c) a rerun of a dependabot run executes in the RE-RUNNER's context
-  (Actions store + environment secrets + `id-token: write`), so
-  `gh run rerun --failed` turns a red dependabot PR green without proving
-  the Dependabot store is right — the conclusive probe is a run Dependabot
-  itself triggers (`@dependabot rebase`; its log reads `Secret source:
-  Dependabot`). See `docs/CICD.md` "Private framework dependency".
+  instead of skipping gracefully (`docs/CICD.md` "Private framework
+  dependency"). Adjacent facts in the same failure class:
+  - Dependabot's own updater has no repo credentials either — it
+    needs explicit access to the private framework repo (org Settings → Code
+    security → Dependabot; scriptable:
+    `gh api -X PATCH /organizations/<org-id>/dependabot/repository-access -F "repository_ids_to_add[]=<repo-id>"`,
+    `-F` because the endpoint 422s on string ids) or every `uv` update dies
+    with `git_dependencies_not_reachable` — even for a bump of an UNRELATED
+    package, since resolving `uv.lock` touches every git dep.
+  <!-- adopter-if:pr-template start -->
+  - Dependabot cannot use the PR template (GitHub writes its bodies
+    server-side), so `pr-template-check.yml` holds its PRs to a separate
+    verifiable bot contract — title prefix (pinned via `commit-message.prefix`
+    in `dependabot.yml`), body shape, `dependabot/*` branch — never a silent
+    skip.
+  <!-- adopter-if:pr-template end -->
+  - A rerun of a dependabot run executes in the RE-RUNNER's context
+    (Actions store + environment secrets + `id-token: write`), so
+    `gh run rerun --failed` turns a red dependabot PR green without proving
+    the Dependabot store is right — the conclusive probe is a run Dependabot
+    itself triggers (`@dependabot rebase`; its log reads `Secret source:
+    Dependabot`).
+<!-- adopter-if:dependabot end -->
 - **GitHub OIDC** auth (no stored client secret). The federation policy
   subject must match `repo:<owner>/<repo>:environment:<target>` because the
   CI/CD jobs declare `environment: <target>`. See `docs/CICD.md`.
@@ -617,6 +639,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `datalab.framework.compat` guards them: graph capture drops the knobs
   locally (shape-only inspection), anything else raises an actionable error.
   Tests/capture run fine locally; CDC/once semantics verify via dev refresh.
+<!-- adopter-if:local-dev start -->
 - **`make run-local` runs the medallion off-Databricks (local profile).**
   `datalab.framework.local` emits a `spark-pipeline.yml` + a batch
   materialized-view graph for the OSS `spark-pipelines` CLI (selected by
@@ -631,6 +654,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `run_dataset` / `make validate-connect` / dev refresh. The dev dep is
   `pyspark[pipelines]` (the extra ships the `spark-pipelines` CLI + Connect
   deps). CI runs `make dry-run-local` (advisory).
+<!-- adopter-if:local-dev end -->
 - **The "no writes" rule is scoped to SDP dataset functions.** The notebook
   and python-file lanes own their writes — that is the point of those lanes —
   constrained by the single-writer invariant (never write SDP-owned tables).
@@ -669,11 +693,31 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
 <!-- template-only:agents-conversion-gotcha start -->
 - **AGENTS.md is converted for adopters via template-only markers.** Regions
   fenced `<!-- template-only:<name> start/end -->` are swapped for adopter text
-  by `scaffold_adopter.py` (`patch_agents_md`), which then FAILS if any
-  `projects/` / `design/` / `omnigent` reference survives outside a line that
-  names the "template repo". Adding template-only material to this file? Fence
-  it with markers (or handle it in `patch_agents_md`), or the CI scaffold
-  smoke test fails loudly.
+  by `scaffold_adopter.py` (`patch_agents_md`); the configurator then runs
+  `check_adopter_docs` on the staged repo and REFUSES to write it if any
+  `projects/` / `omnigent` reference survives outside a paragraph that names
+  the "template repo". Adding template-only material to this file? Fence it
+  with markers (or handle it in `patch_agents_md`), or the CI scaffold smoke
+  test fails loudly.
+- **Adopters choose their agents and components, so every optional passage is
+  fenced by FEATURE.** `<!-- adopter-if:<feature> start/end -->` (markdown) and
+  `# adopter-if:<feature> start/end` (Makefile, workflows, guard scripts) keep
+  a region only when the new repo chose that feature (`agent-<name>`,
+  `any-agent`, `hooked-agent`, or a component — `docs`, `design`, `schemas`,
+  `local-dev`, `githooks`, `pr-template`, `dependabot`, `framework-bot`, `mcp`;
+  `template` = never); a trailing `<!-- adopter-if:<x> -->` gates one line (a
+  table row). In this repo they are inert comments. Which FILES a choice owns
+  is `TOP_LEVEL` + `PATH_RULES` in the engine, and an unclassified new
+  top-level entry fails the scaffold. Rules that keep this honest: (1) markers
+  sit OUTSIDE fenced code blocks (a code-block line naming a dropped make target
+  is pruned instead); (2) never put an `!feature` alternative in a template
+  file — both variants would render here; phrase the text so it reads right
+  without the region, or rewrite the sentence in code
+  (`agents_md_selection_rewrites`, `CONDITIONAL_EDITS`); (3) a sentence that
+  ENUMERATES harness files is rewritten per selection, not fenced; (4)
+  `check_adopter_docs` flags any path under a template directory, doc or make
+  target a generated repo lacks — so a new mention of `.cursor/…` in a doc
+  fails the codex-only profile in CI until it is fenced or attributed.
 <!-- template-only:agents-conversion-gotcha end -->
 <!-- template-only:adopter-surface-knowledge start -->
 - **The adopter surface is everything a generated repo READS, not just the four
@@ -698,8 +742,13 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   swaps for adopter text, and `make check-adopter-docs`, which runs inside the
   GENERATED repo. Its attribution rule is per **paragraph**, not per line —
   prose wraps, and a line-scoped grep forces awkward rewrites to keep the words
-  "template repo" on the offending line. **Marker comments must sit OUTSIDE
-  fenced code blocks**: an HTML comment inside ```mermaid breaks rendering.
+  "template repo" on the offending line. The flip side: a paragraph that names
+  the template repo or the framework repo is exempt AS A WHOLE, so an optional
+  file or make target mentioned in it is invisible to the checker — fence it
+  anyway (ADOPTING's bump-bot paragraph named `framework-bump.yml` in every
+  adopter, bot or not, because it also said "watches the framework repo").
+  **Marker comments must sit OUTSIDE fenced code blocks**: an HTML comment
+  inside ```mermaid breaks rendering.
 - **`references/templates.md` is executable documentation, so it gets a diff
   gate.** The `bootstrap-adopter-repo` skill calls it the manual fallback and
   claimed it was "kept in lockstep with the engine"; prose-enforced lockstep
@@ -713,9 +762,30 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   engine's template constants, mapping `@@TOKEN@@` to the doc's
   `<angle-bracket>` placeholders. **The engine is the source of truth** — when
   they disagree, change the doc. Adding a file to `write_domain` /
-  `write_repo_level` means adding its block to the doc and its entry to
-  `MIRRORED`.
+  `write_repo_level` / `write_design` means adding its block to the doc and its
+  entry to `MIRRORED`.
+- **The configurator builds in a scratch dir and writes only on success — and
+  never runs in an adopter.** It used to patch the clone file by file, so any
+  failure mid-way left a half-converted repo; worse, `make configure-adopter`
+  re-run INSIDE a generated adopter overwrote `pyproject.toml`,
+  `databricks.yml`, `targets/`, `variables/`, README and CHANGELOG, added a
+  second domain, and only then crashed on the first missing template anchor.
+  Now `build()` assembles the whole adopter in a temp dir, runs every patch and
+  the dangling-reference check, and only then syncs it into place;
+  `ensure_template_layout()` refuses a repo without `projects/`; and the
+  scaffold tooling (`scaffold_adopter.py`, its doc checks, the
+  `bootstrap-adopter-repo` skill, the `configure-adopter` / `new-adopter`
+  targets) is template-only, so an adopter cannot even invoke it. Adopters
+  generated BEFORE this still carry the old engine — never run
+  `make configure-adopter` in one.
+- **The adopter's `.claude/settings.json` allow-list is regenerated, not
+  copied.** It holds exactly the read-only `make` targets that adopter defines,
+  so neither a grant for a dropped target nor a personal/write grant that
+  slipped into this repo's tracked file can ship to a customer (one did:
+  `Bash(PROTECTED_EDIT_OK=1 git commit …)`). `check_agent_settings.py` now
+  rejects any tracked grant that is not a read-only `make` verification target.
 <!-- template-only:adopter-surface-knowledge end -->
+<!-- adopter-if:agent-claude start -->
 - **The committed agent config is shared; per-developer grants are not.**
   `.claude/settings.json`, `.cursor/hooks.json` and `.codex/hooks.json` are
   TRACKED — every developer gets them, and the scaffold copies them into every
@@ -734,8 +804,10 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   of local paths into customer repos. `make check-agent-settings` (CI +
   pre-commit) fails on any machine-specific path in a tracked config, and on a
   hook pointing at a script that does not exist (a hook with a bad path never
-  runs and never says why). When a permission prompt offers a scope, choose the
-  LOCAL one unless the grant is read-only and repo-wide.
+  runs and never says why), and on any tracked `permissions.allow` entry that is
+  not a read-only `make` verification target. When a permission prompt offers a
+  scope, choose the LOCAL one unless the grant is read-only and repo-wide.
+<!-- adopter-if:agent-claude end -->
 - **Permission groups are string variables on purpose — and so are the
   levels.** All access control lives in `rbac.yml` (include'd by
   `databricks.yml` next to `variables/` and `targets/`; `databricks.yml` itself
@@ -754,6 +826,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `projects/customer_sales/sql/abac/`); an admin reviews and applies them manually.
   Keep it that way — auto-applying access policies from a code repo is the
   failure mode the convention exists to prevent.
+<!-- adopter-if:mcp start -->
 - **Databricks MCP is read-only grounding, never a write path.** The opt-in
   `.mcp.json` / `.cursor/mcp.json` wire Claude Code / Cursor to the workspace's
   MANAGED Databricks SQL MCP endpoint (`/api/2.0/mcp/sql`) through a `uvx` stdio
@@ -769,17 +842,26 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   Managed MCP may be Beta/region-gated; the fallback (a local SQL MCP server) and
   the full setup live in `docs/AGENT_MCP.md`; the `query-databricks` skill governs
   when/how the agent reaches for it.
+<!-- adopter-if:mcp end -->
+<!-- adopter-if:any-agent start -->
 - **Agent skills are authored once in `.agents/skills/`, projected per tool.** No
   single folder is read by every coding agent, so the canonical authored source is
   `.agents/skills/` — the cross-tool `agentskills.io` standard, read natively by
-  Cursor and Codex. Claude Code reads only `.claude/skills/` and does NOT reliably
+  Cursor and Codex.
+  <!-- adopter-if:agent-claude start -->
+  Claude Code reads only `.claude/skills/` and does NOT reliably
   follow symlinked skills (upstream bugs; auto-updates can delete symlinks), so
   `make sync-skills` keeps a GENERATED byte-copy there (CI + pre-commit guard drift
-  via `scripts/sync_skills.py --check`). Databricks Genie Code loads skills from the
+  via `scripts/sync_skills.py --check`). Never hand-edit `.claude/skills/`.
+  <!-- adopter-if:agent-claude end -->
+  <!-- adopter-if:agent-genie start -->
+  Databricks Genie Code loads skills from the
   Workspace `.assistant/skills/` (NOT the repo) — publish the same skills with
   `make publish-genie-skills` (`scripts/publish_genie_skills.py` wraps
   `databricks workspace import-dir`); Genie additionally auto-discovers `AGENTS.md`,
-  which the bundle already syncs to the workspace. Never hand-edit `.claude/skills/`.
+  which the bundle already syncs to the workspace.
+  <!-- adopter-if:agent-genie end -->
+<!-- adopter-if:any-agent end -->
 
 ## Coding-agent maintenance protocol
 
@@ -812,12 +894,20 @@ change:
 4. If you change the protected set itself, update **all three** in one commit:
    `.claude/hooks/protected_files_guard.py`, `.githooks/pre-commit`, and the
    table below.
+<!-- adopter-if:any-agent start -->
 5. **Editing an agent skill?** Author it ONCE under `.agents/skills/<name>/SKILL.md`
-   (read natively by Cursor + Codex), then run `make sync-skills` to regenerate the
+   (read natively by Cursor + Codex).
+   <!-- adopter-if:agent-claude start -->
+   Then run `make sync-skills` to regenerate the
    `.claude/skills` copy for Claude Code — never hand-edit it. The `check-skills` CI
-   step + pre-commit reject drift (`scripts/sync_skills.py`). To reach Databricks
+   step + pre-commit reject drift (`scripts/sync_skills.py`).
+   <!-- adopter-if:agent-claude end -->
+   <!-- adopter-if:agent-genie start -->
+   To reach Databricks
    Genie Code, run `make publish-genie-skills` (pushes the skills to the Workspace
    `.assistant/skills/`).
+   <!-- adopter-if:agent-genie end -->
+<!-- adopter-if:any-agent end -->
 6. **Fixed something OUTSIDE the repo?** An incident resolved by an
    operational/admin action — a secret store, an org or repo setting, an
    access grant, a GitHub App — leaves no diff, so record it in the same
@@ -837,29 +927,37 @@ change:
 | `^\.databricksignore$` | `databricks sync` / IDE-extension exclusions (bundle deploy excludes via `sync.exclude` in databricks.yml) |
 | `^(config\|projects/[^/]+/config)/.*\.ya?ml$` | dataset configs — the deployed pipeline definition |
 | `^\.github/(workflows\|actions)/.*` | CI/CD (OIDC, bundle deploy) |
-| `^\.github/pull_request_template\.md$` | unified PR template |
-| `^\.claude/(settings\.json\|hooks/.*\|skills/.*)` | Claude agent harness (hooks, settings, + the generated `.claude/skills` copy) |
-| `^\.cursor/(rules\|hooks)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks (skills are read from `.agents/skills`) |
-| `^\.codex/hooks\.json$`, `^\.agents/skills/.*` | Codex hooks.json + `.agents/skills` (the canonical authored agent-skills source) |
-| `^scripts/sync_skills\.py$` | agent-skills sync generator (canonical `.agents/skills` → `.claude/skills` copy) |
+| `^\.github/pull_request_template\.md$` | unified PR template | <!-- adopter-if:pr-template -->
+| `^\.claude/(settings\.json\|hooks/.*\|skills/.*)` | Claude agent harness — settings, the generated skills copy, and the protected-files guard hook (Codex runs it too) | <!-- adopter-if:agent-claude|agent-codex -->
+| `^\.cursor/(rules\|hooks)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks (skills are read from `.agents/skills`) | <!-- adopter-if:hooked-agent -->
+| `^\.codex/hooks\.json$`, `^\.agents/skills/.*` | Codex hooks.json + `.agents/skills` (the canonical authored agent-skills source) | <!-- adopter-if:any-agent -->
+| `^scripts/sync_skills\.py$` | agent-skills sync generator (canonical `.agents/skills` → `.claude/skills` copy) | <!-- adopter-if:agent-claude -->
 | `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists\|check_templates_doc\|check_adopter_docs\|check_agent_settings\|check_framework_current\|check_framework_surface)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check, adopter-scaffold doc lockstep, adopter doc drift, agent-config portability, mandatory framework adoption + surface coverage |
-| `^schemas/.*\.json$` | vendored editor schemas — GENERATED from the pinned framework (`make sync-schemas`), never hand-edited |
-| `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) |
-| `^\.githooks/.*` | git pre-commit guard |
+| `^schemas/.*\.json$` | vendored editor schemas — GENERATED from the pinned framework (`make sync-schemas`), never hand-edited | <!-- adopter-if:schemas -->
+| `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) | <!-- adopter-if:mcp -->
+| `^\.githooks/.*` | git pre-commit guard | <!-- adopter-if:githooks -->
 | `^Makefile$` | developer + CI entrypoints |
 | `^\.env(\..*)?$` | secrets — never commit |
 | `^(AGENTS\|CLAUDE\|README)\.md$`, `^docs/(ARCHITECTURE\|CICD\|MIGRATION\|GETTING_STARTED\|NAMING\|NEW_ADOPTER\|ADOPTING\|AGENT_MCP)\.md$` | documents of record (incl. the adopter onboarding path) |
 
+<!-- adopter-if:agent-claude|agent-codex|githooks start -->
 The guards emit a *warn/ask* (agents) or *block-until-acknowledged* (git):
 
+<!-- adopter-if:agent-claude|agent-codex start -->
 - Agents: `.claude/hooks/protected_files_guard.py` (PreToolUse).
+<!-- adopter-if:agent-claude|agent-codex end -->
+<!-- adopter-if:githooks start -->
 - Humans: `.githooks/pre-commit` — enable with `make enable-githooks`; bypass a
   single commit with `make commit-protected MSG="..."` (`PROTECTED_EDIT_OK=1`).
+<!-- adopter-if:githooks end -->
+<!-- adopter-if:agent-claude|agent-codex|githooks end -->
 
+<!-- adopter-if:hooked-agent|githooks start -->
 Separate from the protected-file surface, `.cursor/hooks/branch_guard.py`
 (agents, all three harnesses) and the same `.githooks/pre-commit` (humans) enforce
 the branch-first policy — no edits/commits/pushes while `main` is checked out
 (see "Branching & releases").
+<!-- adopter-if:hooked-agent|githooks end -->
 
 ## Common tasks
 
@@ -874,20 +972,30 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   streaming source when the target has `cdc:`) to the table's artifact —
   never a job write. Names are checkpoint identities; the flow re-runs on
   full refresh by design. See "Backfills" in the framework repo's FRAMEWORK.md.
+<!-- template-only:common-task-new-adopter start -->
 - **Stand up a new adopter repo for a customer**: one deterministic engine
   (`scripts/scaffold_adopter.py`) produces a minimal, root-level single-domain
   adopter repo two ways — (A) **in place**, `make configure-adopter` inside a
   clone made from this **GitHub template repository** (the
-  `bootstrap-adopter-repo` skill drives this; interactive mode prompts ONLY for
-  catalog + host, defaults the rest with a fill-before-deploy TODO list, and
-  confirms a summary before converting the clone; `YES=1` runs it scripted), or (B) **fresh
-  sibling**, `make new-adopter CATALOG=<c> OUT=../<c>-datalab` (copies only
-  git-tracked files into a new dir). Same engine, same result: drops the
-  reference domains, writes the minimal domain, rewrites every repo-level file,
-  and **repoints the workspace-specific surfaces** — host/targets, RBAC groups,
+  `bootstrap-adopter-repo` skill drives this; interactive mode walks a short
+  form — identity, workspace + per-environment hosts/catalogs, access groups,
+  **which coding agents** (claude / codex / cursor / genie / none) and **which
+  optional components** (docs, design, schemas, local-dev, githooks,
+  pr-template, dependabot, framework-bot, mcp) — then confirms a keep/drop
+  summary before converting the clone; `YES=1` runs it scripted), or (B)
+  **fresh sibling**, `make new-adopter OUT=../<c>-datalab [CATALOG=<c>]`
+  (copies only git-tracked files into a new dir). Same engine, same result:
+  drops the reference domains, writes the minimal domain, rewrites every
+  repo-level file, ships ONLY the chosen agents/components (file ownership:
+  `TOP_LEVEL` + `PATH_RULES` in the engine; prose, make targets and CI steps:
+  `adopter-if` markers), records the answers in the adopter's
+  `.datalab-adopter.json` (`ANSWERS=` replays them), and **repoints the
+  workspace-specific surfaces** — per-target hosts/catalogs, RBAC groups,
   deploy SP, AND the read-only MCP grounding config (`.mcp.json` +
   `.cursor/mcp.json`: SQL warehouse id + CLI profile, which the old flow left
-  pointing at the template's workspace). The engine **rejects** a `<catalog>` that
+  pointing at the template's workspace). It builds in a scratch dir and touches
+  the destination only after every patch and check passed, and it refuses to
+  run in an already-generated adopter. The engine **rejects** a `<catalog>` that
   carries an env suffix (`_dev`/`_stage`/`_prod`) — the base name only, since the
   bundle appends the env per target (`docs/NAMING.md`); that guard is what
   prevents the `config/<catalog>_databricks_prod` drift. Never hand-edit the
@@ -905,6 +1013,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   repo→repo git reads — so it cannot pull the framework into the wheel. Mechanics +
   alternatives (PAT / vendored wheel): `docs/ADOPTING.md` → "Accessing the private
   framework repo".
+<!-- template-only:common-task-new-adopter end -->
 <!-- template-only:common-task-new-domain start -->
 - **Add a new domain pipeline** (e.g. finance): follow
   `docs/GETTING_STARTED.md` end to end — copy the `projects/customer_sales/` shape
@@ -935,14 +1044,23 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   Source-format `.py` under `notebooks/<domain>/`, widgets named after the job
   parameters, resolved via `datalab.params.notebook_params`; copy the
   `customer_sales_quarantine_report` job shape (no trigger). `make lint test validate`.
+<!-- adopter-if:any-agent start -->
 - **Add or change an agent skill**: edit the canonical copy under
   `.agents/skills/<name>/SKILL.md` (create the dir for a new skill) — Cursor and
-  Codex read it directly. Then run `make sync-skills` to regenerate the
+  Codex read it directly.
+  <!-- adopter-if:agent-claude start -->
+  Then run `make sync-skills` to regenerate the
   `.claude/skills` copy for Claude Code (symlinks are unreliable there) — never
   hand-edit it. `make check-skills lint` (CI runs `check-skills` and fails on
-  drift). To make the skill available in Databricks Genie Code, run
+  drift).
+  <!-- adopter-if:agent-claude end -->
+  <!-- adopter-if:agent-genie start -->
+  To make the skill available in Databricks Genie Code, run
   `make publish-genie-skills` (APPLY=1) to push it to the Workspace
   `.assistant/skills/`; Genie also auto-reads `AGENTS.md`.
+  <!-- adopter-if:agent-genie end -->
+<!-- adopter-if:any-agent end -->
+<!-- adopter-if:local-dev start -->
 - **Run / validate locally without Databricks**: `make run-local` materializes
   the medallion on sample data via OSS `spark-pipelines` (local profile —
   mind the fidelity gaps: no AUTO CDC dedup / dqx / Auto Loader); `make
@@ -950,6 +1068,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   LIVE cluster, `make validate-connect LAYER=<l> TABLE=<t> CONNECT_ARGS="--param
   datalab.catalog=… --param datalab.bronze_schema=…"` (isolated Databricks
   Connect overlay). Reference: the framework repo's FRAMEWORK.md "Run anywhere".
+<!-- adopter-if:local-dev end -->
 - **Add a dependency**: edit `pyproject.toml`, `make lock`, commit both files.
   For pipeline-runtime deps, remember the environment caching gotcha above.
 - **Change deploy config**: edit `databricks.yml` / the domain's
@@ -978,6 +1097,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   ("Editing the design diagrams"). `design/` is excluded from the deployed
   workspace files via the `sync.exclude` block in databricks.yml.
 <!-- template-only:common-task-design end -->
+<!-- adopter-if:mcp start -->
 - **Query Databricks from the agent (MCP)**: opt-in, dev-time. Authenticate the
   CLI (`databricks auth login --host <host>` → profile `diggi_dev_aws`), then in
   Claude Code approve the `databricks-sql` server from `.mcp.json` (Cursor:
@@ -986,13 +1106,19 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   when/how (READ-ONLY only; UC grants govern; single-writer invariant holds).
   Don't `uv add` the proxy (uvx-ephemeral). Full setup + adopter swaps +
   verification + fallback: `docs/AGENT_MCP.md`.
-- **Open a pull request**: fill `.github/pull_request_template.md` into a body
+<!-- adopter-if:mcp end -->
+- **Open a pull request**: branch from `main`; the head branch is auto-deleted
+  on merge (see "Branching & releases").
+  <!-- adopter-if:pr-template start -->
+  Fill `.github/pull_request_template.md` into a body
   file and `gh pr create --body-file <file>` (or `--web`). Keep the
-  `datalab-pr-template` marker and the `##` section headings — the hook + CI
-  enforce them for every human/agent PR (dependabot PRs are the one
-  exception: CI holds them to a separate verifiable bot contract instead —
-  see Critical knowledge). Branch from `main`; the head branch is
-  auto-deleted on merge (see "Branching & releases").
+  `datalab-pr-template` marker and the `##` section headings — CI (and the
+  agents' `gh pr create` hook) enforce them for every human/agent PR.
+  <!-- adopter-if:pr-template end -->
+  <!-- adopter-if:pr-template&dependabot start -->
+  Dependabot PRs are the one exception: CI holds them to a separate verifiable
+  bot contract instead — see Critical knowledge.
+  <!-- adopter-if:pr-template&dependabot end -->
 
 ## Agent don'ts
 
@@ -1007,7 +1133,7 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
 - Don't introduce poetry/pip-requirements workflows — deps are uv-only.
 - Don't edit `uv.lock` by hand.
 - Don't commit `.env`, workspace state (`.databricks/`), or `.venv`.
-- Don't open a PR that bypasses the unified template.
+- Don't open a PR that bypasses the unified template. <!-- adopter-if:pr-template -->
 - Don't make ANY change while `main` is checked out — first action of every
   task is `git switch -c <feature|fix|debug>/<slug>` from a fresh `main`
   (enforced by `branch_guard` + the pre-commit hook).

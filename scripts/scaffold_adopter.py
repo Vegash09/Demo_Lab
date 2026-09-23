@@ -1,40 +1,60 @@
 """Configure a minimal datalab adopter repo — deterministically, no per-run surgery.
 
-It DROPS the reference domains (``projects/``), design assets and the dev-time
-pilot (``omnigent/``), writes ONE minimal root-level domain renamed to your
-catalog, rewrites the repo-level files for the adopter layout (single-package
-``pyproject.toml``, root ``resources/``, single catalog) and repoints the
-workspace-specific surfaces at your workspace — including the MCP grounding
-config (``.mcp.json`` / ``.cursor/mcp.json``), which the old flow left pointing
-at the template's workspace.
+It DROPS the reference domains (``projects/``), the template's design assets and
+the dev-time pilot (``omnigent/``), writes ONE minimal root-level domain renamed
+to your catalog, rewrites the repo-level files for the adopter layout
+(single-package ``pyproject.toml``, root ``resources/``, single catalog) and
+repoints the workspace-specific surfaces at your workspace — including the MCP
+grounding config (``.mcp.json`` / ``.cursor/mcp.json``).
+
+Only the MANDATORY surface is fixed. Everything else is a choice, confirmed per
+repo (``AGENT_CHOICES`` / ``COMPONENT_CHOICES`` below):
+
+* **coding agents** — any of claude, codex, cursor, genie (or none). Each brings
+  only its own harness files; the shared skills in ``.agents/skills`` ship when
+  at least one agent is chosen.
+* **components** — docs/, design/ (generated for THIS customer's pipeline, with
+  a pipeline inventory that ``make design`` keeps current), schemas/, local dev
+  tooling (sample_data/ + run-local + validate-connect), the git pre-commit
+  guard, the PR template, dependabot, the framework-bump bot, MCP grounding.
+
+What a choice REMOVES is declared once: ``TOP_LEVEL`` + ``PATH_RULES`` say which
+files it owns, and ``adopter-if:<feature>`` markers in the shared files
+(Makefile, CI, AGENTS.md, docs, …) fence the prose/targets/steps that only make
+sense with it — see ``apply_markers``. A new top-level file in the template that
+is not classified in ``TOP_LEVEL`` fails the scaffold, so nothing ships (or
+vanishes) by accident.
 
 Two run modes:
 
 * ``--in-place`` — convert the CURRENT repo (a clone you made from the GitHub
-  template) into the adopter, editing it in place. This is the path the
-  ``bootstrap-adopter-repo`` skill / ``make configure-adopter`` drive.
+  template) into the adopter. This is the path the ``bootstrap-adopter-repo``
+  skill / ``make configure-adopter`` drive.
 * ``--out <dir>`` — generate a fresh sibling repo from this one, copying only
   git-tracked files (never secrets/state/build output). This is ``make
   new-adopter``.
 
-Add ``--interactive`` to be PROMPTED for the two irreducible values — catalog and
-host (each skipped when its flag was passed) — and to confirm a summary; every
-other value (SQL warehouse id, MCP CLI profile, RBAC groups, deploy SP, framework
-tag) takes its flag or a derived default, with remaining placeholders printed as
-fill-before-deploy TODOs. Otherwise pass values as flags (the agent/CI path).
+Both BUILD the adopter in a scratch directory first and touch the destination
+only once every patch and check has passed — a failure never leaves a
+half-converted clone behind.
 
-    # convert a template clone in place, prompting for everything:
+``--interactive`` walks a short form (identity → workspace & environments →
+access → coding agents → components → framework), shows a summary of what will
+be kept and dropped, and asks for confirmation; flags prefill (and skip) its
+questions. Every answer is recorded in the adopter's ``.datalab-adopter.json``,
+which ``--answers <file>`` replays — the non-interactive path for agents/CI:
+
+    # convert a template clone in place, walking the form:
     python scripts/scaffold_adopter.py --in-place --interactive
 
     # non-interactive (agent/CI), every value supplied:
     python scripts/scaffold_adopter.py --in-place --yes --catalog acme \\
-        --host https://<workspace> --warehouse-id <id> --mcp-profile acme_dev \\
-        --deploy-sp <app-id> --reader-group acme_readers \\
-        --engineer-group acme_engineers --admin-group acme_admins
+        --customer "Acme Corp" --host https://<workspace> --warehouse-id <id> \\
+        --deploy-sp <app-id> --agents claude,cursor --components default,+design
 
-    # fresh sibling repo:
-    python scripts/scaffold_adopter.py --catalog acme --out ../acme-datalab \\
-        [--host …] [--deploy-sp …] [--warehouse-id …] [--mcp-profile …] [--force]
+    # fresh sibling repo, replaying a previous run's answers:
+    python scripts/scaffold_adopter.py --out ../acme-datalab \\
+        --answers ../acme-datalab-old/.datalab-adopter.json [--force]
 
 Then, inside the configured repo:
 
@@ -42,29 +62,31 @@ Then, inside the configured repo:
 
 The ``<catalog>`` must be the BASE catalog name (lowercase, no ``_dev`` /
 ``_stage`` / ``_prod`` suffix — the bundle appends those per target; see
-``docs/NAMING.md``); a suffixed name is rejected. This is the deterministic
-engine behind the ``bootstrap-adopter-repo`` agent skill; the file templates
-here mirror that skill's ``references/templates.md``. Stdlib only.
+``docs/NAMING.md``); a suffixed name is rejected. The scaffold only runs from
+the template (or a fresh template clone) — an already-generated adopter is
+refused. This is the deterministic engine behind the ``bootstrap-adopter-repo``
+agent skill; the file templates here mirror that skill's
+``references/templates.md``. Stdlib only.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Top-level TRACKED entries NOT copied into the adopter (sibling mode), and the
-# set REMOVED from the clone in --in-place mode: the reference domains, design
-# assets, dev-time pilot, and the lockfile (regenerated for the single package).
-# In sibling mode we copy only git-TRACKED files, so secrets (.env), local state
-# (.venv/.databricks), and build output (dist/) are excluded automatically.
-EXCLUDE_TOP = {"projects", "design", "omnigent", "uv.lock"}
+# The adopter's record of how it was generated (answers + template commit).
+# `--answers <file>` replays it; it is dev-only, so the bundle never syncs it.
+MANIFEST = ".datalab-adopter.json"
 
 CATALOG_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 # The bundle appends these per target (targets/<env>.yml), so the BASE catalog
@@ -89,9 +111,221 @@ TEMPLATE_WAREHOUSE_ID = "c1cdbe2406e5cf04"
 TEMPLATE_HOST = "https://dbc-425be768-f138.cloud.databricks.com"
 TEMPLATE_DEPLOY_SP = "437346a1-0b53-418a-80d4-abaf2586ed97"
 
-# Placeholder default for --host: interactive mode prompts only while the flag
-# still holds this sentinel (a passed flag skips the prompt).
+# Placeholder defaults for values the user may not have yet. They land in the
+# files verbatim and are listed as fill-before-deploy TODOs at the end.
 HOST_PLACEHOLDER = "https://<your-workspace-host>"
+WAREHOUSE_PLACEHOLDER = "<sql-warehouse-id>"
+DEPLOY_SP_PLACEHOLDER = "<deploy-sp-app-id>"
+REPO_PLACEHOLDER = "<owner>/<repo>"
+
+# Where adopters find material the conversion did not ship (a dropped doc, the
+# worked examples): the template repo itself. Adopters already need read access
+# to it (docs/NEW_ADOPTER.md step 0).
+TEMPLATE_URL = f"https://github.com/{TEMPLATE_SLUG}/blob/main"
+
+# The bundle promotes dev → stage → prod; all three targets are always defined
+# (an environment whose GitHub Environment has no Databricks secrets is skipped
+# gracefully by CI/CD, so a customer without stage yet just leaves it unwired).
+ENVIRONMENTS = ("dev", "stage", "prod")
+
+
+# --------------------------------------------------------------------------- #
+# What is optional — the choices, and the files each one owns.
+# --------------------------------------------------------------------------- #
+
+# Coding agents. Each brings only its own harness; `.agents/skills` (the shared,
+# canonical skills) ships whenever at least one is chosen.
+AGENT_CHOICES: dict[str, str] = {
+    "claude": "Claude Code — CLAUDE.md, .claude/ (settings, hooks, skills copy)",
+    "codex": "OpenAI Codex — .codex/hooks.json (reads AGENTS.md + .agents/skills)",
+    "cursor": "Cursor — .cursor/ rules + hooks (reads .agents/skills natively)",
+    "genie": "Databricks Genie Code — make publish-genie-skills (Workspace skills)",
+}
+
+# Optional components: name -> (on by default?, what it adds). The defaults keep
+# the long-standing adopter shape; `design` is opt-in.
+COMPONENT_CHOICES: dict[str, tuple[bool, str]] = {
+    "docs": (True, "docs/ — onboarding checklist, CI/CD, naming, architecture guides"),
+    "design": (False, "design/ — architecture diagram + overview + generated pipeline inventory"),
+    "schemas": (True, "schemas/ — JSON schemas that validate config YAML in the editor"),
+    "local-dev": (True, "sample_data/ + make run-local / dry-run-local / validate-connect"),
+    "githooks": (True, ".githooks/ — human pre-commit guard (branch-first, protected files)"),
+    "pr-template": (True, "unified PR template + its CI check (+ the agents' gh pr guard)"),
+    "dependabot": (True, ".github/dependabot.yml — dependency-update PRs"),
+    "framework-bot": (True, "bot workflow that opens a PR when datalab releases a new tag"),
+    "mcp": (True, "read-only Databricks SQL MCP grounding (needs claude or cursor)"),
+}
+
+# Features derived from the selection (usable in `adopter-if:` markers and the
+# ownership rules below), beyond the plain agent-<name> / component names.
+DERIVED_FEATURES = {
+    "any-agent": "at least one coding agent",
+    "hooked-agent": "claude, codex or cursor — the agents that run the repo's guard hooks",
+    "template": "never true in an adopter — content that exists only in the template",
+}
+KNOWN_FEATURES = (
+    {f"agent-{a}" for a in AGENT_CHOICES} | set(COMPONENT_CHOICES) | set(DERIVED_FEATURES)
+)
+
+# Every TRACKED top-level entry of the template and its fate in an adopter:
+#   "keep"     — copied (then patched; some are rewritten whole by the engine)
+#   "template" — never copied (reference material, template-only tooling, or a
+#                file the engine generates from scratch when its feature is on)
+#   <expr>     — copied only when the feature expression holds (see evaluate())
+# The scaffold FAILS on a tracked top-level entry missing here, so a new root
+# file is a deliberate decision, never an accident.
+TOP_LEVEL: dict[str, str] = {
+    ".agents": "any-agent",
+    ".claude": "agent-claude|agent-codex",  # codex hooks reuse the .claude guard
+    ".codex": "agent-codex",
+    ".cursor": "hooked-agent",  # .cursor/hooks/*.py are the SHARED guard scripts
+    ".databricksignore": "keep",  # regenerated to match databricks.yml sync.exclude
+    ".gitattributes": "template",  # design-only linguist rules; regenerated with design
+    ".githooks": "githooks",
+    ".github": "keep",
+    ".gitignore": "keep",
+    ".markdownlint.json": "keep",
+    ".mcp.json": "mcp&agent-claude",
+    "AGENTS.md": "keep",
+    "CHANGELOG.md": "keep",  # regenerated
+    "CLAUDE.md": "agent-claude",
+    "Makefile": "keep",
+    "README.md": "keep",  # regenerated
+    "databricks.yml": "keep",  # regenerated
+    "design": "template",  # the adopter's own design/ is generated (design component)
+    "docs": "docs",
+    "omnigent": "template",
+    "projects": "template",
+    "pyproject.toml": "keep",  # regenerated
+    "rbac.yml": "keep",
+    "schemas": "schemas",
+    "scripts": "keep",
+    "targets": "keep",  # regenerated
+    "uv.lock": "template",  # regenerated for the single package by `make lock`
+    "variables": "keep",  # regenerated
+}
+
+# Finer-grained ownership below the top level: a file ships only if EVERY rule
+# whose path is it (or one of its parents) holds. Paths must exist in the
+# template — a stale rule fails the scaffold.
+PATH_RULES: list[tuple[str, str]] = [
+    # agent harness — shared guards vs per-agent files
+    (".agents/skills/bootstrap-adopter-repo", "template"),  # drives THIS conversion
+    (".agents/skills/maintain-design-diagram", "design"),
+    (".agents/skills/query-databricks", "mcp"),
+    (".claude/skills", "agent-claude"),  # regenerated from .agents/skills
+    (".claude/settings.json", "agent-claude"),
+    (".claude/hooks/protected_files_guard.py", "agent-claude|agent-codex"),
+    (".cursor/hooks/branch_guard.py", "hooked-agent"),
+    (".cursor/hooks/pr_template_guard.py", "hooked-agent&pr-template"),
+    (".cursor/hooks.json", "agent-cursor"),
+    (".cursor/rules", "agent-cursor"),
+    (".cursor/mcp.json", "agent-cursor&mcp"),
+    # docs that only make sense with their feature / only in the template
+    ("docs/AGENT_MCP.md", "mcp"),
+    ("docs/MIGRATION.md", "template"),  # the template's own restructure history
+    # scripts follow the feature they serve; the scaffold tooling stays home
+    ("scripts/scaffold_adopter.py", "template"),
+    ("scripts/check_templates_doc.py", "template"),
+    ("scripts/check_adopter_docs.py", "template"),
+    ("scripts/tests", "template"),  # the gate scripts' tests; adopters collect only tests/
+    ("scripts/check_framework_surface.py", "schemas&any-agent"),  # reads schemas/ + the .agents skill
+    ("scripts/export_design.py", "design"),
+    ("scripts/design_inventory.py", "design"),
+    ("scripts/sync_skills.py", "agent-claude"),
+    ("scripts/publish_genie_skills.py", "agent-genie"),
+    ("scripts/check_agent_settings.py", "hooked-agent"),
+    ("scripts/sync_schemas.py", "schemas"),
+    ("scripts/validate_connect.py", "local-dev"),
+    # GitHub extras
+    (".github/pull_request_template.md", "pr-template"),
+    (".github/workflows/pr-template-check.yml", "pr-template"),
+    (".github/dependabot.yml", "dependabot"),
+    (".github/workflows/framework-bump.yml", "framework-bot"),
+]
+
+
+def evaluate(expr: str, features: set[str], where: str = "") -> bool:
+    """Evaluate a feature expression: `a|b` (any), `a&b` (all), `!a` (not);
+    `&` binds tighter than `|`. Unknown names fail loudly — a typo in a marker
+    must not silently drop (or keep) a region."""
+    for term in expr.split("|"):
+        ok = True
+        for literal in term.split("&"):
+            name = literal.removeprefix("!")
+            if name not in KNOWN_FEATURES:
+                raise SystemExit(
+                    f"scaffold: unknown feature {name!r} in {expr!r}{f' ({where})' if where else ''}. "
+                    f"Known: {', '.join(sorted(KNOWN_FEATURES))}"
+                )
+            ok = ok and ((name in features) != literal.startswith("!"))
+        if ok:
+            return True
+    return False
+
+
+@dataclass
+class Selection:
+    """Which coding agents and optional components an adopter carries."""
+
+    agents: list[str]
+    components: list[str]
+
+    def __post_init__(self) -> None:
+        # Canonical order + drop what cannot apply: MCP grounding is wired only
+        # for Claude Code (.mcp.json) and Cursor (.cursor/mcp.json).
+        self.agents = [a for a in AGENT_CHOICES if a in set(self.agents)]
+        comps = set(self.components)
+        if not {"claude", "cursor"} & set(self.agents):
+            comps.discard("mcp")
+        self.components = [c for c in COMPONENT_CHOICES if c in comps]
+
+    @property
+    def features(self) -> set[str]:
+        feats = {f"agent-{a}" for a in self.agents} | set(self.components)
+        if self.agents:
+            feats.add("any-agent")
+        if {"claude", "codex", "cursor"} & set(self.agents):
+            feats.add("hooked-agent")
+        return feats
+
+    def has(self, feature: str) -> bool:
+        return evaluate(feature, self.features)
+
+
+def parse_choice_list(value: str, choices, defaults: list[str], what: str) -> list[str]:
+    """Parse `--agents` / `--components`: a comma list, or `all` / `none` /
+    `default`, or +x / -x edits applied to the defaults (`default,+design,-githooks`
+    or just `+design`). Unknown names fail loudly."""
+    value = value.strip()
+    if not value:
+        return list(defaults)
+    picked: list[str] = []
+    relative = False
+    for raw in (part.strip() for part in value.split(",")):
+        if not raw:
+            continue
+        if raw in ("all", "none", "default"):
+            picked = {"all": list(choices), "none": [], "default": list(defaults)}[raw]
+            relative = True
+            continue
+        sign, name = (raw[0], raw[1:]) if raw[0] in "+-" else ("", raw)
+        if name not in choices:
+            raise SystemExit(
+                f"scaffold: unknown {what} {name!r} — choose from: {', '.join(choices)} "
+                "(or all / none / default, and +name / -name edits)"
+            )
+        if sign and not relative and not picked:
+            picked, relative = list(defaults), True
+        if sign == "-":
+            picked = [p for p in picked if p != name]
+        elif name not in picked:
+            picked.append(name)
+    return picked
+
+
+def default_components() -> list[str]:
+    return [name for name, (on, _) in COMPONENT_CHOICES.items() if on]
 
 
 # --------------------------------------------------------------------------- #
@@ -303,18 +537,25 @@ include:
 # aligned with .databricksignore — `make check-sync-lists` (CI) enforces it.
 sync:
   exclude:
-    - tests
-    - docs
-    - .github
-    - .claude
-    - .cursor
-    - .codex
-    - .agents
-    - .githooks
-    - .mcp.json
-    - Makefile
-    - uv.lock
-    - .markdownlint.json
+@@SYNC_EXCLUDE@@
+"""
+
+# Written from the SAME entry list as databricks.yml's sync.exclude (see
+# sync_excludes()), so the two can never disagree about a path this repo has.
+DATABRICKSIGNORE = """\
+# Exclusions for `databricks sync` and the Databricks IDE extension.
+#
+# IMPORTANT: `databricks bundle deploy` does NOT read this file — it honors
+# .gitignore plus the `sync.exclude:` block in databricks.yml. Keep this list
+# ALIGNED with that block so the sync command and the bundle deploy exclude the
+# same dev-only surfaces (`make check-sync-lists` enforces it).
+#
+# The deploy MUST ship pyproject.toml + src/** + config/** + resources/** — the
+# domain wheel is built by the databricks.yml `artifacts:`, and the framework
+# wheel is installed from this catalog's artifacts.wheels UC Volume (AGENTS.md
+# "Wheel delivery").
+
+@@IGNORE_ENTRIES@@
 """
 
 PYPROJECT_TOML = """\
@@ -422,78 +663,149 @@ targets:
     workspace:
       host: @@HOST@@
     variables:
-      catalog: @@CATALOG@@
+      catalog: @@CATALOG_DEV@@
 """
 
 TARGET_STAGE = """\
-# stage target — production mode, explicit root_path.
+# stage target — production mode, explicit root_path. Deployed by CI on a
+# vX.Y.Z-rcN tag once the `stage` GitHub Environment carries its secrets.
 targets:
   stage:
     mode: production
     workspace:
-      host: @@HOST@@
+      host: @@HOST_STAGE@@
       root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
     variables:
-      catalog: @@CATALOG@@_stage
+      catalog: @@CATALOG_STAGE@@
 """
 
 TARGET_PROD = """\
-# prod target — production mode, explicit root_path.
+# prod target — production mode, explicit root_path. Deployed by CI on a vX.Y.Z
+# tag once the `prod` GitHub Environment carries its secrets.
 targets:
   prod:
     mode: production
     workspace:
-      host: @@HOST@@
+      host: @@HOST_PROD@@
       root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
     variables:
-      catalog: @@CATALOG@@_prod
+      catalog: @@CATALOG_PROD@@
 """
 
+# Sections fenced `<!-- adopter-if:<feature> start/end -->` are kept only when
+# the feature was chosen (apply_markers) — one README per selection.
 README_MD = """\
 # @@CATALOG@@-datalab
 
+**@@CUSTOMER@@** — @@DESCRIPTION@@
+
 Single-domain [datalab](https://github.com/dediggibyte/datalab-framework) adopter
-repo for **@@CATALOG@@**, generated from the datalab template. Every target table
+repo for @@CUSTOMER@@, generated from the datalab template. Every target table
 is ONE YAML artifact, generated into Lakeflow Spark Declarative Pipelines,
 quality-checked with dqx, and deployed as a Declarative Automation Bundle.
 
-> Document of record for agents + humans: **[AGENTS.md](AGENTS.md)**. Wiring to
-> the framework: **[docs/ADOPTING.md](docs/ADOPTING.md)**. Author your first table:
+<!-- adopter-if:docs start -->
+> Document of record for agents + humans: **[AGENTS.md](AGENTS.md)**. First-deploy
+> checklist: **[docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md)**. Wiring to the
+> framework: **[docs/ADOPTING.md](docs/ADOPTING.md)**. Author your first table:
 > **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**.
+<!-- adopter-if:docs end -->
+<!-- adopter-if:!docs start -->
+> Document of record for agents + humans: **[AGENTS.md](AGENTS.md)**. This repo
+> was generated without the `docs/` guides; the first-deploy checklist, the
+> framework wiring reference and the authoring walkthrough live in the datalab
+> template repo: [NEW_ADOPTER.md](@@TEMPLATE_URL@@/docs/NEW_ADOPTER.md) ·
+> [ADOPTING.md](@@TEMPLATE_URL@@/docs/ADOPTING.md) ·
+> [GETTING_STARTED.md](@@TEMPLATE_URL@@/docs/GETTING_STARTED.md).
+<!-- adopter-if:!docs end -->
+<!-- adopter-if:design start -->
+> Architecture and the generated pipeline inventory for @@CUSTOMER@@:
+> **[design/OVERVIEW.md](design/OVERVIEW.md)**.
+<!-- adopter-if:design end -->
 
 ## Quick start
 
 ```bash
 make lock install                # resolve the framework git dep into .venv
-make enable-githooks             # protected-files pre-commit guard (one-time)
 make validate-configs lint test  # pydantic + dqx · ruff · pytest (local Spark)
 make validate                    # databricks bundle validate -t dev
 ```
+<!-- adopter-if:githooks start -->
+
+Once per clone, turn on the branch-first / protected-files pre-commit guard:
+`make enable-githooks`.
+<!-- adopter-if:githooks end -->
 
 ## First deploy (one-time setup per target)
 
+<!-- adopter-if:docs start -->
 The full ordered checklist — prerequisites, GitHub/OIDC wiring, and the
 account-level persona groups that must exist BEFORE bootstrap — is
-**[docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md)**. The commands, once those
-prerequisites stand (`PROFILE=` pins the workspace — without it the SDK uses
-your DEFAULT CLI profile, which may point somewhere else):
+**[docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md)** (start at step 3: this repo is
+already generated).
+<!-- adopter-if:docs end -->
+<!-- adopter-if:!docs start -->
+The full ordered checklist — prerequisites, GitHub/OIDC wiring, and the
+account-level persona groups that must exist BEFORE bootstrap — is the datalab
+template repo's [docs/NEW_ADOPTER.md](@@TEMPLATE_URL@@/docs/NEW_ADOPTER.md)
+(start at step 3: this repo is already generated).
+<!-- adopter-if:!docs end -->
+The commands, once those prerequisites stand (`PROFILE=` pins the workspace —
+without it the SDK uses your DEFAULT CLI profile, which may point somewhere
+else):
 
 ```bash
-databricks auth login --host <workspace-url> --profile <cli-profile>
-make bootstrap-uc TARGET=dev WAREHOUSE_ID=<id> PROFILE=<cli-profile>
-make publish-wheel TARGET=dev APPLY=1 PROFILE=<cli-profile>
+databricks auth login --host @@HOST@@ --profile @@MCP_PROFILE@@
+make bootstrap-uc TARGET=dev WAREHOUSE_ID=@@WAREHOUSE_ID@@ PROFILE=@@MCP_PROFILE@@
+make publish-wheel TARGET=dev APPLY=1 PROFILE=@@MCP_PROFILE@@
 git add -A && git commit -m "configure @@CATALOG@@ adopter" && git push  # CI needs the regenerated uv.lock
 make deploy
+```
+
+<!-- adopter-if:local-dev start -->
+Seed the landing volume with the starter sample, then refresh the pipeline:
+
+```bash
 databricks fs cp sample_data/landing/@@CATALOG@@/events/events.json \\
-    dbfs:/Volumes/@@CATALOG@@/landing/@@CATALOG@@/events/ --profile <cli-profile>
+    dbfs:/Volumes/@@CATALOG_DEV@@/landing/@@CATALOG@@/events/ --profile @@MCP_PROFILE@@
 make run
 ```
+<!-- adopter-if:local-dev end -->
+<!-- adopter-if:!local-dev start -->
+Drop a JSON file into `/Volumes/@@CATALOG_DEV@@/landing/@@CATALOG@@/events/`,
+then refresh the pipeline with `make run`.
+<!-- adopter-if:!local-dev end -->
 
 ## Add tables
 
+<!-- adopter-if:any-agent start -->
 Use the `author-ldp-artifact` agent skill: one `config/@@CATALOG@@/<layer>/<table>.yml`
 artifact per table, pure `@transform` functions in `src/@@CATALOG@@_etl/transforms/`,
 registered in `config/@@CATALOG@@/domain.yml` `imports:`.
+<!-- adopter-if:any-agent end -->
+<!-- adopter-if:!any-agent start -->
+Author one `config/@@CATALOG@@/<layer>/<table>.yml` artifact per table, pure
+`@transform` functions in `src/@@CATALOG@@_etl/transforms/`, registered in
+`config/@@CATALOG@@/domain.yml` `imports:`. Field reference: the framework's
+[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/@@FRAMEWORK_TAG@@/docs/FRAMEWORK.md);
+the datalab template repo's
+[author-ldp-artifact skill](@@TEMPLATE_URL@@/.agents/skills/author-ldp-artifact/SKILL.md)
+doubles as a human guide (plain-language rule → dqx check mapping).
+<!-- adopter-if:!any-agent end -->
+<!-- adopter-if:design start -->
+
+After adding or changing tables, run `make design`: it re-renders the pipeline
+inventory in `design/PIPELINES.md` (CI's `make check-design` fails while it is
+stale) and re-exports the draw.io diagram when draw.io Desktop is installed.
+<!-- adopter-if:design end -->
+
+## How this repo was generated
+
+From the datalab template with — coding agents: **@@AGENTS_LIST@@**; components:
+**@@COMPONENTS_LIST@@**. Every answer is recorded in `.datalab-adopter.json`; to
+regenerate with a newer template (e.g. to diff in its improvements), run
+`make new-adopter ANSWERS=<path-to>/.datalab-adopter.json OUT=<dir>` from a
+clone of the datalab template repo.
 """
 
 CHANGELOG_MD = """\
@@ -501,9 +813,251 @@ CHANGELOG_MD = """\
 
 ## Unreleased
 
-- Initial @@CATALOG@@ adopter repo generated from the datalab template
-  (one minimal bronze table; extend with the author-ldp-artifact skill).
+- Initial @@CATALOG@@ adopter repo for @@CUSTOMER@@, generated from the datalab
+  template (one minimal bronze table to extend). Coding agents: @@AGENTS_LIST@@;
+  components: @@COMPONENTS_LIST@@.
 """
+
+# design/ component — the adopter's OWN design package (the template's design/
+# describes the template's reference domains, so it is never copied). The
+# pipeline inventory (design/PIPELINES.md) is rendered by
+# scripts/design_inventory.py from config/, so it tracks the pipelines as they
+# grow; this overview is the hand-maintained narrative around it.
+DESIGN_OVERVIEW_MD = """\
+# @@CUSTOMER@@ — `@@CATALOG@@` lakehouse on Databricks
+
+@@DESCRIPTION@@
+
+> This is the living design package for this repo. The editable architecture
+> map is [`02_implementation_end_to_end.drawio`](02_implementation_end_to_end.drawio)
+> (`make design` renders it to `design/images/` when draw.io Desktop is
+> installed); the framework's conceptual design is
+> [`01_design_config_driven_medallion.drawio`](01_design_config_driven_medallion.drawio).
+> **[PIPELINES.md](PIPELINES.md) is generated from `config/`** — every table,
+> its source, target kind and quality gate — and CI fails while it is stale.
+
+## At a glance
+
+| | |
+|---|---|
+| **Customer** | @@CUSTOMER@@ |
+| **Domain / base catalog** | `@@CATALOG@@` — config in `config/@@CATALOG@@/`, code in `src/@@CATALOG@@_etl/` |
+| **Pipeline** | `@@CATALOG@@_etl` — Lakeflow Spark Declarative Pipeline, serverless |
+| **Refresh** | `@@CATALOG@@_etl_refresh` — daily (paused in dev) |
+| **Framework** | datalab `@@FRAMEWORK_TAG@@` (git dependency + UC-Volume wheel) |
+| **Pipeline inventory** | [PIPELINES.md](PIPELINES.md) (generated — `make design`) |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  dev["Engineer or coding agent<br/>writes one YAML artifact per table"] --> cfg["config/@@CATALOG@@/&lt;layer&gt;/&lt;table&gt;.yml"]
+  cfg --> fw["datalab framework<br/>validates + generates"]
+  fw --> sdp["Lakeflow SDP pipeline<br/>@@CATALOG@@_etl"]
+  land["landing volume<br/>/Volumes/&lt;catalog&gt;/landing/@@CATALOG@@/"] -->|Auto Loader| sdp
+  sdp --> bronze["bronze"] --> silver["silver<br/>dqx gate + quarantine"] --> gold["gold"]
+  gold --> use["BI · Genie · apps"]
+  gh["GitHub Actions<br/>OIDC, no stored secret"] -->|bundle deploy| sdp
+```
+
+The medallion starts with one bronze table; [PIPELINES.md](PIPELINES.md) holds
+the live table-by-table lineage.
+
+## Environments and promotion
+
+| Target | Workspace | Catalog | Mode | Deployed by |
+|---|---|---|---|---|
+| dev | `@@HOST@@` | `@@CATALOG_DEV@@` | development | every push to `main` |
+| stage | `@@HOST_STAGE@@` | `@@CATALOG_STAGE@@` | production | a `vX.Y.Z-rcN` tag |
+| prod | `@@HOST_PROD@@` | `@@CATALOG_PROD@@` | production | a `vX.Y.Z` tag |
+
+Promotion never edits a config file: catalogs, schemas and paths are bundle
+variables resolved per target.
+
+## Keeping this package current
+
+- **Tables** — after adding or changing a `config/@@CATALOG@@/…` artifact, run
+  `make design`; it re-renders [PIPELINES.md](PIPELINES.md). CI runs
+  `make check-design` and fails while the inventory is stale.
+- **Architecture** — when a new edge job, notebook, source system or consumer
+  appears, add it to `02_implementation_end_to_end.drawio` (the band and colour
+  conventions are in its legend) and refresh this overview's narrative.
+"""
+
+GITATTRIBUTES_DESIGN = """\
+# GitHub Linguist: design/ is documentation (draw.io sources, their PNG exports,
+# the overview and the generated pipeline inventory), not source — keep it out
+# of the repository's language statistics.
+design/**              linguist-documentation
+# Rendered by `make design` (scripts/design_inventory.py) — collapse it in diffs.
+design/PIPELINES.md    linguist-generated
+"""
+
+# The adopter's starter implementation map. Same bands, ids, colours and edge
+# tiers as the template's diagram, so the maintain-design-diagram skill's recipes
+# apply unchanged. Cells are html=1, so a literal `<placeholder>` must be escaped
+# TWICE (`&amp;lt;`) or draw.io swallows it as a tag — the template's diagrams do
+# the same; subst_xml escapes substituted values the same way.
+DESIGN_DRAWIO = """\
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" agent="datalab scaffold_adopter.py" version="29.6.1">
+  <diagram name="End-to-end implementation" id="impl">
+    <mxGraphModel dx="2200" dy="1380" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="2220" pageHeight="1380" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=22;fontStyle=1" value="@@CUSTOMER@@ · @@CATALOG@@ lakehouse · end-to-end implementation" vertex="1">
+          <mxGeometry x="40" y="20" width="2140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=12;fontStyle=2" value="ONE YAML artifact per table → datalab @@FRAMEWORK_TAG@@ generates the Lakeflow SDP pipeline @@CATALOG@@_etl · dqx quality + quarantine · deployed as a Declarative Automation Bundle via GitHub OIDC" vertex="1">
+          <mxGeometry x="40" y="58" width="2140" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="eng" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;arcSize=20;" value="Data engineer / coding agent&#xa;authors one YAML artifact per table" vertex="1">
+          <mxGeometry x="470" y="100" width="360" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="config_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=3;" value="Config — the deployed pipeline definition · config/@@CATALOG@@/&amp;lt;schema&amp;gt;/&amp;lt;table&amp;gt;.yml + domain.yml (make validate-configs)" vertex="1">
+          <mxGeometry x="40" y="210" width="1260" height="205" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg_domain" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8dc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="config/@@CATALOG@@/domain.yml&#xa;domain: @@CATALOG@@ · layers bronze / silver / gold&#xa;catalog + schemas are conf KEYS, never literal names" vertex="1">
+          <mxGeometry x="70" y="250" width="360" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg_events_raw" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="config/@@CATALOG@@/bronze/events_raw.yml&#xa;source: cloud_files (json) · path_conf datalab.landing_path&#xa;target: streaming_table · add_lineage" vertex="1">
+          <mxGeometry x="460" y="250" width="400" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg_next" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;dashed=1;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="silver/ · gold/ artifacts (next)&#xa;one YAML file per table: columns + types, dqx rules, CDC, target kind" vertex="1">
+          <mxGeometry x="890" y="250" width="380" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="framework_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=4;" value="Framework — the external datalab dependency (dediggibyte/datalab-framework · git tag + UC-Volume wheel · zero domain code)" vertex="1">
+          <mxGeometry x="40" y="440" width="1260" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="fw_generate" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="datalab @@FRAMEWORK_TAG@@&#xa;models + loader (Pydantic) → generate() → pyspark.pipelines datasets&#xa;dqx valid / quarantine split · AUTO CDC · pipeline_conf / params helpers&#xa;local dev + CI: git dependency in uv.lock · serverless: wheel from /Volumes/&amp;lt;catalog&amp;gt;/artifacts/wheels/" vertex="1">
+          <mxGeometry x="70" y="480" width="1200" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="domain_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=4;" value="Domain — src/@@CATALOG@@_etl/ (pure, unit-tested; declared to the framework via domain.yml imports)" vertex="1">
+          <mxGeometry x="40" y="665" width="1260" height="185" as="geometry" />
+        </mxCell>
+        <mxCell id="dom_pipeline" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="transformations/pipeline.py&#xa;3-line entrypoint: generate(spark, config_dir)" vertex="1">
+          <mxGeometry x="70" y="705" width="360" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="dom_transforms" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="transforms/&#xa;pure @transform functions (unit-tested)" vertex="1">
+          <mxGeometry x="460" y="705" width="380" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="dom_checks" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="checks/&#xa;custom @check_function dqx checks" vertex="1">
+          <mxGeometry x="870" y="705" width="400" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="pipeline_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#36b;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=2;" value="Lakeflow SDP pipeline: @@CATALOG@@_etl · serverless · from pyspark import pipelines as dp" vertex="1">
+          <mxGeometry x="40" y="875" width="1260" height="255" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_landing" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#36b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="landing volume&#xa;/Volumes/&amp;lt;catalog&amp;gt;/landing/@@CATALOG@@/events/&#xa;raw JSON files arrive out-of-band" vertex="1">
+          <mxGeometry x="70" y="930" width="260" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_bronze" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde9d9;strokeColor=#36b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="bronze.events_raw&#xa;streaming table (Auto Loader)&#xa;+ _ingest_ts, _source_file" vertex="1">
+          <mxGeometry x="370" y="930" width="260" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcdcf0;strokeColor=#36b;dashed=1;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="silver.* (next)&#xa;validated · AUTO CDC&#xa;dqx error rows → &amp;lt;table&amp;gt;_quarantine" vertex="1">
+          <mxGeometry x="670" y="930" width="270" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="pl_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#36b;dashed=1;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="gold.* (next)&#xa;materialized views · business aggregates" vertex="1">
+          <mxGeometry x="980" y="930" width="290" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=2;" value="Edge lanes — read-only on SDP tables (single-writer invariant) · resources/*.job.yml" vertex="1">
+          <mxGeometry x="40" y="1155" width="1260" height="165" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_refresh" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="@@CATALOG@@_etl_refresh&#xa;resources/@@CATALOG@@_etl.job.yml · pipeline_task, daily (paused in dev)" vertex="1">
+          <mxGeometry x="70" y="1195" width="420" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_next" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;dashed=1;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="export jobs / triage notebooks (when needed)&#xa;they READ the SDP tables, never write them" vertex="1">
+          <mxGeometry x="520" y="1195" width="420" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="cicd_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#666666;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=1;" value="CI/CD · Deploy · Environments · Source of truth" vertex="1">
+          <mxGeometry x="1340" y="210" width="840" height="1110" as="geometry" />
+        </mxCell>
+        <mxCell id="profiles" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="Execution profiles (datalab.profile)&#xa;databricks — the deploy path (AUTO CDC · Auto Loader · dqx · sinks)&#xa;local — OSS spark-pipelines batch graph · Databricks Connect — run_dataset on a live cluster" vertex="1">
+          <mxGeometry x="1370" y="250" width="780" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="github" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="GitHub Actions — .github/workflows/ci-cd.yml&#xa;PR → lint · tests · validate-configs · bundle validate&#xa;main → deploy dev · vX.Y.Z-rcN → stage · vX.Y.Z → prod&#xa;OIDC federation (no stored secret) · framework read via GitHub App token" vertex="1">
+          <mxGeometry x="1370" y="400" width="780" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="bundle" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#0056b3;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="Declarative Automation Bundle — databricks.yml&#xa;variables/ · targets/ · rbac.yml · resources/@@CATALOG@@_etl.{pipeline,job}.yml&#xa;dev → @@CATALOG_DEV@@ · stage → @@CATALOG_STAGE@@ · prod → @@CATALOG_PROD@@" vertex="1">
+          <mxGeometry x="1370" y="570" width="780" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="bootstrap" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef0d9;strokeColor=#fc8d59;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="One-time UC bootstrap per target — make bootstrap-uc&#xa;catalog · bronze / silver / gold · landing + exports volumes · artifacts.wheels&#xa;GRANTs to account-level groups · make publish-wheel uploads the framework wheel" vertex="1">
+          <mxGeometry x="1370" y="750" width="780" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="workspaces" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#0056b3;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="Workspaces&#xa;dev: @@HOST@@&#xa;stage: @@HOST_STAGE@@&#xa;prod: @@HOST_PROD@@" vertex="1">
+          <mxGeometry x="1370" y="920" width="780" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="docs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#d81b60;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="Source of truth&#xa;AGENTS.md · README.md · design/OVERVIEW.md · design/PIPELINES.md (generated by make design)" vertex="1">
+          <mxGeometry x="1370" y="1130" width="780" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontStyle=2" value="Edges: blue = authoring · purple = generate · green = medallion data flow · red = dqx quarantine · teal = edge lane (read-only) · orange = deploy / bootstrap" vertex="1">
+          <mxGeometry x="40" y="1335" width="2140" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e_eng_cfg" edge="1" parent="1" source="eng" target="cfg_events_raw" style="endArrow=classic;html=1;strokeColor=#1976d2;fontSize=9;fontColor=#1976d2" value="authors">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cfg_fw" edge="1" parent="1" source="cfg_events_raw" target="fw_generate" style="endArrow=classic;html=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="validated + generated">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dom_fw" edge="1" parent="1" source="dom_pipeline" target="fw_generate" style="endArrow=classic;html=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="calls generate()">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_fw_bronze" edge="1" parent="1" source="fw_generate" target="pl_bronze" style="endArrow=classic;html=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="registers datasets">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_landing_bronze" edge="1" parent="1" source="pl_landing" target="pl_bronze" style="endArrow=classic;html=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="Auto Loader">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bronze_silver" edge="1" parent="1" source="pl_bronze" target="pl_silver" style="endArrow=classic;html=1;dashed=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_silver_gold" edge="1" parent="1" source="pl_silver" target="pl_gold" style="endArrow=classic;html=1;dashed=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_refresh_bronze" edge="1" parent="1" source="edge_refresh" target="pl_bronze" style="endArrow=classic;html=1;strokeColor=#2e7d8a;fontSize=9;fontColor=#2e7d8a" value="refreshes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_profiles_gen" edge="1" parent="1" source="profiles" target="fw_generate" style="endArrow=classic;html=1;dashed=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="datalab.profile selects the graph">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_github_bundle" edge="1" parent="1" source="github" target="bundle" style="endArrow=classic;html=1;strokeColor=#fc8d59;fontSize=9;fontColor=#fc8d59" value="bundle deploy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bundle_workspaces" edge="1" parent="1" source="bundle" target="workspaces" style="endArrow=classic;html=1;strokeColor=#fc8d59;fontSize=9;fontColor=#fc8d59" value="per target">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+"""
+
+# The framework's conceptual design spec is generic except for a few worked-
+# example references; each is repointed at the adopter's own domain.
+DESIGN_SPEC_EDITS: list[tuple[str, str]] = [
+    (
+        "• Framework &lt;tt&gt;src/datalab/&lt;/tt&gt; — reusable, zero domain code",
+        "• Framework: the external &lt;tt&gt;datalab&lt;/tt&gt; dependency — reusable, "
+        "zero domain code",
+    ),
+    (
+        "• One worked domain &lt;tt&gt;projects/customer_sales/&lt;/tt&gt;: bronze → silver "
+        "(AUTO CDC SCD1) → gold, dqx valid/quarantine, edge jobs + notebook",
+        "• This repo's domain &lt;tt&gt;@@CATALOG@@&lt;/tt&gt; at the repo root "
+        "(&lt;tt&gt;config/@@CATALOG@@/&lt;/tt&gt;, &lt;tt&gt;src/@@CATALOG@@_etl/&lt;/tt&gt;): "
+        "one YAML artifact per table",
+    ),
+    (
+        "The customer_sales_etl pipeline runs serverless on Databricks (environment_version 4).",
+        "The @@CATALOG@@_etl pipeline runs serverless on Databricks.",
+    ),
+    (
+        "/Volumes/&amp;lt;catalog&amp;gt;/landing/sales/customers/",
+        "/Volumes/&amp;lt;catalog&amp;gt;/landing/@@CATALOG@@/events/",
+    ),
+    ("customer_sales_etl_refresh", "@@CATALOG@@_etl_refresh"),
+]
+
 
 # Starter sample landing data so `make run-local` (and the "bronze.events_raw
 # materializes" done check) work out of the box — the Makefile's LOCAL_LANDING
@@ -576,69 +1130,77 @@ def repo_slug(path: Path) -> str:
     return "/".join(parts[-2:]) if len(parts) >= 2 else ""
 
 
-def drop_reference_material(out: Path) -> None:
-    """In-place: delete the reference-only top-level entries from the clone.
-
-    The adopter keeps the framework scaffold (scripts/, schemas/, .github/, the
-    agent harness, docs/) but not the reference domains, design assets, dev-time
-    pilot, or the multi-package lockfile (regenerated by `make lock`).
-    """
-    for rel in sorted(EXCLUDE_TOP):
-        target = out / rel
-        if target.is_dir():
-            shutil.rmtree(target)
-        elif target.exists():
-            target.unlink()
-
-
-# NESTED paths that only make sense alongside the template's reference material
-# (EXCLUDE_TOP covers top-level entries only). The two skill copies must BOTH go
-# or `make check-skills` fails on .agents/.claude drift.
-TEMPLATE_ONLY_PATHS = [
-    "scripts/export_design.py",                # exports the deleted design/*.drawio
-    ".agents/skills/maintain-design-diagram",  # skill for the deleted design/ package
-    ".claude/skills/maintain-design-diagram",  # its generated Claude Code copy
-    # THIS repo's restructure history ("this repo has been through two
-    # restructures", legacy DLT -> SDP). A brand-new customer repo has no such
-    # history, so it reads as a false statement about their own code.
-    "docs/MIGRATION.md",
-]
-
-
-def remove_template_only_paths(out: Path) -> None:
-    for rel in TEMPLATE_ONLY_PATHS:
-        target = out / rel
-        if target.is_dir():
-            shutil.rmtree(target)
-        elif target.exists():
-            target.unlink()
-
-
-def copy_scaffold(out: Path) -> None:
-    """Copy every git-TRACKED file except the reference/dev-only top-level set.
-
-    Using `git ls-files` (not a filesystem walk) means gitignored files —
-    secrets (.env), .venv, .databricks, dist/ build output — are never copied.
-    """
-    result = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    tracked = [p for p in result.stdout.split("\0") if p]
+def tracked_files() -> list[str]:
+    """Every git-TRACKED file of the template. Using `git ls-files` (not a
+    filesystem walk) means gitignored files — secrets (.env), .venv,
+    .databricks, dist/ build output — can never reach an adopter."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        raise SystemExit(f"scaffold: `git ls-files` failed ({exc}) — run inside the repo") from exc
+    tracked = [p for p in result.stdout.split("\0") if p and (REPO_ROOT / p).is_file()]
     if not tracked:
         raise SystemExit("scaffold: `git ls-files` returned nothing — run inside the repo")
+    return tracked
+
+
+def ensure_template_layout() -> None:
+    """Refuse to run anywhere but the template (or a fresh clone of it).
+
+    Inside an already-generated adopter the engine used to overwrite
+    pyproject.toml, databricks.yml, targets/, variables/, README and CHANGELOG,
+    add a second domain — and only THEN crash on the first missing template
+    anchor, leaving a half-rewritten repo. The reference domains under
+    projects/ are what every template-only anchor hangs off, so their absence
+    means "not a template"."""
+    if not (REPO_ROOT / "projects").is_dir():
+        raise SystemExit(
+            "scaffold: this repo has no projects/ — it looks like an adopter that was already "
+            "generated, not the datalab template. The scaffold only runs from the template (or "
+            "a fresh clone of it): generate a new repo from the template instead."
+        )
+
+
+def check_rules(tracked: list[str]) -> None:
+    """Drift guards for the ownership tables: every tracked top-level entry is
+    classified, and every PATH_RULES path still exists in the template."""
+    unclassified = sorted({rel.split("/", 1)[0] for rel in tracked} - set(TOP_LEVEL))
+    if unclassified:
+        raise SystemExit(
+            "scaffold: unclassified top-level entr"
+            f"{'y' if len(unclassified) == 1 else 'ies'} {', '.join(unclassified)} — decide "
+            "whether each ships to adopters and add it to TOP_LEVEL in scripts/scaffold_adopter.py "
+            '("keep", "template", or a feature expression).'
+        )
+    tracked_set = set(tracked)
+    for path, _ in PATH_RULES:
+        if path not in tracked_set and not any(t.startswith(path + "/") for t in tracked):
+            raise SystemExit(
+                f"scaffold: PATH_RULES names {path!r}, which the template no longer has — "
+                "update the rule in scripts/scaffold_adopter.py."
+            )
+
+
+def ships(rel: str, features: set[str]) -> bool:
+    """Does template file `rel` belong in an adopter with these features?"""
+    rule = TOP_LEVEL[rel.split("/", 1)[0]]
+    if rule == "template" or (rule != "keep" and not evaluate(rule, features, "TOP_LEVEL")):
+        return False
+    return all(
+        evaluate(expr, features, f"PATH_RULES {path}")
+        for path, expr in PATH_RULES
+        if rel == path or rel.startswith(path + "/")
+    )
+
+
+def copy_selected(stage: Path, tracked: list[str], features: set[str]) -> None:
     for rel in tracked:
-        if rel.split("/", 1)[0] in EXCLUDE_TOP or rel == "uv.lock":
-            continue
-        src = REPO_ROOT / rel
-        if not src.is_file():  # skip submodule gitlinks etc.
-            continue
-        dest = out / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
+        if ships(rel, features):
+            dest = stage / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO_ROOT / rel, dest)
 
 
 def require_replace(text: str, old: str, new: str, where: str) -> str:
@@ -683,10 +1245,22 @@ def patch_makefile(out: Path, catalog: str) -> None:
         "CONFIG_DIRS := config",
         "Makefile",
     )
+    # `make help` printed "default customer_sales_etl" in every adopter, and the
+    # comment pointed at the template's second domain.
     text = require_replace(
         text,
-        "PIPELINE ?= customer_sales_etl",
-        f"PIPELINE ?= {catalog}_etl",
+        "# Any deployed pipeline/job resource works: PIPELINE=sales_etl refreshes the\n"
+        "# second reference domain (it has no scheduled job — on-demand by design).\n"
+        "PIPELINE ?= customer_sales_etl\n",
+        "# Any deployed pipeline/job resource works (PIPELINE=<resource key>); the\n"
+        "# default is this domain's pipeline.\n"
+        f"PIPELINE ?= {catalog}_etl\n",
+        "Makefile",
+    )
+    text = require_replace(
+        text,
+        "(PIPELINE=<resource>, default customer_sales_etl)",
+        f"(PIPELINE=<resource>, default {catalog}_etl)",
         "Makefile",
     )
     text = text.replace("datalab.sales_landing_path=file://", "datalab.landing_path=file://")
@@ -703,16 +1277,8 @@ def patch_makefile(out: Path, catalog: str) -> None:
         "# first). Bump the git tag + var.datalab_version in lockstep when upgrading.",
         "Makefile (publish-wheel comment)",
     )
-    # Adopters have no design/ assets — drop the export target (its script and
-    # the maintain-design-diagram skill are removed by remove_template_only_paths).
-    text = require_replace(
-        text, " validate-connect design \\", " validate-connect \\", "Makefile (.PHONY)"
-    )
-    text, n = re.subn(
-        r"# ---- design assets.*?export_design\.py\n\n", "", text, count=1, flags=re.S
-    )
-    if not n:
-        raise SystemExit("scaffold: could not strip the design target from the Makefile")
+    # Optional sections (design, skills, local dev, githooks, the scaffold
+    # itself …) are fenced `# adopter-if:<feature>` and resolved by apply_markers.
     path.write_text(text, encoding="utf-8")
 
 
@@ -966,17 +1532,208 @@ def patch_cicd_docs(out: Path, ctx: dict[str, str], slug: str) -> None:
 # check-adopter-docs` (run on the generated repo in CI) fails if any of it
 # regresses.
 
+ARCH_DESIGN_BANNER = """\
+> Editable architecture diagrams (draw.io) and the generated pipeline inventory
+> live in `design/` — see [Editing the design package](#editing-the-design-package).
+"""
+
+ARCH_DESIGN_SECTION = """\
+## Editing the design package
+
+`design/` is this repo's living picture of the architecture. The committed
+`.drawio` XML is the source of truth for the diagrams, and
+`design/PIPELINES.md` is GENERATED from the `config/` artifacts. `design/` is in
+the bundle's `sync.exclude`, so none of it ships to the workspace.
+
+| Path | Kind | Update when |
+|---|---|---|
+| `design/PIPELINES.md` | **Generated** pipeline inventory + lineage (mermaid) | every table change — `make design` re-renders it; CI's `make check-design` fails while it is stale |
+| `design/02_implementation_end_to_end.drawio` | Single-page living implementation map | a new edge job/notebook, source system, consumer or bundle resource |
+| `design/01_design_config_driven_medallion.drawio` | The framework's conceptual design spec | rarely — only when the design intent changes |
+| `design/images/*.png` | PNG exports of the diagrams | never by hand — `make design` re-exports them (needs draw.io Desktop) |
+| `design/OVERVIEW.md` | Customer-facing narrative | the story changes (a new capability, source or consumer) |
+
+Open a `.drawio` file with the *Draw.io Integration* extension
+(`hediet.vscode-drawio`) in VS Code or Cursor, in
+[app.diagrams.net](https://app.diagrams.net), or in draw.io Desktop; then run
+`make design` and commit the regenerated files with the change.
+
+"""
+
+ARCH_SYSTEM_VIEW = """\
+```mermaid
+flowchart LR
+    subgraph GH["GitHub"]
+        DEV["developer / agent<br/>push · PR"] --> CI["Actions: ci-cd.yml (target from the trigger)<br/>common-ci: ruff + pytest + bundle validate"]
+        CI -->|"OIDC — no stored secret"| CD["common-cd: bundle deploy"]
+    end
+
+    subgraph WS["Databricks workspace"]
+        CD --> DAB["Declarative Automation Bundle<br/>databricks.yml + resources/*.yml"]
+        DAB --> PL["Lakeflow SDP pipeline: @@CATALOG@@_etl<br/>(serverless)"]
+        DAB --> JOB["job: @@CATALOG@@_etl_refresh<br/>daily pipeline_task · paused in dev"]
+        JOB --> PL
+    end
+```
+"""
+
+ARCH_LANES_DIAGRAM = """\
+```mermaid
+flowchart LR
+    PL["SDP pipeline @@CATALOG@@_etl<br/>bronze → silver → gold<br/>(owns every medallion table)"]
+    PL -->|read-only| EXP["an export job · python-file lane<br/>src/jobs/@@CATALOG@@/&lt;job&gt;.py<br/>→ /Volumes/&lt;catalog&gt;/exports/@@CATALOG@@/"]
+    PL -->|read-only| QR["a triage notebook · notebook lane<br/>notebooks/@@CATALOG@@/&lt;notebook&gt;.py"]
+    QR -.->|"repaired rows re-enter<br/>via landing"| PL
+```
+"""
+
+
+def adopting_bump_changes(sel: Selection) -> str:
+    """ADOPTING's "corresponding changes" step, naming only the authoring skill,
+    surface gate, skills mirror and schemas this adopter carries."""
+    skill, schemas = sel.has("any-agent"), sel.has("schemas")
+    notes = [note for note, on in (("`make check-framework-surface` names them", schemas),
+                                   ("`make sync-skills` after", sel.has("agent-claude"))) if on]
+    touched = ["pyproject", "medallion.yml", "uv.lock", *(["schemas/"] if schemas else []),
+               "the re-pinned docs", *(["the skill"] if skill else [])]
+    text = (
+        "1. Add the release's corresponding changes: read the framework CHANGELOG between "
+        + ("the two versions, migrate anything flagged **BREAKING**, and document every new "
+           "target/source kind in `.agents/skills/author-ldp-artifact/SKILL.md`"
+           + (f" ({'; '.join(notes)})" if notes else "")
+           if skill else "the two versions and migrate anything flagged **BREAKING**")
+        + f". Commit everything the bump touched (`git status` — {', '.join(touched)})."
+    )
+    return _wrap(text, "   ") + "\n"
+
+
+def arch_data_view(sel: Selection) -> str:
+    inventory = (
+        " The live, table-by-table lineage is generated into\n"
+        "[design/PIPELINES.md](../design/PIPELINES.md) by `make design`."
+        if sel.has("design") else ""
+    )
+    return (
+        "## Data view (medallion)\n\n"
+        "```mermaid\n"
+        "flowchart LR\n"
+        '    YML[["config/@@CATALOG@@/&lt;layer&gt;/*.yml<br/>Pydantic-validated artifacts<br/>'
+        '(datasets + dqx rules)"]] -.->|"datalab.framework.generate"| BR\n'
+        '    LAND[("UC volume<br/>landing/@@CATALOG@@/events")] -->|"Auto Loader cloudFiles"| '
+        'BR["bronze.events_raw<br/>streaming_table + lineage cols"]\n'
+        '    BR -.->|"next: one YAML per table"| SIL["silver.&lt;table&gt;<br/>dqx valid rows · AUTO CDC"]\n'
+        '    BR -.->|"dqx error rows"| QUAR["silver.&lt;table&gt;_quarantine<br/>(dqx evidence structs)"]\n'
+        '    SIL -.-> GOLD["gold.&lt;table&gt;<br/>materialized_view"]\n'
+        "```\n\n"
+        "The starter pipeline has the one bronze table; silver and gold arrive one\n"
+        f"artifact at a time.{inventory}\n"
+    )
+
+
+ARCH_ENV_TABLE = """\
+| Target | Mode | Catalog | Workspace | Trigger state |
+|---|---|---|---|---|
+| dev | development — resources prefixed `[dev <user>]`, isolated per user | `@@CATALOG_DEV@@` | `@@HOST@@` | paused |
+| stage | production | `@@CATALOG_STAGE@@` | `@@HOST_STAGE@@` | live |
+| prod | production | `@@CATALOG_PROD@@` | `@@HOST_PROD@@` | live |
+"""
+
+ADOPTING_GENERATED = """\
+## This repo was generated
+
+This repo was generated by the datalab template repo's configurator
+(`scripts/scaffold_adopter.py` there), which recorded every answer — the coding
+agents and components it carries, the per-target hosts and catalogs — in
+[`.datalab-adopter.json`](../.datalab-adopter.json). The rest of this doc is the
+reference behind that conversion; the ordered first-deploy checklist is
+[NEW_ADOPTER.md](NEW_ADOPTER.md) (start at step 3). To stand up ANOTHER customer
+repo — or to regenerate this one with a newer template, replaying the answers
+with `ANSWERS=` — work from the datalab template repo, not from here.
+"""
+
+AGENT_MCP_ADOPTER_SETUP = """\
+## This repo's MCP setup
+
+The configurator already pointed this repo's MCP config at its SQL warehouse id
++ CLI profile (the table below) — there is nothing to swap unless the warehouse
+id is still the `<sql-warehouse-id>` placeholder, in which case fill it now. You
+can edit the JSON directly, or (Claude Code) export the env overrides the
+defaults already reference:
+"""
+
+NEW_ADOPTER_GENERATED = """\
+## 1–2. Generate and configure — done
+
+This repo was generated from the datalab template repo and configured by its
+configurator; the answers (coding agents, components, hosts, catalogs) are in
+[`.datalab-adopter.json`](../.datalab-adopter.json). Start at step 3.
+"""
+
+
+def localize_docs(out: Path, a: Answers) -> None:
+    """Re-cast the docs' worked examples (the template's `customer_sales`
+    domain) in THIS repo's own catalog and per-target catalogs, so the naming
+    contract, the MCP example query and the wheel volume read as facts about
+    the customer's repo. Attributed references to the template's real files are
+    left alone (they sit in template-only regions or name the template repo)."""
+    cat, envs = a.catalog, a.catalogs
+    naming = out / "docs" / "NAMING.md"
+    if naming.exists():
+        text = naming.read_text(encoding="utf-8")
+        text = require_replace(
+            text,
+            "This page is the contract; the\n"
+            "`customer_sales` reference domain in the datalab template repo demonstrates it.",
+            f"This page is the contract, shown\nhere with this repo's own catalog, `{cat}`.",
+            "docs/NAMING.md",
+        )
+        for env, template_cat in (("stage", "customer_sales_stage"), ("prod", "customer_sales_prod"),
+                                  ("dev", "customer_sales")):
+            text = require_replace(
+                text, f"| {env} | `{template_cat}` |", f"| {env} | `{envs[env]}` |", "docs/NAMING.md"
+            )
+        naming.write_text(text.replace("customer_sales", cat), encoding="utf-8")
+    mcp_doc = out / "docs" / "AGENT_MCP.md"
+    if mcp_doc.exists():
+        text = require_replace(
+            mcp_doc.read_text(encoding="utf-8"),
+            "*\"List tables in `customer_sales.silver`, then show 5 rows of\n  `silver.customers`.\"*",
+            f"*\"List tables in `{envs['dev']}.bronze`, then show 5 rows of\n  `bronze.events_raw`.\"*",
+            "docs/AGENT_MCP.md",
+        )
+        mcp_doc.write_text(text, encoding="utf-8")
+    adopting = out / "docs" / "ADOPTING.md"
+    if adopting.exists():
+        text = require_replace(
+            adopting.read_text(encoding="utf-8"),
+            "(`customer_sales.artifacts.wheels`,\n`sales.artifacts.wheels` in this repo)",
+            f"(`{envs['dev']}.artifacts.wheels` in dev here)",
+            "docs/ADOPTING.md",
+        )
+        text = require_replace(
+            text,
+            "(`customer_sales` + `sales` in this repo, resolved\n"
+            "  through `scripts/domains.py`; just `<your_catalog>` for a single-domain adopter)",
+            f"(`{cat}` here, resolved through `scripts/domains.py`)",
+            "docs/ADOPTING.md",
+        )
+        adopting.write_text(text, encoding="utf-8")
+
+
 # Template-only regions in docs/, swapped exactly like AGENTS.md's. Markers must
 # sit OUTSIDE fenced code blocks — a comment inside ```mermaid breaks rendering.
-DOC_REGIONS: dict[str, dict[str, str]] = {
+# A value may be a callable taking the Selection, for selection-dependent text.
+DOC_REGIONS: dict[str, dict[str, object]] = {
     "docs/ARCHITECTURE.md": {
         # docs/MIGRATION.md is template history and is deleted from adopters.
         "arch-nav": (
             "[← README](../README.md) · **Architecture** · "
             "[Framework](FRAMEWORK.md) · [CI/CD](CICD.md)\n"
         ),
-        "arch-design-banner": "",       # no design/ package in an adopter
-        "arch-design-section": "",      # ...and no `make design` to document
+        # design/ is optional: without it there is no package (or `make
+        # design`) to document; with it, the adopter's own package is.
+        "arch-design-banner": lambda sel: ARCH_DESIGN_BANNER if sel.has("design") else "",
+        "arch-design-section": lambda sel: ARCH_DESIGN_SECTION if sel.has("design") else "",
         "arch-code-diagram": """\
 ```mermaid
 flowchart TD
@@ -995,6 +1752,10 @@ flowchart TD
     DTESTS -->|exercise| FW
 ```
 """,
+        "arch-system-view": ARCH_SYSTEM_VIEW,
+        "arch-lanes-diagram": ARCH_LANES_DIAGRAM,
+        "arch-data-view": arch_data_view,
+        "arch-env-table": ARCH_ENV_TABLE,
         "arch-layer-rule": """\
 2. **The repo root** — this adopter's single domain: the YAML artifacts
    (`config/@@CATALOG@@/`), the domain package (`src/@@CATALOG@@_etl/`), the
@@ -1004,6 +1765,8 @@ flowchart TD
 """,
     },
     "docs/ADOPTING.md": {
+        "adopting-quick-start": ADOPTING_GENERATED,
+        "adopting-bump-changes": adopting_bump_changes,
         "adopting-repo-row": (
             "| this repo | the **domain + deploy bundle** that CONSUMES the framework "
             "— `databricks.yml` + your domain at the repo root | add/change tables, "
@@ -1032,6 +1795,12 @@ flowchart TD
             "on here.\n"
             "\n"
         ),
+    },
+    "docs/AGENT_MCP.md": {
+        "agent-mcp-adopter-setup": AGENT_MCP_ADOPTER_SETUP,
+    },
+    "docs/NEW_ADOPTER.md": {
+        "new-adopter-generate": NEW_ADOPTER_GENERATED,
     },
     "docs/NAMING.md": {
         "naming-diagram": """\
@@ -1091,7 +1860,7 @@ These are fixed by the framework or by Unity Catalog, not by this page:
 }
 
 
-def patch_doc_regions(out: Path, subst) -> None:
+def patch_doc_regions(out: Path, subst, sel: Selection) -> None:
     """Swap every `<!-- template-only:… -->` region in docs/ for adopter text."""
     for rel, regions in DOC_REGIONS.items():
         path = out / rel
@@ -1099,7 +1868,8 @@ def patch_doc_regions(out: Path, subst) -> None:
             continue
         text = path.read_text(encoding="utf-8")
         for name, replacement in regions.items():
-            text = _replace_template_region(text, name, subst(replacement), rel)
+            value = replacement(sel) if callable(replacement) else replacement
+            text = _replace_template_region(text, name, subst(value), rel)
         path.write_text(text, encoding="utf-8")
 
 
@@ -1121,6 +1891,83 @@ def patch_agent_mcp(out: Path, ctx: dict[str, str]) -> None:
     )
     text = text.replace(TEMPLATE_HOST, ctx["@@HOST@@"])
     path.write_text(text, encoding="utf-8")
+
+
+# Mid-sentence mentions of an optional piece, in docs and skills a marker
+# cannot cut cleanly: (feature that must be ABSENT, file, old, new). Each anchor
+# is require_replace'd, so a template edit that moves one fails loudly.
+CONDITIONAL_EDITS: list[tuple[str, str, str, str]] = [
+    ("local-dev", ".agents/skills/author-ldp-artifact/SKILL.md",
+     "   (or `make validate-connect` against a live cluster) — check valid rows,",
+     "   — check valid rows,"),
+    ("schemas", ".agents/skills/author-ldp-artifact/SKILL.md",
+     'listed under "Source and target kinds" below (CI checks this list against the\n'
+     "vendored schema: `make check-framework-surface`).",
+     'listed under "Source and target kinds" below.'),
+    ("pr-template", "docs/GETTING_STARTED.md",
+     'gh pr create --title "Add finance domain" --body-file /tmp/pr-body.md',
+     'gh pr create --title "Add finance domain" --fill'),
+    ("pr-template", "docs/GETTING_STARTED.md",
+     "PR template is enforced (`.github/pull_request_template.md`); CI runs the\nsame",
+     "CI runs the same"),
+    ("schemas", "docs/ADOPTING.md",
+     "`uv sync --frozen` and fails on drift), regenerates the vendored `schemas/*.json`\n"
+     "from the newly pinned models (`make sync-schemas`), and asserts the lockstep",
+     "`uv sync --frozen` and fails on drift), and asserts the lockstep"),
+    ("schemas", "docs/CICD.md", " + `uv.lock` + regenerated `schemas/` + re-pinned", " + `uv.lock` + re-pinned"),
+    ("agent-claude", "docs/CICD.md",
+     "| document the new kind in the skill, `make sync-skills` |", "| document the new kind in the skill |"),
+]
+
+
+def conditional_edits(out: Path, sel: Selection) -> None:
+    for feature, rel, old, new in CONDITIONAL_EDITS:
+        path = out / rel
+        if sel.has(feature) or not path.exists():
+            continue
+        path.write_text(require_replace(path.read_text(encoding="utf-8"), old, new, rel),
+                        encoding="utf-8")
+
+
+def narrow_mcp_docs(out: Path, sel: Selection) -> None:
+    """The MCP guide and skill are written for Claude Code AND Cursor. With only
+    one of them chosen, name only its config file and tool."""
+    claude, cursor = sel.has("agent-claude"), sel.has("agent-cursor")
+    edits: dict[str, list[tuple[str, str]]] = {"docs/AGENT_MCP.md": [], ".agents/skills/query-databricks/SKILL.md": []}
+    if not claude:
+        edits["docs/AGENT_MCP.md"].append((
+            "| `.agents/skills/query-databricks/SKILL.md` (canonical; generated copy in "
+            "`.claude/skills/` via `make sync-skills`) |",
+            "| `.agents/skills/query-databricks/SKILL.md` |",
+        ))
+    if claude != cursor:
+        tool, cfg = ("Claude Code", "`.mcp.json`") if claude else ("Cursor", "`.cursor/mcp.json`")
+        edits["docs/AGENT_MCP.md"] += [
+            ("Let Claude Code / Cursor run **read-only** SQL", f"Let {tool} run **read-only** SQL"),
+            ("Claude Code / Cursor ──stdio──▶", f"{tool} ──stdio──▶"),
+            ("and point `.mcp.json` / `.cursor/mcp.json` `command`/`args` at it",
+             f"and point {cfg} `command`/`args` at it"),
+            ("Delete `.mcp.json`, `.cursor/mcp.json`, the two `query-databricks/SKILL.md`\nfiles,",
+             "Delete `.mcp.json`, the two `query-databricks/SKILL.md`\nfiles," if claude else
+             "Delete `.cursor/mcp.json`, the `query-databricks/SKILL.md`\nfile,"),
+        ]
+        if cursor:
+            edits["docs/AGENT_MCP.md"] += [
+                ("— `.mcp.json` is excluded from\nthe deployed bundle via `.databricksignore`",
+                 "— `.cursor/` is excluded from\nthe deployed bundle via `.databricksignore`"),
+                ("block in `.mcp.json`, rename it,", "block in `.cursor/mcp.json`, rename it,"),
+            ]
+        edits[".agents/skills/query-databricks/SKILL.md"].append(
+            ("(configured in `.mcp.json` / `.cursor/mcp.json`)", f"(configured in {cfg})")
+        )
+    for rel, pairs in edits.items():
+        path = out / rel
+        if not path.exists() or not pairs:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for old, new in pairs:
+            text = require_replace(text, old, new, rel)
+        path.write_text(text, encoding="utf-8")
 
 
 CODEOWNERS_ADOPTER = """\
@@ -1197,13 +2044,46 @@ def patch_workflow_comments(out: Path) -> None:
         path.write_text(text, encoding="utf-8")
 
 
-def patch_cursor_rules(out: Path, catalog: str) -> None:
+def patch_cursor_rules(out: Path, catalog: str, sel: Selection) -> None:
     """.cursor/rules/project.mdc is auto-attached context for every Cursor edit,
-    so it must describe the adopter's root-level layout, not projects/."""
+    so it must describe the adopter's root-level layout, not projects/ — and
+    only the guards this adopter actually has."""
     path = out / ".cursor" / "rules" / "project.mdc"
     if not path.exists():
         return
     text = path.read_text(encoding="utf-8")
+    guards = (["`.claude/hooks/protected_files_guard.py`"] if sel.has("agent-claude|agent-codex") else []) + (
+        ["`.githooks/pre-commit`"] if sel.has("githooks") else []
+    )
+    protected = (
+        f"- Production-sensitive files are protected by {_join(guards)}. Keep "
+        f"{'both' if len(guards) == 2 else 'it'} + the AGENTS.md \"Protected file surface\" "
+        "table in sync when you change the set."
+        if guards else
+        '- Production-sensitive files are listed in AGENTS.md\'s "Protected file surface" '
+        "table — keep it current when you change the set."
+    )
+    text = require_replace(
+        text,
+        "- Production-sensitive files are protected by\n"
+        "  `.claude/hooks/protected_files_guard.py` and `.githooks/pre-commit`. Keep\n"
+        "  both + the AGENTS.md \"Protected file surface\" table in sync when you change\n"
+        "  the set.",
+        _wrap(protected, "  "),
+        ".cursor/rules/project.mdc",
+    )
+    if not sel.has("githooks"):
+        text = require_replace(
+            text,
+            "commit/push-to-main are denied on `main`) and `.githooks/pre-commit`.",
+            "commit/push-to-main are denied on `main`).",
+            ".cursor/rules/project.mdc",
+        )
+    if not sel.has("pr-template"):
+        text, n = re.subn(r"\n- \*\*One PR format for everything\.\*\*.*?CI re-checks every PR body\.",
+                          "", text, count=1, flags=re.S)
+        if not n:
+            raise SystemExit("scaffold: PR-format bullet not found in .cursor/rules/project.mdc")
     for old, new in (
         (
             "  (`config/<catalog>/<schema>/<table>.yml`; in this repo the example lives at\n"
@@ -1230,7 +2110,34 @@ def patch_cursor_rules(out: Path, catalog: str) -> None:
 # canonical .agents/skills copy and the generated .claude/skills mirror — patch
 # one and `make check-skills` fails on drift.
 SKILL_EDITS: dict[str, list[tuple[str, str]]] = {
+    "maintain-design-diagram/SKILL.md": [
+        # The adopter's OVERVIEW.md draws its architecture in mermaid and links
+        # the diagrams; it does not embed the PNGs the template's overview does.
+        (
+            "Never hand-edit; re-export. The README, `docs/` and `OVERVIEW.md` embed these. |",
+            "Never hand-edit; re-export, and commit them with the `.drawio` edit. |",
+        ),
+        (
+            "| Customer-facing narrative that embeds the images.",
+            "| Customer-facing narrative (a mermaid architecture view that links the diagrams).",
+        ),
+        (
+            "`design/OVERVIEW.md` (it embeds `images/01_*` and\n"
+            "`images/02_*`, so the re-exported images flow through automatically). A purely",
+            "`design/OVERVIEW.md`. A purely",
+        ),
+        (
+            "- Editing a `.drawio` source but forgetting `make design` — the README/docs\n"
+            "  embed stale images.",
+            "- Editing a `.drawio` source but forgetting `make design` — the committed\n"
+            "  images go stale.",
+        ),
+    ],
     "deploy-databricks-bundle/SKILL.md": [
+        (
+            "make run               # databricks bundle run customer_sales_etl -t dev (refresh)",
+            "make run               # databricks bundle run @@CATALOG@@_etl -t dev (refresh)",
+        ),
         (
             "per-domain resource files — in this repo `projects/*/resources/*.yml`",
             "per-domain resource files — in this repo `resources/*.yml`",
@@ -1272,15 +2179,28 @@ SKILL_EDITS: dict[str, list[tuple[str, str]]] = {
 
 
 def patch_skills(out: Path, subst) -> None:
+    """Edit the CANONICAL skills only; mirror_claude_skills() regenerates the
+    .claude/skills copy from them afterwards (byte-identical, so the adopter's
+    `make check-skills` passes by construction)."""
     for rel, edits in SKILL_EDITS.items():
-        for root in (".agents/skills", ".claude/skills"):
-            path = out / root / rel
-            if not path.exists():
-                continue
-            text = path.read_text(encoding="utf-8")
-            for old, new in edits:
-                text = require_replace(text, subst(old), subst(new), f"{root}/{rel}")
-            path.write_text(text, encoding="utf-8")
+        path = out / ".agents" / "skills" / rel
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for old, new in edits:
+            text = require_replace(text, subst(old), subst(new), f".agents/skills/{rel}")
+        path.write_text(text, encoding="utf-8")
+
+
+def mirror_claude_skills(out: Path) -> None:
+    """The adopter's .claude/skills = an exact copy of its (pruned, patched)
+    .agents/skills — same contract as scripts/sync_skills.py --write."""
+    mirror, canonical = out / ".claude" / "skills", out / ".agents" / "skills"
+    if not mirror.exists():
+        return
+    shutil.rmtree(mirror)
+    if canonical.exists():
+        shutil.copytree(canonical, mirror)
 
 
 # --- AGENTS.md adopter conversion -------------------------------------------
@@ -1310,6 +2230,18 @@ ADOPTER_REPO_INTRO = """\
 > first-deploy checklist: [`docs/NEW_ADOPTER.md`](docs/NEW_ADOPTER.md).
 """
 
+# A repo generated without coding agents still cites skills by name (the
+# authoring recipes live there) — say where they are rather than implying
+# they are local.
+ADOPTER_NO_AGENTS_NOTE = """\
+
+> **No coding-agent harness here.** This repo was generated without one, so the
+> agent skills this file cites by name (`author-ldp-artifact`,
+> `author-sdp-pipeline`, `deploy-databricks-bundle`, …) live in the datalab
+> template repo's `.agents/skills/` — they double as step-by-step guides for
+> humans.
+"""
+
 ADOPTER_OVERVIEW_DOMAINS = """\
 - **Single-domain adopter layout**: the domain lives at the repo ROOT —
   `config/@@CATALOG@@/` (one YAML artifact per table), `src/@@CATALOG@@_etl/`
@@ -1319,53 +2251,6 @@ ADOPTER_OVERVIEW_DOMAINS = """\
   template repo under `projects/`.
 """
 
-ADOPTER_ARCHITECTURE = """\
-```
-Developer ──push/PR──▶ GitHub Actions ──OIDC──▶ Declarative Automation Bundle
-                       ci-cd.yml (ONE workflow;   (databricks.yml + resources/*.yml)
-                       target derived from the             │ deploys
-                       trigger) → common-ci / common-cd    ▼
-                       + framework-bump.yml (bot) + dependabot
-                  ┌──────── Lakeflow SDP pipeline: @@CATALOG@@_etl ─────────┐
-landing volume ─▶ │ bronze.events_raw ─▶ silver / gold: add tables with the │
-(Auto Loader)     │ author-ldp-artifact skill (dqx quarantine per table)    │
-                  └─────────────────────────────────────────────────────────┘
-                  refreshed daily by job @@CATALOG@@_etl_refresh (paused in dev)
-```
-"""
-
-ADOPTER_CODEBASE_LAYOUT = """\
-```
-databricks.yml            Bundle: name + include only (variables/ + targets/ + rbac + resources merged in)
-variables/                Variable declarations + defaults (medallion catalog/schemas/paths)
-targets/                  One file per environment (dev/stage/prod): mode, host, per-env variable values
-rbac.yml                  Workspace-resource RBAC: groups + permission levels + per-target overrides
-config/@@CATALOG@@/       domain.yml + ONE <schema>/<table>.yml artifact per target table
-src/@@CATALOG@@_etl/      Domain package: pipeline entrypoint, @transform fns, custom dqx checks
-resources/                This domain's bundle resources (pipeline + refresh job)
-tests/                    The domain's unit tests (make test)
-sample_data/              Local sample landing files for `make run-local`
-scripts/                  bootstrap_uc · publish_wheel · domain registry · repo-integrity checks
-schemas/                  GENERATED editor schemas from the pinned framework (make sync-schemas)
-docs/                     NEW_ADOPTER (first-deploy checklist) · ADOPTING · GETTING_STARTED ·
-                          NAMING · CICD · ARCHITECTURE · AGENT_MCP
-.github/                  CI/CD workflows (OIDC deploy; framework App token) + dependabot
-.agents/ .claude/ .cursor/ .codex/  Agent harness — skills authored ONCE in .agents/skills
-                          (make sync-skills regenerates the .claude copy)
-.githooks/                Human pre-commit guard (make enable-githooks)
-.mcp.json                 Opt-in read-only Databricks MCP grounding (docs/AGENT_MCP.md)
-Makefile                  Developer + CI entrypoints (run `make help`)
-pyproject.toml, uv.lock   Single-package project (uv end to end; CI runs --frozen)
-```
-
-The folder ↔ UC namespace naming contract is `docs/NAMING.md`. The multi-domain
-reference layout lives in the datalab template repo (`projects/`).
-"""
-
-ADOPTER_MAINTENANCE_DESIGN = """\
-2. If the architecture moved, update `docs/ARCHITECTURE.md` in the same PR.
-"""
-
 ADOPTER_COMMON_TASK_NEW_DOMAIN = """\
 - **Add a second domain**: an adopter repo is deliberately SINGLE-domain
   (root-level layout). For another domain or customer, stand up a separate
@@ -1373,6 +2258,432 @@ ADOPTER_COMMON_TASK_NEW_DOMAIN = """\
   one repo, follow the multi-domain layout of the datalab
   template repo (`projects/` + uv-workspace members) rather than grafting on.
 """
+
+ADOPTER_COMMON_TASK_NEW_ADOPTER = """\
+- **Stand up another customer repo**: not from here — this repo is already an
+  adopter, and the configurator refuses to run in one. Use the datalab template
+  repo (`make configure-adopter` in a fresh clone generated from it, or
+  `make new-adopter` from a checkout of it); this repo's own answers are in
+  `.datalab-adopter.json` if you want the same shape (`ANSWERS=`).
+"""
+
+
+def _join(items: list[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _wrap(text: str, indent: str, first: str = "") -> str:
+    """Re-flow one bullet/step paragraph to ~80 columns under `indent` (the first
+    line prefixed with `first`), never breaking inside a `code span`."""
+    import textwrap
+
+    glued = re.sub(r"`[^`]*`", lambda m: m.group(0).replace(" ", "\0"), text)
+    wrapped = textwrap.fill(glued, width=80, initial_indent=first, subsequent_indent=indent,
+                            break_on_hyphens=False, break_long_words=False)
+    return wrapped.replace("\0", " ")
+
+
+def adopter_architecture(sel: Selection) -> str:
+    extras = [
+        label
+        for label, feature in (("framework-bump.yml (bot)", "framework-bot"), ("dependabot", "dependabot"))
+        if sel.has(feature)
+    ]
+    lines = [
+        "```",
+        "Developer ──push/PR──▶ GitHub Actions ──OIDC──▶ Declarative Automation Bundle",
+        "                       ci-cd.yml (ONE workflow;   (databricks.yml + resources/*.yml)",
+        "                       target derived from the             │ deploys",
+        "                       trigger) → common-ci / common-cd    ▼",
+    ]
+    if extras:
+        lines.append("                       + " + " + ".join(extras))
+    lines += [
+        "                  ┌──────── Lakeflow SDP pipeline: @@CATALOG@@_etl ─────────┐",
+        "landing volume ─▶ │ bronze.events_raw ─▶ silver / gold: add tables with the │",
+        "(Auto Loader)     │ author-ldp-artifact skill (dqx quarantine per table)    │",
+        "                  └─────────────────────────────────────────────────────────┘",
+        "                  refreshed daily by job @@CATALOG@@_etl_refresh (paused in dev)",
+        "```",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def adopter_codebase_layout(sel: Selection) -> str:
+    rows: list[tuple[str, str]] = [
+        ("databricks.yml", "Bundle: name + include only (variables/ + targets/ + rbac + resources merged in)"),
+        ("variables/", "Variable declarations + defaults (medallion catalog/schemas/paths)"),
+        ("targets/", "One file per environment (dev/stage/prod): mode, host, per-env variable values"),
+        ("rbac.yml", "Workspace-resource RBAC: groups + permission levels + per-target overrides"),
+        ("config/@@CATALOG@@/", "domain.yml + ONE <schema>/<table>.yml artifact per target table"),
+        ("src/@@CATALOG@@_etl/", "Domain package: pipeline entrypoint, @transform fns, custom dqx checks"),
+        ("resources/", "This domain's bundle resources (pipeline + refresh job)"),
+        ("tests/", "The domain's unit tests (make test)"),
+    ]
+    if sel.has("local-dev"):
+        rows.append(("sample_data/", "Local sample landing files for `make run-local`"))
+    rows.append(("scripts/", "bootstrap_uc · publish_wheel · domain registry · repo checks (scripts/README.md)"))
+    if sel.has("schemas"):
+        rows.append(("schemas/", "GENERATED editor schemas from the pinned framework (make sync-schemas)"))
+    if sel.has("docs"):
+        guides = ["NEW_ADOPTER (first-deploy checklist)", "ADOPTING", "GETTING_STARTED", "NAMING",
+                  "CICD", "ARCHITECTURE"] + (["AGENT_MCP"] if sel.has("mcp") else [])
+        rows.append(("docs/", " · ".join(guides)))
+    if sel.has("design"):
+        rows.append(("design/", "OVERVIEW · *.drawio sources · PIPELINES.md (GENERATED by make design)"))
+    github = "CI/CD workflows (OIDC deploy; framework App token)"
+    github += "".join(
+        f" + {label}"
+        for label, feature in (("PR template", "pr-template"), ("dependabot", "dependabot"),
+                               ("framework-bump bot", "framework-bot"))
+        if sel.has(feature)
+    )
+    rows.append((".github/", github))
+    if sel.has("any-agent"):
+        where = "read natively by Cursor + Codex"
+        if sel.has("agent-genie"):
+            where += "; make publish-genie-skills pushes them to Genie Code"
+        rows.append((".agents/skills/", f"Agent skills, authored ONCE here ({where})"))
+    if sel.has("agent-claude"):
+        rows.append((".claude/ + CLAUDE.md", "Claude Code: settings, guard hook, GENERATED skills copy (make sync-skills)"))
+    elif sel.has("agent-codex"):
+        rows.append((".claude/hooks/", "The protected-files guard the Codex hooks run"))
+    if sel.has("agent-codex"):
+        rows.append((".codex/", "Codex hooks (run the shared guard scripts)"))
+    if sel.has("agent-cursor"):
+        rows.append((".cursor/", "Cursor rules + hooks; hooks/*.py are the branch/PR guards every agent runs"))
+    elif sel.has("hooked-agent"):
+        rows.append((".cursor/hooks/", "The shared branch/PR guard scripts the agent hooks run"))
+    if sel.has("githooks"):
+        rows.append((".githooks/", "Human pre-commit guard (make enable-githooks)"))
+    if sel.has("mcp&agent-claude"):
+        rows.append((".mcp.json", "Opt-in read-only Databricks MCP grounding"))
+    rows += [
+        ("Makefile", "Developer + CI entrypoints (run `make help`)"),
+        ("pyproject.toml, uv.lock", "Single-package project (uv end to end; CI runs --frozen)"),
+        (MANIFEST, "How this repo was generated: the configurator's recorded answers"),
+    ]
+    body = "\n".join(f"{path:<26}{what}" for path, what in rows)
+    return (
+        f"```\n{body}\n```\n\n"
+        "The folder ↔ UC namespace naming contract is `docs/NAMING.md`. The multi-domain\n"
+        "reference layout lives in the datalab template repo (`projects/`).\n"
+    )
+
+
+def adopter_maintenance_design(sel: Selection) -> str:
+    if sel.has("design"):
+        text = (
+            "2. If the architecture moved or a table was added or changed, update the "
+            "`design/` package in the same PR: `make design` re-renders "
+            "`design/PIPELINES.md` from `config/` (CI's `make check-design` fails "
+            "while it is stale); edit `design/02_implementation_end_to_end.drawio` "
+            "when boxes or arrows moved and refresh `design/OVERVIEW.md` when the "
+            "narrative changed"
+            + (" — the `maintain-design-diagram` skill has the conventions" if sel.has("any-agent") else "")
+            + (". Update `docs/ARCHITECTURE.md` too." if sel.has("docs") else ".")
+        )
+    elif sel.has("docs"):
+        text = "2. If the architecture moved, update `docs/ARCHITECTURE.md` in the same PR."
+    else:
+        text = '2. If the architecture moved, update the "Architecture" section above in the same PR.'
+    return _wrap(text, "   ") + "\n"
+
+
+def adopter_common_task_design(sel: Selection) -> str:
+    if not sel.has("design"):
+        return ""
+    text = (
+        "- **Update the design (inventory, diagrams, overview)**: after adding or "
+        "changing a table, `make design` re-renders `design/PIPELINES.md` from "
+        "`config/` (CI's `make check-design` fails while it is stale) and "
+        "re-exports `design/*.drawio` to `design/images/` when draw.io Desktop is "
+        "installed. Edit `02_implementation_end_to_end.drawio` when the implemented "
+        "architecture moves (same PR), `01_design_config_driven_medallion.drawio` "
+        "only when the design intent changes, and refresh `design/OVERVIEW.md` when "
+        "the narrative changes"
+        + (" — follow the `maintain-design-diagram` skill for the band/colour "
+           "conventions and the geometry check" if sel.has("any-agent") else "")
+        + ". `design/` is excluded from the deployed workspace files via "
+        "`sync.exclude` in databricks.yml."
+    )
+    return _wrap(text, "  ") + "\n"
+
+
+def adopter_framework_mandate(sel: Selection) -> str:
+    """The template's "Framework bumps are mandatory" gotcha as it applies to an
+    adopter: the same gates in WARN mode (check_framework_current.mode), and
+    only the bot / schemas / skill clauses this repo carries."""
+    bot, schemas, skill = sel.has("framework-bot"), sel.has("schemas"), sel.has("any-agent")
+    clauses = ["re-pins the framework-doc links (`check-lockstep`)"]
+    if schemas:
+        clauses.append("regenerates `schemas/` (`check-schemas`)")
+    if skill:
+        clauses.append("must teach the `author-ldp-artifact` skill every new target/source kind"
+                       + (" (`check-framework-surface`)" if schemas else ""))
+    clauses.append("must migrate anything the framework CHANGELOG flags **BREAKING**")
+    text = (
+        "- **Framework bumps: adopt each release, with its corresponding changes.** "
+        "`make check-framework-current` (its own CI job) flags every PR and main while "
+        "a newer published datalab-framework `vX.Y.Z` exists than the pin — a warning "
+        "in this repo; set the repo/org variable `DATALAB_FRAMEWORK_MANDATE=enforce` to "
+        "make it fail (the datalab template repo runs it enforced)."
+        + (" The `framework-bump.yml` bot (twice daily, or on demand) opens the bump PR; "
+           "merge it." if bot else " Bump with `make bump-framework VERSION=x.y.z`.")
+        + f" A bump is not just the pin: it {_join(clauses)}."
+        + (" When a gate fails on the new version the bot opens the PR as a DRAFT listing "
+           "the failing gates and the framework CHANGELOG between the pins — push the "
+           "corresponding changes to that branch, then mark it ready. The bot needs "
+           'Settings → Actions → General → "Allow GitHub Actions to create and approve '
+           'pull requests" ON (otherwise it files a `framework-bump` issue with a '
+           "one-click compare link)." if bot else "")
+        + (' Details: `docs/CICD.md` "Framework bumps".' if sel.has("docs") else "")
+    )
+    return _wrap(text, "  ") + "\n"
+
+
+def agents_md_selection_rewrites(sel: Selection, catalog: str) -> list[tuple[str, str]]:
+    """Sentences that ENUMERATE optional pieces (harness configs, guards, the
+    schema vendoring, the bump bot), rewritten to name only what this adopter
+    has. Whole optional passages are fenced with `adopter-if` markers instead;
+    these are the ones a marker cannot cut cleanly (mid-sentence lists)."""
+    rewrites: list[tuple[str, str]] = []
+    tools = [name for agent, name in (("claude", "Claude Code"), ("codex", "Codex"),
+                                      ("cursor", "Cursor"), ("genie", "Genie Code"))
+             if agent in sel.agents]
+    rewrites.append((
+        "# AGENTS.md — datalab\n\n"
+        "Shared source of truth for AI coding agents (Cursor, Claude Code, Codex) and humans.",
+        f"# AGENTS.md — {catalog}-datalab\n\n"
+        + (f"Shared source of truth for AI coding agents ({_join(tools)}) and humans."
+           if tools else "Shared source of truth for humans and AI coding agents alike."),
+    ))
+    configs = [cfg for agent, cfg in (("claude", "`.claude/settings.json`"),
+                                      ("cursor", "`.cursor/hooks.json`"),
+                                      ("codex", "`.codex/hooks.json`")) if agent in sel.agents]
+
+    # Branching & releases — what enforces branch-first here.
+    enforced = []
+    if configs:
+        enforced.append(
+            "`.cursor/hooks/branch_guard.py` denies file edits and `git commit`/"
+            f"`git push`-to-main in the agent harness{'es' if len(configs) > 1 else ''} "
+            f"(wired in {_join(configs)})"
+        )
+    if sel.has("githooks"):
+        enforced.append("`.githooks/pre-commit` blocks human commits on `main`")
+    branch = (
+        "This is ENFORCED, not just convention: " + ", and ".join(enforced) + ". If a guard "
+        "blocks you mid-task: create the branch (uncommitted edits carry over) and retry."
+        if enforced else
+        "Nothing in this repo enforces it locally (no agent or git hooks were "
+        "generated) — protect `main` with a GitHub branch-protection rule."
+    )
+    rewrites.append((
+        "  and never stack new work on a previous feature branch. This is ENFORCED,\n"
+        "  not just convention: `.cursor/hooks/branch_guard.py` denies file edits and\n"
+        "  `git commit`/`git push`-to-main in all three agent harnesses (wired in\n"
+        "  `.cursor/hooks.json`, `.claude/settings.json` and `.codex/hooks.json`), and\n"
+        "  `.githooks/pre-commit` blocks human commits on `main`. If a guard blocks\n"
+        "  you mid-task: create the branch (uncommitted edits carry over) and retry.",
+        "  and never stack new work on a previous feature branch.\n" + _wrap(branch, "  ", "  "),
+    ))
+    enforcers = (["`.cursor/hooks/branch_guard.py` (agents)"] if configs else []) + (
+        ["`.githooks/pre-commit` (humans)"] if sel.has("githooks") else []
+    )
+    if enforcers:
+        rewrites.append((
+            "Separate from the protected-file surface, `.cursor/hooks/branch_guard.py`\n"
+            "(agents, all three harnesses) and the same `.githooks/pre-commit` (humans) enforce\n"
+            "the branch-first policy — no edits/commits/pushes while `main` is checked out\n"
+            '(see "Branching & releases").',
+            _wrap(
+                f"Separate from the protected-file surface, {_join(enforcers)} "
+                f"enforce{'s' if len(enforcers) == 1 else ''} the branch-first policy — "
+                'no edits/commits/pushes while `main` is checked out (see "Branching & releases").',
+                "",
+            ),
+        ))
+    dont = {
+        (True, True): "(enforced by `branch_guard` + the pre-commit hook).",
+        (True, False): "(enforced by `branch_guard`).",
+        (False, True): "(enforced by the pre-commit hook).",
+    }.get((bool(configs), sel.has("githooks")))
+    rewrites.append((
+        "from a fresh `main`\n  (enforced by `branch_guard` + the pre-commit hook).",
+        f"from a fresh `main`\n  {dont}" if dont else "from a fresh `main`.",
+    ))
+
+    # Maintenance protocol step 4 — where the protected set lives.
+    places = (["`.claude/hooks/protected_files_guard.py`"] if sel.has("agent-claude|agent-codex") else []) + (
+        ["`.githooks/pre-commit`"] if sel.has("githooks") else []
+    ) + ["the table below"]
+    step4 = (
+        "4. If you change the protected set itself, update the table below."
+        if len(places) == 1 else
+        "4. If you change the protected set itself, update "
+        f"**all {'two' if len(places) == 2 else 'three'}** in one commit: {_join(places)}."
+    )
+    rewrites.append((
+        "4. If you change the protected set itself, update **all three** in one commit:\n"
+        "   `.claude/hooks/protected_files_guard.py`, `.githooks/pre-commit`, and the\n"
+        "   table below.",
+        _wrap(step4, "   "),
+    ))
+
+    # Framework upgrades — schema vendoring, the authoring skill and the bump bot
+    # are optional, and the adoption gate runs in WARN mode outside the template.
+    schemas, bot, skill = sel.has("schemas"), sel.has("framework-bot"), sel.has("any-agent")
+    warn_mode = "a warning here unless `DATALAB_FRAMEWORK_MANDATE=enforce`"
+    rewrites.append((
+        "that rewrites both, re-pins the framework-doc links, re-locks, regenerates the\n"
+        "  vendored `schemas/` and asserts the lockstep; CI enforces the agreement\n"
+        "  (`make check-lockstep` + `make check-schemas`), and the `framework-bump.yml`\n"
+        "  workflow opens this bump as a bot PR when the framework releases a new tag.\n"
+        "  **Adopting every framework release is MANDATORY** — `make\n"
+        "  check-framework-current` fails CI on every PR and on main while a newer\n"
+        '  release exists (see "Framework bumps are mandatory" below). Then',
+        _wrap(
+            "that rewrites both, "
+            + _join(["re-pins the framework-doc links", "re-locks",
+                     *(["regenerates the vendored `schemas/`"] if schemas else []),
+                     "asserts the lockstep"])
+            + "; CI enforces the agreement (`make check-lockstep`"
+            + (" + `make check-schemas`" if schemas else "") + ")"
+            + (", and the `framework-bump.yml` workflow opens this bump as a bot PR when "
+               "the framework releases a new tag" if bot else "")
+            + ". `make check-framework-current` flags a newer framework release on every "
+            f'PR and on main ({warn_mode} — see "Framework bumps" below). Then',
+            "  ",
+        ),
+    ))
+    rewrites.append((
+        "run `make bump-framework VERSION=x.y.z` — it rewrites the `datalab` git tag\n"
+        "   in `pyproject.toml` + `var.datalab_version` in lockstep, re-locks, and\n"
+        "   REGENERATES `schemas/*.json` from the newly pinned models\n"
+        "   (`make sync-schemas` — never hand-copy them; `make check-schemas` +\n"
+        "   `make check-lockstep` gate CI). Then add the release's corresponding changes\n"
+        "   (new kinds in the `author-ldp-artifact` skill — `make\n"
+        "   check-framework-surface`; migrations for BREAKING entries), `make\n"
+        "   publish-wheel APPLY=1` and record the bump in `CHANGELOG.md`. The\n"
+        "   `framework-bump.yml` workflow opens this bump as a bot PR automatically on\n"
+        "   new framework release tags, and adopting it is mandatory (`make\n"
+        "   check-framework-current` fails CI while the pin is behind).",
+        _wrap(
+            "run `make bump-framework VERSION=x.y.z` — it rewrites the `datalab` git tag "
+            "in `pyproject.toml` + `var.datalab_version` in lockstep, re-locks"
+            + (", and REGENERATES `schemas/*.json` from the newly pinned models "
+               "(`make sync-schemas` — never hand-copy them; `make check-schemas` + "
+               "`make check-lockstep` gate CI)" if schemas else
+               " (`make check-lockstep` gates CI)")
+            + ". Then add the release's corresponding changes ("
+            + ("new kinds in the `author-ldp-artifact` skill"
+               + (" — `make check-framework-surface`" if schemas else "") + "; " if skill else "")
+            + "migrations for BREAKING entries), `make publish-wheel APPLY=1` and record "
+            "the bump in `CHANGELOG.md`."
+            + (" The `framework-bump.yml` workflow opens this bump as a bot PR "
+               "automatically on new framework release tags." if bot else "")
+            + f" `make check-framework-current` flags a pin that is behind ({warn_mode}).",
+            "   ",
+        ),
+    ))
+    if not bot:
+        rewrites.append((
+            "stale framework pin — see `.github/workflows/framework-bump.yml`.",
+            "stale framework pin in the datalab template repo (its bump-bot workflow).",
+        ))
+
+    # Claude's tracked-settings gotcha (kept only with Claude Code).
+    one = len(configs) <= 1
+    rewrites.append((
+        "  `.claude/settings.json`, `.cursor/hooks.json` and `.codex/hooks.json` are\n"
+        "  TRACKED — every developer gets them, and the scaffold copies them into every\n"
+        "  adopter repo. So the tracked files carry only what means the same thing on any\n",
+        _wrap(
+            f"{_join(configs) if configs else '`.claude/settings.json`'} "
+            f"{'is' if one else 'are'} TRACKED — every developer gets {'it' if one else 'them'}. "
+            f"So the tracked {'file carries' if one else 'files carry'} only what means the "
+            "same thing on any",
+            "  ", "  ",
+        ) + "\n",
+    ))
+    rewrites.append((
+        "Anything personal or that WRITES — commits, `make new-adopter`, deploys, a",
+        "Anything personal or that WRITES — commits, deploys, a",
+    ))
+
+    # MCP grounding — which harness configs carry it.
+    mcp_files = [f for agent, f in (("claude", "`.mcp.json`"), ("cursor", "`.cursor/mcp.json`")) if agent in sel.agents]
+    mcp_tools = [t for agent, t in (("claude", "Claude Code"), ("cursor", "Cursor")) if agent in sel.agents]
+    if len(mcp_files) == 1:
+        rewrites.append((
+            "`.mcp.json` / `.cursor/mcp.json` wire Claude Code / Cursor to the workspace's",
+            f"{mcp_files[0]} wires {mcp_tools[0]} to the workspace's",
+        ))
+        rewrites.append((
+            "then in\n"
+            "  Claude Code approve the `databricks-sql` server from `.mcp.json` (Cursor:\n"
+            "  enable it under Settings → MCP).",
+            "then in\n  Claude Code approve the `databricks-sql` server from `.mcp.json`."
+            if "claude" in sel.agents else
+            "then in\n  Cursor enable the `databricks-sql` server from `.cursor/mcp.json`\n"
+            "  under Settings → MCP.",
+        ))
+
+    if not sel.has("local-dev"):
+        rewrites.append((
+            "verify behavior with `run_dataset` or\n  `make validate-connect`.",
+            "verify behavior with `run_dataset`.",
+        ))
+    if not sel.has("docs"):
+        rewrites.append((
+            "then `make validate` before pushing; update `docs/` if\n  targets or variables moved.",
+            "then `make validate` before pushing.",
+        ))
+        rewrites.append((
+            "   session: the reproducible commands go in the matching runbook under\n"
+            "   `docs/` (CI/CD + GitHub auth → `docs/CICD.md`; UC/data access →\n"
+            "   `docs/ARCHITECTURE.md`; adopter setup → `docs/NEW_ADOPTER.md` /\n"
+            "   `docs/ADOPTING.md`), and the why + failure signature goes in \"Critical\n"
+            "   knowledge\" here.",
+            "   session: the reproducible commands and the why + failure signature go in\n"
+            "   \"Critical knowledge\" here (this repo was generated without the docs\n"
+            "   guides, so this file is the runbook).",
+        ))
+
+    # Template history / second-domain examples that read as facts about THIS repo.
+    rewrites += [
+        ("(`customer_sales`; stage/prod append", f"(`{catalog}`; stage/prod append"),
+        (
+            "a renamed pipeline resource (e.g.\n  `sales_etl` → `customer_sales_etl`) self-heals",
+            "a renamed pipeline resource\n  self-heals",
+        ),
+        (
+            "The\n  export entry point fails fast if `/Volumes/<catalog>/exports/sales/` is\n"
+            "  missing rather than silently creating dev-shaped paths elsewhere.",
+            "An\n  export entry point must fail fast if `/Volumes/<catalog>/exports/<volume>/` is\n"
+            "  missing rather than silently creating dev-shaped paths elsewhere.",
+        ),
+        (
+            "  the scaffold smoke test now asserts the contract end to end.",
+            "  the datalab template repo's scaffold smoke test asserts the contract end to end.",
+        ),
+        (
+            "  The edge-job resources (`projects/customer_sales/resources/customer_sales_*.job.yml`) install\n"
+            "  the framework wheel from the customer_sales catalog's artifacts.wheels Volume (`${var.datalab_wheel}`)\n"
+            "  plus the `customer_sales_etl` wheel (`../../../dist/customer_sales_etl-*.whl`) into",
+            "  Edge-job resources (none yet here; for the shape see the datalab\n"
+            "  template repo's `projects/customer_sales/resources/customer_sales_*.job.yml`) install\n"
+            "  the framework wheel from this catalog's artifacts.wheels Volume (`${var.datalab_wheel}`)\n"
+            "  plus this domain's wheel (`../dist/<catalog>_etl-*.whl`) into",
+        ),
+        (
+            "copy the\n  `customer_sales_quarantine_report` job shape (no trigger).",
+            "copy the\n  template repo's `customer_sales_quarantine_report` job shape (no trigger).",
+        ),
+    ]
+    return rewrites
 
 
 def _replace_template_region(text: str, name: str, replacement: str, where: str) -> str:
@@ -1388,18 +2699,21 @@ def _replace_template_region(text: str, name: str, replacement: str, where: str)
     return text
 
 
-def patch_agents_md(out: Path, catalog: str, subst) -> None:
+def patch_agents_md(out: Path, catalog: str, subst, sel: Selection) -> None:
     path = out / "AGENTS.md"
     text = path.read_text(encoding="utf-8")
 
+    intro = ADOPTER_REPO_INTRO + ("" if sel.has("any-agent") else ADOPTER_NO_AGENTS_NOTE)
     for name, replacement in (
-        ("repo-intro", ADOPTER_REPO_INTRO),
+        ("repo-intro", intro),
         ("overview-domains", ADOPTER_OVERVIEW_DOMAINS),
-        ("architecture", ADOPTER_ARCHITECTURE),
-        ("codebase-layout", ADOPTER_CODEBASE_LAYOUT),
-        ("maintenance-design", ADOPTER_MAINTENANCE_DESIGN),
+        ("architecture", adopter_architecture(sel)),
+        ("codebase-layout", adopter_codebase_layout(sel)),
+        ("maintenance-design", adopter_maintenance_design(sel)),
+        ("common-task-new-adopter", ADOPTER_COMMON_TASK_NEW_ADOPTER),
         ("common-task-new-domain", ADOPTER_COMMON_TASK_NEW_DOMAIN),
-        ("common-task-design", ""),
+        ("common-task-design", adopter_common_task_design(sel)),
+        ("framework-mandate", adopter_framework_mandate(sel)),
         ("agents-conversion-gotcha", ""),
         # Template-maintenance knowledge about the conversion itself. An adopter
         # never runs the scaffold, and the passage necessarily names the
@@ -1427,10 +2741,6 @@ def patch_agents_md(out: Path, catalog: str, subst) -> None:
             f"make run              # databricks bundle run {catalog}_etl -t dev (dev refresh)",
         ),
         (
-            "make design           # re-export design/*.drawio diagrams to design/images/*.png (needs draw.io Desktop)\n",
-            "",
-        ),
-        (
             "`projects/customer_sales/src/jobs/customer_sales/export_customer_summary.py`",
             "the template repo's `projects/customer_sales/src/jobs/customer_sales/export_customer_summary.py`",
         ),
@@ -1441,10 +2751,6 @@ def patch_agents_md(out: Path, catalog: str, subst) -> None:
         (
             "`projects/sales/config/sales/silver/orders.yml`",
             "the template repo's `projects/sales/config/sales/silver/orders.yml`",
-        ),
-        (
-            "(`projects/customer_sales/resources/customer_sales_*.job.yml`)",
-            "(the template repo's `projects/customer_sales/resources/customer_sales_*.job.yml`)",
         ),
         (
             "`projects/customer_sales/resources/customer_sales_export.job.yml`",
@@ -1504,45 +2810,14 @@ def patch_agents_md(out: Path, catalog: str, subst) -> None:
             "  (`<catalog>.artifacts.wheels` — the wheel rides in the domain's own catalog,\n"
             "  NOT a separate shared catalog)",
         ),
+        *agents_md_selection_rewrites(sel, catalog),
     ):
         text = require_replace(text, old, new, "AGENTS.md")
 
     # The MCP grounding profile: patch_mcp rewires the JSON, so AGENTS.md must
     # not keep telling the agent to authenticate as the template's profile.
     text = text.replace(TEMPLATE_MCP_PROFILE, subst("@@MCP_PROFILE@@"))
-
-    # Drift guard: nothing may still point at material the scaffold removed,
-    # unless the line explicitly attributes it to the template repo.
-    offenders = [
-        f"  {i}: {line.strip()}"
-        for i, line in enumerate(text.splitlines(), 1)
-        if re.search(r"projects/|design/|omnigent|make design", line)
-        and "template repo" not in line
-    ]
-    if offenders:
-        raise SystemExit(
-            "scaffold: AGENTS.md still references template-only material after the "
-            "conversion — fence the passage with <!-- template-only:<name> start/end --> "
-            "markers (and handle it in patch_agents_md) or rewrite it:\n"
-            + "\n".join(offenders)
-        )
     path.write_text(text, encoding="utf-8")
-
-
-def patch_databricksignore(out: Path) -> None:
-    """Drop entries whose paths don't exist in the adopter layout (the reference
-    domains, design assets, dev-time pilot) so the list stays ALIGNED with the
-    rewritten databricks.yml sync.exclude — `make check-sync-lists` enforces it."""
-    path = out / ".databricksignore"
-    if not path.exists():
-        return
-    dropped = ("projects/", "design/", "omnigent/")
-    kept = [
-        ln
-        for ln in path.read_text(encoding="utf-8").splitlines()
-        if not any(gone in ln for gone in dropped)
-    ]
-    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
 
 def patch_mcp(out: Path, ctx: dict[str, str]) -> None:
@@ -1570,7 +2845,20 @@ def patch_mcp(out: Path, ctx: dict[str, str]) -> None:
         cursor.write_text(text, encoding="utf-8")
 
 
-def write_domain(out: Path, ctx: dict[str, str], subst) -> None:
+def strip_schema_header(text: str) -> str:
+    """Drop the yaml-language-server `$schema` header (and the blank comment line
+    after it) — without the `schemas` component there is nothing to point at."""
+    return re.sub(r"\A# yaml-language-server: \$schema=\S+\n#\n", "", text)
+
+
+def write_files(out: Path, files: dict[str, str]) -> None:
+    for rel, text in files.items():
+        dest = out / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding="utf-8")
+
+
+def write_domain(out: Path, ctx: dict[str, str], subst, sel: Selection) -> None:
     cat = ctx["@@CATALOG@@"]
     files = {
         f"config/{cat}/domain.yml": DOMAIN_YML,
@@ -1581,22 +2869,52 @@ def write_domain(out: Path, ctx: dict[str, str], subst) -> None:
         f"src/{cat}_etl/checks/__init__.py": CHECKS_INIT,
         f"resources/{cat}_etl.pipeline.yml": PIPELINE_RESOURCE,
         f"resources/{cat}_etl.job.yml": JOB_RESOURCE,
-        f"sample_data/landing/{cat}/events/events.json": SAMPLE_EVENTS_JSON,
         "tests/conftest.py": CONFTEST_PY,
         "tests/test_smoke.py": SMOKE_TEST_PY,
     }
-    for rel, template in files.items():
-        dest = out / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(subst(template), encoding="utf-8")
+    if sel.has("local-dev"):
+        files[f"sample_data/landing/{cat}/events/events.json"] = SAMPLE_EVENTS_JSON
+    rendered = {rel: subst(text) for rel, text in files.items()}
+    if not sel.has("schemas"):
+        for rel in (f"config/{cat}/domain.yml", f"config/{cat}/bronze/events_raw.yml"):
+            rendered[rel] = strip_schema_header(rendered[rel])
+    write_files(out, rendered)
     # NB: do NOT pre-create empty silver/gold layer dirs — the framework config
     # validator rejects an empty layer dir. The author-ldp-artifact skill creates
     # them when the first silver/gold table is added.
 
 
-def write_repo_level(out: Path, subst) -> None:
+# Directories among the sync-exclude entries (written with a trailing slash in
+# .databricksignore, for readability; check_sync_lists normalizes it away).
+_EXCLUDE_DIRS = {"tests", "docs", "design", "sample_data", ".github", ".claude", ".cursor",
+                 ".codex", ".agents", ".githooks"}
+
+
+def sync_excludes(sel: Selection) -> list[str]:
+    """Dev-only surfaces kept out of the deployed workspace files — ONE list that
+    feeds BOTH databricks.yml `sync.exclude` and .databricksignore, and names
+    only paths this adopter actually has."""
+    entries = ["tests"]
+    entries += [p for p, f in (("docs", "docs"), ("design", "design"),
+                               ("sample_data", "local-dev")) if sel.has(f)]
+    entries.append(".github")
+    entries += [p for p, f in ((".claude", "agent-claude|agent-codex"), (".cursor", "hooked-agent"),
+                               (".codex", "agent-codex"), (".agents", "any-agent"),
+                               (".githooks", "githooks"), (".mcp.json", "mcp&agent-claude"))
+                if sel.has(f)]
+    return entries + ["Makefile", "uv.lock", ".markdownlint.json", MANIFEST]
+
+
+def write_repo_level(out: Path, subst, sel: Selection) -> None:
+    excludes = sync_excludes(sel)
     files = {
-        "databricks.yml": DATABRICKS_YML,
+        "databricks.yml": DATABRICKS_YML.replace(
+            "@@SYNC_EXCLUDE@@", "\n".join(f"    - {e}" for e in excludes)
+        ),
+        ".databricksignore": DATABRICKSIGNORE.replace(
+            "@@IGNORE_ENTRIES@@",
+            "\n".join(f"{e}/" if e in _EXCLUDE_DIRS else e for e in excludes),
+        ),
         "pyproject.toml": PYPROJECT_TOML,
         "variables/medallion.yml": VARIABLES_MEDALLION,
         "targets/dev.yml": TARGET_DEV,
@@ -1605,15 +2923,339 @@ def write_repo_level(out: Path, subst) -> None:
         "README.md": README_MD,
         "CHANGELOG.md": CHANGELOG_MD,
     }
-    for rel, template in files.items():
-        dest = out / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(subst(template), encoding="utf-8")
+    if sel.has("design"):
+        files[".gitattributes"] = GITATTRIBUTES_DESIGN
+    write_files(out, {rel: subst(text) for rel, text in files.items()})
+
+
+# The starter table as the framework loader sees it (only the fields the
+# inventory renders). The adopter's `make check-design` re-renders PIPELINES.md
+# from the YAML itself, so the smoke test catches any drift from BRONZE_YML.
+STARTER_TABLE_SPEC = {
+    "name": "events_raw",
+    "source": {"kind": "cloud_files", "path_conf": "datalab.landing_path", "format": "json"},
+    "target": {"kind": "streaming_table"},
+}
+
+
+def write_design(out: Path, ctx: dict[str, str], subst, subst_xml) -> None:
+    """The adopter's own design package: overview, the starter implementation
+    map, the framework's conceptual spec, and the generated pipeline inventory."""
+    cat = ctx["@@CATALOG@@"]
+    spec = (REPO_ROOT / "design" / "01_design_config_driven_medallion.drawio").read_text(encoding="utf-8")
+    for old, new in DESIGN_SPEC_EDITS:
+        spec = require_replace(spec, old, subst_xml(new), "design/01_design_config_driven_medallion.drawio")
+    import design_inventory as inventory  # same dir; pure render(), no pyyaml needed
+
+    domain = inventory.Domain(name=cat, config_dir=f"config/{cat}", layers=["bronze"])
+    inventory.analyze(domain, [("bronze", STARTER_TABLE_SPEC, f"config/{cat}/bronze/events_raw.yml")])
+    write_files(out, {
+        "design/OVERVIEW.md": subst(DESIGN_OVERVIEW_MD),
+        "design/02_implementation_end_to_end.drawio": subst_xml(DESIGN_DRAWIO),
+        "design/01_design_config_driven_medallion.drawio": spec,
+        "design/PIPELINES.md": inventory.render([domain]),
+    })
 
 
 # --------------------------------------------------------------------------- #
-# Interactive prompting (the user CONFIRMS every workspace-specific value)
+# Feature markers — `adopter-if:<expr>` regions in the shared template files
 # --------------------------------------------------------------------------- #
+# Block, markdown:  <!-- adopter-if:<expr> start -->  …  <!-- adopter-if:<expr> end -->
+# Block, # files:   # adopter-if:<expr> start         …  # adopter-if:<expr> end
+# Line, markdown:   <any line> <!-- adopter-if:<expr> -->   (e.g. one table row)
+# In the template they are inert comments (every region is live). In an adopter
+# a region survives only when its expression holds; the markers never ship.
+# Markdown markers must sit OUTSIDE fenced code blocks (a comment inside a fence
+# renders literally) — code-block lines naming a make target the adopter lacks
+# are pruned by prune_dead_make_lines instead.
+
+_MD_BLOCK = re.compile(r"^[ \t]*<!--\s*adopter-if:(\S+)\s+(start|end)\s*-->[ \t]*$")
+_HASH_BLOCK = re.compile(r"^[ \t]*#\s*adopter-if:(\S+)\s+(start|end)[ \t]*$")
+_MD_LINE = re.compile(r"[ \t]*<!--\s*adopter-if:(\S+)\s*-->[ \t]*$")
+
+
+def apply_markers(text: str, features: set[str], where: str) -> str:
+    out: list[str] = []
+    stack: list[tuple[str, int, bool]] = []
+    for n, line in enumerate(text.splitlines(keepends=True), 1):
+        body = line.rstrip("\n")
+        block = _MD_BLOCK.match(body) or _HASH_BLOCK.match(body)
+        if block:
+            expr, edge = block.group(1), block.group(2)
+            if edge == "start":
+                stack.append((expr, n, evaluate(expr, features, f"{where}:{n}")))
+            elif not stack or stack[-1][0] != expr:
+                raise SystemExit(f"scaffold: unbalanced `adopter-if:{expr} end` at {where}:{n}")
+            else:
+                stack.pop()
+            continue
+        if not all(keep for *_, keep in stack):
+            continue
+        marker = _MD_LINE.search(body)
+        if marker:
+            if not evaluate(marker.group(1), features, f"{where}:{n}"):
+                continue
+            line = body[: marker.start()] + ("\n" if line.endswith("\n") else "")
+        out.append(line)
+    if stack:
+        expr, n, _ = stack[-1]
+        raise SystemExit(f"scaffold: `adopter-if:{expr} start` at {where}:{n} is never closed")
+    return "".join(out)
+
+
+def text_files(root: Path):
+    """(path, text) for every UTF-8 text file under root (binary files skipped)."""
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            try:
+                yield path, path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+
+
+def process_markers(out: Path, features: set[str]) -> None:
+    for path, text in text_files(out):
+        if "adopter-if:" in text:
+            new = apply_markers(text, features, path.relative_to(out).as_posix())
+            if new != text:
+                path.write_text(new, encoding="utf-8")
+
+
+def makefile_targets(out: Path) -> set[str]:
+    path = out / "Makefile"
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    return set(re.findall(r"^([A-Za-z][\w-]*):(?!=)", text, re.M))
+
+
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
+
+
+def prune_dead_make_lines(text: str, targets: set[str]) -> str:
+    """In fenced code blocks, drop `make <t> …` lines whose targets this adopter
+    lacks (a partially-dead line keeps its live targets). HTML-comment markers
+    cannot fence lines INSIDE a code block, so command listings — AGENTS.md's
+    "Local development" block, the docs' walkthroughs — are pruned here."""
+    out: list[str] = []
+    fence: str | None = None
+    for line in text.splitlines(keepends=True):
+        opener = _FENCE.match(line)
+        if opener:
+            mark = opener.group(1)
+            if fence is None:
+                fence = mark
+            elif mark[0] == fence[0] and len(mark) >= len(fence):
+                fence = None
+            out.append(line)
+            continue
+        command = re.match(r"^(\s*)make\s+(.*)$", line.rstrip("\n")) if fence else None
+        if command:
+            words = re.split(r"(\s+)", command.group(2))
+            head: list[str] = []
+            for word in words:
+                if word.startswith("#") or word in ("&&", "||", ";", "\\"):
+                    break
+                head.append(word)
+            wanted = [w for w in head if w.strip() and "=" not in w]
+            dead = [w for w in wanted if w not in targets]
+            if dead and len(dead) == len(wanted):
+                continue
+            for word in dead:
+                line = re.sub(rf"(?<=\s){re.escape(word)}(?=\s|$)\s?", "", line, count=1)
+        out.append(line)
+    # A fence whose every line was pruned would render as an empty box.
+    return re.sub(r"^([ \t]*)(`{3,}|~{3,})[^\n]*\n\1\2[ \t]*\n\n?", "", "".join(out), flags=re.M)
+
+
+def relink_dropped_docs(out: Path, tracked: list[str], tag: str) -> None:
+    """Point references to docs this adopter does NOT carry at the template
+    repo's copy (FRAMEWORK.md at the framework repo's reference, at the pinned
+    tag), so nothing dangles when `docs` — or the MCP guide — was left out."""
+    dropped = sorted(
+        rel for rel in tracked
+        if rel.startswith("docs/") and rel.endswith(".md") and not (out / rel).exists()
+    )
+    if not dropped:
+        return
+    urls = {
+        rel: f"https://github.com/dediggibyte/datalab-framework/blob/{tag}/docs/FRAMEWORK.md"
+        if rel == "docs/FRAMEWORK.md" else f"{TEMPLATE_URL}/{rel}"
+        for rel in dropped
+    }
+    for path, text in text_files(out):
+        rel_file = path.relative_to(out).as_posix()
+        markdown = path.suffix in (".md", ".mdc")
+        new = text
+        for rel, url in urls.items():
+            name = rel.removeprefix("docs/")
+            esc = re.escape(rel)
+            def to_url(m: re.Match, url: str = url) -> str:
+                return f"]({url}{m.group(1) or ''})"
+
+            # link targets: ](docs/X.md#a), ](../docs/X.md) — and ](X.md) inside docs/
+            new = re.sub(rf"\]\((?:\.\./)?{esc}(#[^)\s]*)?\)", to_url, new)
+            if rel_file.startswith("docs/"):
+                new = re.sub(rf"\]\({re.escape(name)}(#[^)\s]*)?\)", to_url, new)
+            if markdown:
+                # a backticked mention that is not already link text becomes a link
+                new = re.sub(rf"(?<!\[)`{esc}`(?!\]\()", f"[`{rel}`]({url})", new)
+                # ...and so does a plain one (not inside a link, a URL or a code span)
+                new = re.sub(rf"(?<![\w/.`\[(-]){esc}(?![\w`\]])", f"[{rel}]({url})", new)
+            else:
+                new = re.sub(rf"(?<![\w/.`-]){esc}\b", url, new)
+        if new != text:
+            path.write_text(new, encoding="utf-8")
+
+
+# Tracked Claude settings carry ONLY read-only verification grants — the policy
+# scripts/check_agent_settings.py enforces. They are regenerated from the
+# adopter's own Makefile, so a grant for a target it lacks (or a personal /
+# write grant that slipped into the template's file) can never ship.
+READ_ONLY_TARGET = re.compile(r"^(help|lint|test|validate-configs|dry-run-local|check-[a-z-]+)$")
+
+
+def _drop_hooks(node, script: str):
+    """Remove every hook entry whose command runs `script`; drop matcher groups
+    left empty. Works on the Claude, Codex and Cursor hook-config shapes."""
+    if isinstance(node, dict):
+        return {k: _drop_hooks(v, script) for k, v in node.items()}
+    if isinstance(node, list):
+        kept = []
+        for item in node:
+            if isinstance(item, dict) and script in str(item.get("command", "")):
+                continue
+            item = _drop_hooks(item, script)
+            if isinstance(item, dict) and "hooks" in item and not item["hooks"]:
+                continue
+            kept.append(item)
+        return kept
+    return node
+
+
+def rewrite_agent_json(out: Path, sel: Selection, targets: set[str]) -> None:
+    order = ["help", "lint", "test", "validate-configs"]
+    read_only = order + sorted(t for t in targets if READ_ONLY_TARGET.match(t) and t not in order)
+    for rel in (".claude/settings.json", ".codex/hooks.json", ".cursor/hooks.json"):
+        path = out / rel
+        if not path.exists():
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if rel == ".claude/settings.json":
+            data.setdefault("permissions", {})["allow"] = [
+                f"Bash(make {t})" for t in read_only if t in targets
+            ]
+        if not sel.has("pr-template"):
+            data = _drop_hooks(data, "pr_template_guard.py")
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def template_commit() -> str:
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-C", str(REPO_ROOT), *args], capture_output=True,
+                              text=True, check=False).stdout.strip()
+
+    sha = git("rev-parse", "--short", "HEAD") or "unknown"
+    return sha + ("-dirty" if git("status", "--porcelain", "--untracked-files=no") else "")
+
+
+def validate_output(out: Path) -> None:
+    """Last line of defence before anything touches the destination."""
+    for path, text in text_files(out):
+        rel = path.relative_to(out).as_posix()
+        for n, line in enumerate(text.splitlines(), 1):
+            if _MD_BLOCK.match(line) or _HASH_BLOCK.match(line) or _MD_LINE.search(line):
+                raise SystemExit(f"scaffold: an adopter-if marker survived at {rel}:{n}")
+        if path.suffix == ".json" and not rel.startswith("sample_data/"):  # samples are NDJSON
+            try:
+                json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"scaffold: {rel} is not valid JSON after the conversion: {exc}") from exc
+    if shutil.which("make"):
+        probe = subprocess.run(["make", "-C", str(out), "-n", "help"], capture_output=True, text=True)
+        if probe.returncode:
+            raise SystemExit(f"scaffold: the generated Makefile does not parse:\n{probe.stderr}")
+
+
+# --------------------------------------------------------------------------- #
+# Answers — flags, an answers file, and the interactive form
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class Answers:
+    catalog: str
+    customer: str
+    description: str
+    repo: str
+    hosts: dict[str, str]
+    catalogs: dict[str, str]
+    warehouse_id: str
+    mcp_profile: str
+    deploy_sp: str
+    reader_group: str
+    engineer_group: str
+    admin_group: str
+    framework_tag: str
+    agents: list[str] = field(default_factory=lambda: list(AGENT_CHOICES))
+    components: list[str] = field(default_factory=default_components)
+
+    @property
+    def selection(self) -> Selection:
+        return Selection(self.agents, self.components)
+
+    def todos(self) -> list[str]:
+        values = {
+            "dev host": self.hosts["dev"], "stage host": self.hosts["stage"],
+            "prod host": self.hosts["prod"], "SQL warehouse id": self.warehouse_id,
+            "deploy SP": self.deploy_sp, "GitHub repo (OIDC subject)": self.repo,
+        }
+        return [label for label, value in values.items() if "<" in value]
+
+
+def default_description(customer: str) -> str:
+    return f"{customer} medallion lakehouse (bronze → silver → gold) on Databricks."
+
+
+def derived_defaults(catalog: str, repo_default: str, tag: str) -> dict:
+    customer = catalog.replace("_", " ").title()
+    return {
+        "customer": customer,
+        "description": default_description(customer),
+        "repo": repo_default,
+        "host": HOST_PLACEHOLDER,
+        "catalog_dev": catalog,
+        "catalog_stage": f"{catalog}_stage",
+        "catalog_prod": f"{catalog}_prod",
+        "warehouse_id": WAREHOUSE_PLACEHOLDER,
+        "mcp_profile": f"{catalog}_dev",
+        "deploy_sp": DEPLOY_SP_PLACEHOLDER,
+        "reader_group": f"{catalog}_readers",
+        "engineer_group": f"{catalog}_engineers",
+        "admin_group": f"{catalog}_admins",
+        "framework_tag": tag,
+        "agents": list(AGENT_CHOICES),
+        "components": default_components(),
+    }
+
+
+def _ok(value: str, pattern: str, what: str) -> tuple[bool, str]:
+    if "<" in value or re.fullmatch(pattern, value):
+        return True, ""
+    return False, what
+
+
+VALIDATORS = {
+    "host": lambda v: _ok(v, r"https://[^\s/]+(/[^\s]*)?", "use the full https://… workspace URL"),
+    "repo": lambda v: _ok(v, r"[\w.-]+/[\w.-]+", "use <owner>/<repo>, e.g. acme-corp/acme-datalab"),
+    "warehouse_id": lambda v: _ok(v, r"[A-Za-z0-9]+", "a SQL warehouse id is alphanumeric (e.g. 1a2b3c4d5e6f7a8b)"),
+    "deploy_sp": lambda v: _ok(
+        v, r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        "the deploy SP application id is a UUID"),
+    "group": lambda v: _ok(v, r"[\w][\w .@-]*", "letters, digits, spaces, _ . @ - only"),
+    "profile": lambda v: _ok(v, r"[\w.-]+", "a CLI profile name: letters, digits, _ . - only"),
+    "catalog_env": lambda v: _ok(v, CATALOG_RE.pattern.strip("^$"), "lowercase letters/digits/underscores"),
+    "text": lambda v: (bool(v.strip()) and "\n" not in v, "one non-empty line"),
+    "tag": lambda v: _ok(v, r"v\d+\.\d+\.\d+", "a vX.Y.Z framework release tag"),
+}
+
 
 def _prompt(label: str, default: str = "") -> str:
     suffix = f" [{default}]" if default else ""
@@ -1631,52 +3273,376 @@ def confirm(question: str) -> bool:
         return False
 
 
-def gather_interactive(args, default_tag: str) -> dict[str, str]:
-    """Prompt ONLY for the two irreducible values — catalog and host — and skip
-    even those when they were passed as flags. Everything else (warehouse id,
-    MCP profile, groups, deploy SP, framework tag) silently takes its flag value
-    or a derived default: a first-timer answers two questions, reviews one
-    summary, and the placeholders they left are printed as fill-before-deploy
-    TODOs at the end instead of blocking the conversion."""
-    print("\nConfigure this datalab adopter repo — two questions; everything else defaults.")
-    print("(Override any default later by re-running with flags, or fix the files directly.)\n")
-    catalog = args.catalog.strip()
+def ask(label: str, default: str, validator: str) -> str:
+    while True:
+        value = _prompt(label, default).strip()
+        ok, msg = VALIDATORS[validator](value)
+        if ok:
+            return value.rstrip("/") if validator == "host" else value
+        print(f"    ! {msg}")
+
+
+def toggle(title: str, choices: dict[str, str], selected: list[str], note: str = "") -> list[str]:
+    """A numbered checklist: type numbers to flip them, `all` / `none`, Enter to accept."""
+    names = list(choices)
+    picked = [n for n in names if n in selected]
+    while True:
+        print(f"\n  {title}" + (f"  ({note})" if note else ""))
+        for i, name in enumerate(names, 1):
+            print(f"    [{'x' if name in picked else ' '}] {i}. {name:<14} {choices[name]}")
+        try:
+            raw = input("  Toggle by number (e.g. 2 4), 'all', 'none', or Enter to accept: ").strip().lower()
+        except EOFError:
+            raw = ""
+        if not raw:
+            return picked
+        if raw in ("all", "none"):
+            picked = list(names) if raw == "all" else []
+            continue
+        for token in re.split(r"[\s,]+", raw):
+            if token.isdigit() and 1 <= int(token) <= len(names):
+                name = names[int(token) - 1]
+                picked = [n for n in names if (n in picked) != (n == name)]
+            elif token in names:
+                picked = [n for n in names if (n in picked) != (n == token)]
+            else:
+                print(f"    ! ignored {token!r}")
+
+
+def walk_form(fixed: dict, given: dict, args, repo_default: str, tag_default: str) -> dict:
+    """The interactive form. `fixed` (from flags) skips its question; `given`
+    (an answers file, or a previous pass through the form) prefills it."""
+
+    def pick(key: str, label: str, default: str, validator: str) -> str:
+        return fixed[key] if key in fixed else ask(label, given.get(key, default), validator)
+
+    print("\n  datalab adopter configurator — press Enter to accept a [default]; nothing is")
+    print("  written until you confirm the summary.")
+
+    print("\n  1/6  Customer & repo")
+    catalog = fixed.get("catalog") or ""
     while True:
         if not catalog:
-            catalog = _prompt("Base catalog / domain (lowercase, no _dev/_stage/_prod)")
+            catalog = _prompt("Base catalog / domain name (lowercase, no _dev/_stage/_prod)",
+                              given.get("catalog", ""))
         ok, msg = check_catalog(catalog, args.allow_env_suffix)
         if ok:
             break
         print(f"    ! {msg}\n")
         catalog = ""
-    host = args.host
-    if host == HOST_PLACEHOLDER:
-        host = _prompt("Databricks workspace host (https://…; Enter to fill in later)", host)
-    resolved = {
-        "catalog": catalog,
-        "host": host,
-        "warehouse_id": args.warehouse_id,
-        "mcp_profile": args.mcp_profile or f"{catalog}_dev",
-        "reader_group": args.reader_group or f"{catalog}_readers",
-        "engineer_group": args.engineer_group or f"{catalog}_engineers",
-        "admin_group": args.admin_group or f"{catalog}_admins",
-        "deploy_sp": args.deploy_sp,
-        "framework_tag": args.framework_tag or default_tag,
+    d = derived_defaults(catalog, repo_default, tag_default)
+    if given.get("catalog") not in (None, catalog):
+        given = {}  # a different catalog invalidates catalog-derived answers
+    r = {"catalog": catalog}
+    r["customer"] = pick("customer", "Customer display name", d["customer"], "text")
+    r["description"] = pick("description", "One-line description", default_description(r["customer"]), "text")
+    r["repo"] = pick("repo", "GitHub repo <owner>/<name> (the OIDC federation subject)", d["repo"], "repo")
+
+    print("\n  2/6  Workspace & environments  (targets/ · variables/)")
+    r["host"] = pick("host", "dev workspace host (https://…; Enter to fill in later)", d["host"], "host")
+    same_host = r["host"]
+    split = ("host_stage" in fixed or "host_prod" in fixed
+             or given.get("host_stage", same_host) != same_host
+             or given.get("host_prod", same_host) != same_host)
+    if not split and "host_stage" not in fixed:
+        split = confirm("  Do stage and prod live in DIFFERENT workspaces?")
+    r["host_stage"] = pick("host_stage", "stage workspace host", same_host, "host") if split else fixed.get("host_stage", same_host)
+    r["host_prod"] = pick("host_prod", "prod workspace host", same_host, "host") if split else fixed.get("host_prod", same_host)
+    envs = {e: given.get(f"catalog_{e}", d[f"catalog_{e}"]) for e in ENVIRONMENTS}
+    envs.update({e: fixed[f"catalog_{e}"] for e in ENVIRONMENTS if f"catalog_{e}" in fixed})
+    print("  Catalogs per environment: " + " · ".join(f"{e} → {c}" for e, c in envs.items()))
+    if confirm("  Change them?"):
+        for env in ENVIRONMENTS:
+            envs[env] = ask(f"{env} catalog", envs[env], "catalog_env")
+    r.update({f"catalog_{e}": c for e, c in envs.items()})
+    r["warehouse_id"] = pick("warehouse_id", "SQL warehouse id (UC bootstrap + MCP grounding)", d["warehouse_id"], "warehouse_id")
+    r["mcp_profile"] = pick("mcp_profile", "Databricks CLI profile for the dev workspace", d["mcp_profile"], "profile")
+    r["deploy_sp"] = pick("deploy_sp", "CI/CD deploy service principal application id", d["deploy_sp"], "deploy_sp")
+
+    print("\n  3/6  Access groups  (rbac.yml — ACCOUNT-level groups)")
+    for key, label in (("reader_group", "Reader group"), ("engineer_group", "Engineer group"),
+                       ("admin_group", "Admin group")):
+        r[key] = pick(key, label, d[key], "group")
+
+    print("\n  4/6  Coding agents  (each brings only its own harness; skills ship with any)")
+    r["agents"] = fixed.get("agents") or toggle(
+        "Which coding agents will this repo use?", AGENT_CHOICES, given.get("agents", d["agents"]))
+
+    print("\n  5/6  Optional components")
+    comps = fixed.get("components") or toggle(
+        "Which optional components should the repo carry?",
+        {k: v for k, (_, v) in COMPONENT_CHOICES.items()},
+        given.get("components", d["components"]),
+    )
+    if "mcp" in comps and not {"claude", "cursor"} & set(r["agents"]):
+        print("    note: mcp needs claude or cursor — it is dropped for this selection")
+    r["components"] = comps
+
+    print("\n  6/6  Framework")
+    r["framework_tag"] = pick("framework_tag", "datalab framework release tag", d["framework_tag"], "tag")
+    return r
+
+
+def to_answers(values: dict) -> Answers:
+    # Record what is actually applied: Selection drops a choice that cannot
+    # take effect (mcp without claude/cursor) and fixes the canonical order.
+    sel = Selection(list(values["agents"]), list(values["components"]))
+    values = {**values, "agents": sel.agents, "components": sel.components}
+    return Answers(
+        catalog=values["catalog"],
+        customer=values["customer"],
+        description=values["description"],
+        repo=values["repo"],
+        hosts={"dev": values["host"], "stage": values["host_stage"], "prod": values["host_prod"]},
+        catalogs={e: values[f"catalog_{e}"] for e in ENVIRONMENTS},
+        warehouse_id=values["warehouse_id"],
+        mcp_profile=values["mcp_profile"],
+        deploy_sp=values["deploy_sp"],
+        reader_group=values["reader_group"],
+        engineer_group=values["engineer_group"],
+        admin_group=values["admin_group"],
+        framework_tag=values["framework_tag"],
+        agents=list(values["agents"]),
+        components=list(values["components"]),
+    )
+
+
+def flatten(a: Answers) -> dict:
+    """The inverse of to_answers — the form's key space."""
+    flat = asdict(a)
+    hosts, catalogs = flat.pop("hosts"), flat.pop("catalogs")
+    flat.update({"host": hosts["dev"], "host_stage": hosts["stage"], "host_prod": hosts["prod"]})
+    flat.update({f"catalog_{e}": catalogs[e] for e in ENVIRONMENTS})
+    return flat
+
+
+def load_answers_file(path: str) -> dict:
+    """An answers file: a previous run's .datalab-adopter.json, or a bare
+    `answers` object in the same shape (as written by --answers-out)."""
+    try:
+        data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"scaffold: cannot read answers file {path}: {exc}") from exc
+    data = data.get("answers", data)
+    known = {f.name for f in Answers.__dataclass_fields__.values()}
+    unknown = set(data) - known
+    if unknown:
+        raise SystemExit(f"scaffold: unknown key(s) in answers file {path}: {', '.join(sorted(unknown))}")
+    flat = dict(data)
+    for env, host in (flat.pop("hosts", None) or {}).items():
+        flat["host" if env == "dev" else f"host_{env}"] = host
+    for env, cat in (flat.pop("catalogs", None) or {}).items():
+        flat[f"catalog_{env}"] = cat
+    return flat
+
+
+FLAG_KEYS = {
+    "catalog": "catalog", "customer": "customer", "description": "description", "repo": "repo",
+    "host": "host", "host_stage": "host_stage", "host_prod": "host_prod",
+    "catalog_dev": "catalog_dev", "catalog_stage": "catalog_stage", "catalog_prod": "catalog_prod",
+    "warehouse_id": "warehouse_id", "mcp_profile": "mcp_profile", "deploy_sp": "deploy_sp",
+    "reader_group": "reader_group", "engineer_group": "engineer_group",
+    "admin_group": "admin_group", "framework_tag": "framework_tag",
+}
+
+
+def resolve_answers(args, repo_default: str, tag_default: str) -> Answers:
+    given = load_answers_file(args.answers) if args.answers else {}
+    fixed = {key: getattr(args, attr).strip() for attr, key in FLAG_KEYS.items()
+             if getattr(args, attr) not in (None, "")}
+    if args.agents is not None:
+        fixed["agents"] = parse_choice_list(args.agents, AGENT_CHOICES, list(AGENT_CHOICES), "agent")
+    if args.components is not None:
+        fixed["components"] = parse_choice_list(
+            args.components, COMPONENT_CHOICES, given.get("components", default_components()), "component")
+
+    if args.interactive:
+        while True:
+            values = walk_form(fixed, given, args, repo_default, tag_default)
+            answers = to_answers(values)
+            print_summary(answers)
+            try:
+                choice = input("\nApply this configuration? [y]es / [e]dit answers / [N]o: ").strip().lower()
+            except EOFError:
+                choice = ""
+            if choice in ("y", "yes"):
+                return answers
+            if choice in ("e", "edit"):
+                given = {**flatten(answers)}
+                fixed = {k: v for k, v in fixed.items() if k == "catalog"}
+                continue
+            raise SystemExit("scaffold: aborted at confirmation — nothing was written.")
+
+    catalog = fixed.get("catalog") or given.get("catalog", "")
+    ok, msg = check_catalog(catalog, args.allow_env_suffix)
+    if not ok:
+        raise SystemExit(f"scaffold: --catalog (or the answers file): {msg}")
+    values = {**derived_defaults(catalog, repo_default, tag_default), **given, **fixed, "catalog": catalog}
+    if "description" not in given and "description" not in fixed:
+        values["description"] = default_description(values["customer"])
+    values.setdefault("host_stage", values["host"])
+    values.setdefault("host_prod", values["host"])
+    for key, validator in (("host", "host"), ("host_stage", "host"), ("host_prod", "host"),
+                           ("repo", "repo"), ("warehouse_id", "warehouse_id"),
+                           ("deploy_sp", "deploy_sp"), ("mcp_profile", "profile"),
+                           ("reader_group", "group"), ("engineer_group", "group"),
+                           ("admin_group", "group"), ("catalog_dev", "catalog_env"),
+                           ("catalog_stage", "catalog_env"), ("catalog_prod", "catalog_env"),
+                           ("customer", "text"), ("description", "text")):
+        ok, msg = VALIDATORS[validator](str(values[key]))
+        if not ok:
+            raise SystemExit(f"scaffold: {key} = {values[key]!r}: {msg}")
+    for key in ("host", "host_stage", "host_prod"):
+        values[key] = values[key].rstrip("/")
+    return to_answers(values)
+
+
+def shipping_plan(sel: Selection, tracked: list[str]) -> tuple[list[str], list[str]]:
+    """(kept, left-out) at a glance: top-level entries, plus the finer
+    PATH_RULES a selection turns off inside an entry that does ship."""
+    feats = sel.features
+    kept: list[str] = []
+    left: list[str] = []
+    for top in sorted({rel.split("/", 1)[0] for rel in tracked}):
+        rule = TOP_LEVEL[top]
+        if rule == "template":
+            continue
+        if rule == "keep" or evaluate(rule, feats):
+            kept.append(top)
+        else:
+            left.append(f"{top} [{rule}]")
+    if sel.has("design"):
+        kept.append("design (generated)")
+    for path, expr in PATH_RULES:
+        top = path.split("/", 1)[0]
+        if expr != "template" and top in kept and not evaluate(expr, feats):
+            left.append(f"{path} [{expr}]")
+    return kept, left
+
+
+def print_summary(a: Answers, tracked: list[str] | None = None) -> None:
+    sel = a.selection
+    rows = [
+        ("catalog", f"{a.catalog}  (dev {a.catalogs['dev']} · stage {a.catalogs['stage']} · prod {a.catalogs['prod']})"),
+        ("customer", f"{a.customer} — {a.description}"),
+        ("GitHub repo", a.repo),
+        ("hosts", " · ".join(f"{e} {a.hosts[e]}" for e in ENVIRONMENTS)),
+        ("warehouse id", a.warehouse_id),
+        ("CLI profile", a.mcp_profile),
+        ("deploy SP", a.deploy_sp),
+        ("groups", f"{a.reader_group} / {a.engineer_group} / {a.admin_group}"),
+        ("framework", a.framework_tag),
+        ("coding agents", ", ".join(sel.agents) or "none"),
+        ("components", ", ".join(sel.components) or "none"),
+    ]
+    print("\n  Summary")
+    for key, value in rows:
+        print(f"    {key:<14} {value}")
+    kept, left = shipping_plan(sel, tracked or tracked_files())
+    print("\n    ships        " + ", ".join(kept))
+    if left:
+        print("    left out     " + ", ".join(left))
+    print("    never        projects/, omnigent/, the scaffold tooling (template-only)")
+    if a.todos():
+        print("    TODO         placeholders to fill before deploy: " + ", ".join(a.todos()))
+
+
+# --------------------------------------------------------------------------- #
+# Build + apply
+# --------------------------------------------------------------------------- #
+
+def context(a: Answers) -> dict[str, str]:
+    sel = a.selection
+    return {
+        "@@CATALOG_DEV@@": a.catalogs["dev"],
+        "@@CATALOG_STAGE@@": a.catalogs["stage"],
+        "@@CATALOG_PROD@@": a.catalogs["prod"],
+        "@@CATALOG@@": a.catalog,
+        "@@CUSTOMER@@": a.customer,
+        "@@DESCRIPTION@@": a.description,
+        "@@HOST_STAGE@@": a.hosts["stage"],
+        "@@HOST_PROD@@": a.hosts["prod"],
+        "@@HOST@@": a.hosts["dev"],
+        "@@FRAMEWORK_TAG@@": a.framework_tag,
+        "@@DATALAB_VERSION@@": a.framework_tag.lstrip("v"),
+        "@@READER_GROUP@@": a.reader_group,
+        "@@ENGINEER_GROUP@@": a.engineer_group,
+        "@@ADMIN_GROUP@@": a.admin_group,
+        "@@DEPLOY_SP@@": a.deploy_sp,
+        "@@WAREHOUSE_ID@@": a.warehouse_id,
+        "@@MCP_PROFILE@@": a.mcp_profile,
+        "@@TEMPLATE_URL@@": TEMPLATE_URL,
+        "@@AGENTS_LIST@@": ", ".join(sel.agents) or "none",
+        "@@COMPONENTS_LIST@@": ", ".join(sel.components) or "none",
     }
-    print("\n  Summary (defaults are fine; <placeholders> become TODOs to fill before deploy):")
-    for key, value in resolved.items():
-        print(f"    {key:14} {value}")
-    if not confirm("\nApply this configuration?"):
-        raise SystemExit(
-            "scaffold: aborted at confirmation. To change a defaulted value, re-run with "
-            "its flag, e.g. make configure-adopter CATALOG=acme WAREHOUSE_ID=<id> DEPLOY_SP=<app-id>"
-        )
-    return resolved
 
 
-# --------------------------------------------------------------------------- #
-# Entry point
-# --------------------------------------------------------------------------- #
+def build(stage: Path, tracked: list[str], a: Answers) -> None:
+    """Assemble the whole adopter in `stage` (a scratch dir)."""
+    sel = a.selection
+    ctx = context(a)
+
+    def subst(text: str) -> str:
+        for key, value in ctx.items():
+            text = text.replace(key, value)
+        return text
+
+    def subst_xml(text: str) -> str:
+        # draw.io cells are html=1: escape for HTML first (a placeholder host
+        # like https://<your-workspace-host> would render as an empty tag), then
+        # for the XML attribute that carries it.
+        from html import escape as html_escape
+        from xml.sax.saxutils import escape
+
+        for key, value in ctx.items():
+            text = text.replace(key, escape(html_escape(value, quote=False), {'"': "&quot;"}))
+        return text
+
+    copy_selected(stage, tracked, sel.features)
+    write_domain(stage, ctx, subst, sel)
+    write_repo_level(stage, subst, sel)
+    if sel.has("design"):
+        write_design(stage, ctx, subst, subst_xml)
+    # Patches run on the COMPLETE template text (every anchor is still there);
+    # the adopter-if regions are resolved afterwards.
+    patch_makefile(stage, a.catalog)
+    patch_bootstrap_uc(stage, a.catalog, ctx)
+    patch_domains(stage, a.catalog)
+    patch_rbac(stage, ctx)
+    patch_ci(stage)
+    patch_cd(stage, a.catalog)
+    patch_cicd_docs(stage, ctx, a.repo)
+    patch_agents_md(stage, a.catalog, subst, sel)
+    patch_mcp(stage, ctx)
+    patch_doc_regions(stage, subst, sel)
+    localize_docs(stage, a)
+    patch_agent_mcp(stage, ctx)
+    patch_cursor_rules(stage, a.catalog, sel)
+    patch_skills(stage, subst)
+    conditional_edits(stage, sel)
+    if sel.has("mcp"):
+        narrow_mcp_docs(stage, sel)
+    patch_codeowners(stage)
+    patch_dependabot(stage)
+    patch_workflow_comments(stage)
+    process_markers(stage, sel.features)
+    targets = makefile_targets(stage)
+    for path, text in text_files(stage):
+        if path.suffix in (".md", ".mdc"):
+            pruned = prune_dead_make_lines(text, targets)
+            if pruned != text:
+                path.write_text(pruned, encoding="utf-8")
+    relink_dropped_docs(stage, tracked, a.framework_tag)
+    pin_framework_doc_links(stage, a.framework_tag)
+    rewrite_agent_json(stage, sel, targets)
+    mirror_claude_skills(stage)
+    (stage / MANIFEST).write_text(json.dumps({
+        "generated_by": f"{TEMPLATE_SLUG} scripts/scaffold_adopter.py",
+        "template_commit": template_commit(),
+        "answers": asdict(a),
+    }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    validate_output(stage)
+
 
 def pin_framework_doc_links(out: Path, tag: str) -> None:
     """Point every framework-repo link in the generated repo at ITS pinned tag
@@ -1688,33 +3654,95 @@ def pin_framework_doc_links(out: Path, tag: str) -> None:
     pin_framework_links(tracked_text_files(out), tag)
 
 
-def main(argv: list[str] | None = None) -> int:
+def staged_files(stage: Path) -> list[str]:
+    return sorted(p.relative_to(stage).as_posix() for p in stage.rglob("*") if p.is_file())
+
+
+def apply_in_place(stage: Path, tracked: list[str]) -> None:
+    """Make the clone match the staged adopter. Only runs after build() fully
+    succeeded, so a failure can never leave a half-converted clone."""
+    staged = set(staged_files(stage))
+    for rel in tracked:
+        if rel not in staged:
+            (REPO_ROOT / rel).unlink(missing_ok=True)
+    for top, rule in TOP_LEVEL.items():  # template-only entries go wholesale
+        target = REPO_ROOT / top
+        if rule == "template" and target.is_dir():
+            shutil.rmtree(target)
+        elif rule == "template" and target.exists():
+            target.unlink()
+    for rel in sorted(staged):
+        dest = REPO_ROOT / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(stage / rel, dest)
+    for rel in tracked:  # prune directories the dropped files leave empty
+        parent = (REPO_ROOT / rel).parent
+        while parent != REPO_ROOT and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+
+
+# --------------------------------------------------------------------------- #
+# Entry point
+# --------------------------------------------------------------------------- #
+
+def parse_args(argv: list[str] | None):
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--catalog", default="", help="base catalog / domain name (lowercase, no env suffix)")
-    parser.add_argument("--out", default="", help="output dir for a fresh sibling repo (omit with --in-place)")
-    parser.add_argument("--in-place", action="store_true", help="convert THIS repo (a template clone) in place")
-    parser.add_argument("--interactive", action="store_true", help="prompt for catalog + host (skipped when passed as flags) and confirm a summary; everything else defaults")
-    parser.add_argument("--host", default=HOST_PLACEHOLDER, help="Databricks workspace URL")
-    parser.add_argument("--warehouse-id", default="<sql-warehouse-id>", help="SQL warehouse id for the MCP grounding config")
-    parser.add_argument("--mcp-profile", default="", help="Databricks CLI profile for MCP auth (default: <catalog>_dev)")
-    parser.add_argument("--deploy-sp", default="<deploy-sp-app-id>", help="CI/CD deploy SP application id")
-    parser.add_argument("--reader-group", default="", help="reader group (default: <catalog>_readers)")
-    parser.add_argument("--engineer-group", default="", help="engineer group (default: <catalog>_engineers)")
-    parser.add_argument("--admin-group", default="", help="admin group (default: <catalog>_admins)")
-    parser.add_argument("--framework-tag", default="", help="datalab framework tag (default: this repo's pin)")
-    parser.add_argument("--allow-env-suffix", action="store_true", help="permit a catalog ending in _dev/_stage/_prod")
-    parser.add_argument("--force", action="store_true", help="overwrite a non-empty --out; or bypass the in-place template guard")
-    parser.add_argument("--yes", "-y", action="store_true", help="skip the in-place destructive confirmation (agent/CI)")
+    mode = parser.add_argument_group("mode")
+    mode.add_argument("--in-place", action="store_true", help="convert THIS repo (a template clone) in place")
+    mode.add_argument("--out", default="", help="output dir for a fresh sibling repo")
+    mode.add_argument("--interactive", action="store_true", help="walk the form (flags skip their questions) and confirm a summary")
+    mode.add_argument("--yes", "-y", action="store_true", help="non-interactive: no prompts, no confirmation (agent/CI)")
+    mode.add_argument("--answers", default="", help="replay answers from a .datalab-adopter.json (flags override)")
+    mode.add_argument("--force", action="store_true", help="overwrite a non-empty --out; or bypass the in-place template guard")
+    mode.add_argument("--no-doc-check", action="store_true", help="report dangling doc references as warnings instead of failing")
+    ident = parser.add_argument_group("identity")
+    ident.add_argument("--catalog", default=None, help="base catalog / domain name (lowercase, no env suffix)")
+    ident.add_argument("--customer", default=None, help="customer display name (default: from the catalog)")
+    ident.add_argument("--description", default=None, help="one-line description of this repo's data product")
+    ident.add_argument("--repo", default=None, help="GitHub <owner>/<repo> for the OIDC subject (default: git origin)")
+    ident.add_argument("--allow-env-suffix", action="store_true", help="permit a catalog ending in _dev/_stage/_prod")
+    ws = parser.add_argument_group("workspace & environments")
+    ws.add_argument("--host", default=None, help="dev Databricks workspace URL")
+    ws.add_argument("--host-stage", default=None, help="stage workspace URL (default: the dev host)")
+    ws.add_argument("--host-prod", default=None, help="prod workspace URL (default: the dev host)")
+    ws.add_argument("--catalog-dev", default=None, help="dev catalog (default: <catalog>)")
+    ws.add_argument("--catalog-stage", default=None, help="stage catalog (default: <catalog>_stage)")
+    ws.add_argument("--catalog-prod", default=None, help="prod catalog (default: <catalog>_prod)")
+    ws.add_argument("--warehouse-id", default=None, help="SQL warehouse id (UC bootstrap + MCP grounding)")
+    ws.add_argument("--mcp-profile", default=None, help="Databricks CLI profile for dev (default: <catalog>_dev)")
+    ws.add_argument("--deploy-sp", default=None, help="CI/CD deploy SP application id")
+    acc = parser.add_argument_group("access")
+    acc.add_argument("--reader-group", default=None, help="reader group (default: <catalog>_readers)")
+    acc.add_argument("--engineer-group", default=None, help="engineer group (default: <catalog>_engineers)")
+    acc.add_argument("--admin-group", default=None, help="admin group (default: <catalog>_admins)")
+    sel = parser.add_argument_group("selection")
+    sel.add_argument("--agents", default=None,
+                     help=f"coding agents: {','.join(AGENT_CHOICES)} | all | none (default: all)")
+    sel.add_argument("--components", default=None,
+                     help=f"components: {','.join(COMPONENT_CHOICES)} | all | none | default, or "
+                          "+x/-x edits of the defaults (default: " + ",".join(default_components()) + ")")
+    sel.add_argument("--framework-tag", default=None, help="datalab framework tag (default: this repo's pin)")
     args = parser.parse_args(argv)
-
     if args.in_place and args.out:
         parser.error("--in-place and --out are mutually exclusive")
     if not args.in_place and not args.out:
         parser.error("pass --out <dir> for a fresh sibling repo, or --in-place to convert this clone")
+    if args.interactive and args.yes:
+        parser.error("--interactive and --yes are mutually exclusive")
+    if args.interactive and not sys.stdin.isatty():
+        parser.error("--interactive needs a terminal; pass values as flags (or --answers) with --yes")
+    return parser, args
 
-    # Resolve the target dir + guard early, before any prompting.
+
+def main(argv: list[str] | None = None) -> int:
+    parser, args = parse_args(argv)
+    ensure_template_layout()
+    tracked = tracked_files()
+    check_rules(tracked)
+
     if args.in_place:
         out = REPO_ROOT
         slug = repo_slug(out)
@@ -1727,98 +3755,53 @@ def main(argv: list[str] | None = None) -> int:
         out = Path(args.out).expanduser().resolve()
         if out == REPO_ROOT:
             parser.error("--out must not be this repo (use --in-place to convert it)")
+        if out.exists() and any(out.iterdir()) and not args.force:
+            parser.error(f"{out} exists and is not empty (use --force to overwrite)")
+        slug = ""
+    repo_default = slug if slug and slug != TEMPLATE_SLUG else REPO_PLACEHOLDER
 
-    default_tag = args.framework_tag or framework_tag()
-    if args.interactive:
-        if not sys.stdin.isatty():
-            parser.error("--interactive needs a terminal; pass values as flags for non-interactive use")
-        r = gather_interactive(args, default_tag)
-    else:
-        ok, msg = check_catalog(args.catalog, args.allow_env_suffix)
-        if not ok:
-            parser.error(f"--catalog: {msg}")
-        cat = args.catalog.strip()
-        r = {
-            "catalog": cat,
-            "host": args.host,
-            "warehouse_id": args.warehouse_id,
-            "mcp_profile": args.mcp_profile or f"{cat}_dev",
-            "reader_group": args.reader_group or f"{cat}_readers",
-            "engineer_group": args.engineer_group or f"{cat}_engineers",
-            "admin_group": args.admin_group or f"{cat}_admins",
-            "deploy_sp": args.deploy_sp,
-            "framework_tag": default_tag,
-        }
-
-    catalog, tag = r["catalog"], r["framework_tag"]
-    if not re.match(r"^v\d+\.\d+\.\d+$", tag):
+    answers = resolve_answers(args, repo_default, args.framework_tag or framework_tag())
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", answers.framework_tag):
         raise SystemExit(
-            f"scaffold: framework tag {tag!r} is not a vX.Y.Z release tag. var.datalab_version "
-            "becomes the Volume wheel FILENAME (datalab-<version>-py3-none-any.whl), so a "
-            "branch/rev pin (e.g. 'main') would never match the wheel publish_wheel builds. "
-            "Pass --framework-tag v<x.y.z>."
+            f"scaffold: framework tag {answers.framework_tag!r} is not a vX.Y.Z release tag. "
+            "var.datalab_version becomes the Volume wheel FILENAME "
+            "(datalab-<version>-py3-none-any.whl), so a branch/rev pin (e.g. 'main') would "
+            "never match the wheel publish_wheel builds. Pass --framework-tag v<x.y.z>."
         )
-    ctx = {
-        "@@CATALOG@@": catalog,
-        "@@HOST@@": r["host"],
-        "@@FRAMEWORK_TAG@@": tag,
-        "@@DATALAB_VERSION@@": tag.lstrip("v"),
-        "@@READER_GROUP@@": r["reader_group"],
-        "@@ENGINEER_GROUP@@": r["engineer_group"],
-        "@@ADMIN_GROUP@@": r["admin_group"],
-        "@@DEPLOY_SP@@": r["deploy_sp"],
-        "@@WAREHOUSE_ID@@": r["warehouse_id"],
-        "@@MCP_PROFILE@@": r["mcp_profile"],
-    }
-
-    def subst(text: str) -> str:
-        for key, value in ctx.items():
-            text = text.replace(key, value)
-        return text
-
-    if args.in_place:
-        print(f"scaffold: configuring '{catalog}' adopter IN PLACE at {out}")
-        print("  removing: " + ", ".join(sorted(EXCLUDE_TOP)) + "; rewriting repo-level files")
-        if not (args.yes or args.interactive):  # interactive already confirmed via the summary
+    if not args.interactive:
+        print_summary(answers, tracked)
+        if args.in_place and not args.yes:
             if not sys.stdin.isatty():
                 parser.error("--in-place needs --yes (or --interactive) for non-interactive use")
-            if not confirm("Proceed? This rewrites the current repo in place."):
-                raise SystemExit("scaffold: aborted")
-        drop_reference_material(out)
-    else:
-        if out.exists() and any(out.iterdir()):
-            if not args.force:
-                parser.error(f"{out} exists and is not empty (use --force to overwrite)")
-            shutil.rmtree(out)
-        out.mkdir(parents=True, exist_ok=True)
-        print(f"scaffold: generating '{catalog}' adopter repo at {out}")
-        copy_scaffold(out)
+            if not confirm("\nProceed? This rewrites the current repo in place."):
+                raise SystemExit("scaffold: aborted — nothing was written.")
 
-    remove_template_only_paths(out)
-    write_domain(out, ctx, subst)
-    write_repo_level(out, subst)
-    patch_makefile(out, catalog)
-    patch_bootstrap_uc(out, catalog, ctx)
-    patch_domains(out, catalog)
-    patch_rbac(out, ctx)
-    patch_ci(out)
-    patch_cd(out, catalog)
-    slug = repo_slug(out) if args.in_place else ""
-    patch_cicd_docs(out, ctx, slug if slug and slug != TEMPLATE_SLUG else "<owner>/<repo>")
-    patch_agents_md(out, catalog, subst)
-    patch_databricksignore(out)
-    patch_mcp(out, ctx)
-    # The rest of the surfaces an adopter actually reads: the remaining docs,
-    # the Cursor rule file, the two domain-aware skills, CODEOWNERS, dependabot
-    # and the stale workflow headers.
-    patch_doc_regions(out, subst)
-    patch_agent_mcp(out, ctx)
-    patch_cursor_rules(out, catalog)
-    patch_skills(out, subst)
-    patch_codeowners(out)
-    patch_dependabot(out)
-    patch_workflow_comments(out)
-    pin_framework_doc_links(out, tag)
+    with tempfile.TemporaryDirectory(prefix="datalab-adopter-") as tmp:
+        stage = Path(tmp) / "repo"
+        stage.mkdir()
+        print(f"\nscaffold: building the '{answers.catalog}' adopter in a scratch dir …")
+        build(stage, tracked, answers)
+        import check_adopter_docs  # template-only checker, same scripts/ dir
+
+        problems = check_adopter_docs.collect_problems(stage, template_root=REPO_ROOT)
+        if problems:
+            print("\nscaffold: the generated docs still point at material this repo does not have:",
+                  file=sys.stderr)
+            for problem in problems:
+                print(f"  - {problem}", file=sys.stderr)
+            if not args.no_doc_check:
+                raise SystemExit(
+                    "scaffold: nothing was written. This is a template gap — please report it; "
+                    "--no-doc-check downgrades it to this warning."
+                )
+        if args.in_place:
+            print(f"scaffold: converting {out} in place")
+            apply_in_place(stage, tracked)
+        else:
+            if out.exists():
+                shutil.rmtree(out)
+            shutil.copytree(stage, out)
+            print(f"scaffold: generated {out}")
 
     print("scaffold: done. Next:")
     if args.in_place:
@@ -1828,13 +3811,9 @@ def main(argv: list[str] | None = None) -> int:
         print("  make validate-configs lint test")
     print("  # then follow docs/NEW_ADOPTER.md — the ordered first-deploy checklist")
     print("  # (GitHub wiring, account-level groups, bootstrap-uc, publish-wheel, deploy)")
-    todos = [
-        label
-        for label, value in (("host", r["host"]), ("deploy SP", r["deploy_sp"]), ("warehouse id", r["warehouse_id"]))
-        if "<" in value
-    ]
-    if todos:
-        print(f"  NOTE: still placeholders — fill before deploy: {', '.join(todos)}.")
+    if answers.todos():
+        print(f"  NOTE: still placeholders — fill before deploy: {', '.join(answers.todos())}.")
+    print(f"  Answers recorded in {MANIFEST} (replay: make new-adopter OUT=<dir> ANSWERS=<it>).")
     return 0
 
 

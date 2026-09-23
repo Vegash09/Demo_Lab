@@ -34,24 +34,37 @@ PROTECTED: list[tuple[str, str]] = [
      "dataset configs — the deployed pipeline definition (validate: make validate-configs)"),
     (r"^\.github/(workflows|actions)/.*",
      "CI/CD pipeline (GitHub OIDC federation, bundle deploy)"),
+    # Entries fenced `# adopter-if:<feature>` are dropped from generated adopters
+    # that did not choose the feature — the same rows as AGENTS.md's table and
+    # .githooks/pre-commit's PATTERNS, so the three stay aligned there too.
+    # adopter-if:pr-template start
     (r"^\.github/pull_request_template\.md$",
      "unified pull-request template (one format for all PRs)"),
+    # adopter-if:pr-template end
     (r"^\.claude/(settings\.json|hooks/.*|skills/.*)",
      "coding-agent harness config (hooks, settings, + the GENERATED .claude/skills copy)"),
     (r"^\.cursor/(rules|hooks)/.*|^\.cursor/hooks\.json$",
      "Cursor rules + agent hooks (incl. the gh-pr-create template guard)"),
     (r"^\.codex/hooks\.json$|^\.agents/skills/.*",
      "Codex hooks.json + .agents/skills (the CANONICAL authored agent-skills source)"),
+    # adopter-if:agent-claude start
     (r"^scripts/sync_skills\.py$",
      "agent-skills sync generator — canonical (.agents/skills) → .claude/skills copy contract"),
+    # adopter-if:agent-claude end
     (r"^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs|check_agent_settings|check_framework_current|check_framework_surface)\.py$",
      "repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check"),
+    # adopter-if:schemas start
     (r"^schemas/.*\.json$",
      "vendored editor schemas — GENERATED from the pinned framework (make sync-schemas), never hand-edited"),
+    # adopter-if:schemas end
+    # adopter-if:mcp start
     (r"^\.mcp\.json$|^\.cursor/mcp\.json$",
      "opt-in MCP server config (agent↔Databricks read-only query connection)"),
+    # adopter-if:mcp end
+    # adopter-if:githooks start
     (r"^\.githooks/.*",
      "git pre-commit guard (human-side counterpart to this hook)"),
+    # adopter-if:githooks end
     (r"^Makefile$",
      "developer + CI entrypoints"),
     (r"^\.env(\..*)?$",

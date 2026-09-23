@@ -4,7 +4,7 @@
 
   Keep the `datalab-pr-template` marker comment above. It is required by:
     * CI     — .github/workflows/pr-template-check.yml
-    * agents — .cursor/hooks.json + .claude/settings.json (gh pr create guard)
+    * agents — the PR-creation guard hook each configured coding agent runs
   so every PR shares ONE format. Fill in each section and delete the guidance
   comments. Do not add or remove top-level (`##`) sections.
 -->

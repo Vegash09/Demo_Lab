@@ -40,6 +40,33 @@ opens the bump PR automatically; then `make publish-wheel`.
   repo couldn't use yet): `make bump-framework` re-pins them, `make
   check-lockstep` fails on drift, and the scaffold pins a generated adopter's
   links to ITS `--framework-tag`.
+- **Adopter repos carry only what the customer chooses.** The configurator
+  (`make configure-adopter` / `make new-adopter`, `scripts/scaffold_adopter.py`)
+  now asks — in a short interactive form, or via flags / make variables — which
+  **coding agents** the repo uses (`claude`, `codex`, `cursor`, `genie`, or
+  none) and which **optional components** it carries (`docs`, `design`,
+  `schemas`, `local-dev`, `githooks`, `pr-template`, `dependabot`,
+  `framework-bot`, `mcp`), plus per-target workspace hosts and catalogs, the
+  customer's display name / description and the GitHub repo (OIDC subject). A
+  dropped choice takes its files, make targets, CI steps and doc passages with
+  it: file ownership is declared once (`TOP_LEVEL` + `PATH_RULES` — an
+  unclassified new top-level entry fails the scaffold), passages are fenced
+  with `adopter-if:<feature>` markers in the shared files. The confirmed
+  answers are recorded in the adopter's `.datalab-adopter.json`, and
+  `ANSWERS=<file>` replays them byte for byte (flags override).
+- **A design package generated for the customer** (`design` component):
+  `design/OVERVIEW.md`, a starter implementation diagram following the
+  `maintain-design-diagram` band conventions, the framework design spec, and
+  **`design/PIPELINES.md`** — rendered from the `config/` artifacts by the new
+  `scripts/design_inventory.py` (`make design`), so it tracks the pipelines as
+  they grow; `make check-design` gates CI. This repo now carries its own
+  `design/PIPELINES.md` for the reference domains too.
+- Docs in an adopter are re-cast for the customer: NAMING's config-tree and
+  environment tables, ARCHITECTURE's system / lanes / data-view diagrams and
+  environment table use the adopter's own catalog, per-target catalogs and
+  workspaces; the template-facing sections become "this repo was generated"
+  notes. Without the `docs` component, every doc reference is relinked to this
+  repo's copy.
 - **`make check-agent-settings`** (CI + pre-commit) — fails if a COMMITTED
   agent-harness config (`.claude/settings.json`, `.cursor/hooks.json`,
   `.codex/hooks.json`) contains a machine-specific absolute path, or a hook
@@ -57,6 +84,36 @@ opens the bump PR automatically; then `make publish-wheel`.
   Attribution is checked per paragraph, not per line. No-ops in this repo.
 
 ### Fixed
+- **`make configure-adopter` can no longer wreck an adopter.** Re-run inside an
+  already-generated repo it overwrote `pyproject.toml`, `databricks.yml`,
+  `targets/`, `variables/`, README and CHANGELOG, added a second domain, and
+  only then crashed on a missing template anchor. The engine now builds the
+  whole adopter in a scratch dir and writes nothing unless every patch and the
+  doc check pass, refuses any repo without `projects/`, and the scaffold
+  tooling is template-only (never shipped to adopters).
+- **Adopter details that were silently wrong:** `make help` advertised the
+  template's `customer_sales_etl` as the default pipeline; AGENTS.md, the
+  deploy skill and NAMING/ARCHITECTURE/AGENT_MCP/ADOPTING docs kept
+  `customer_sales` examples, the stale `CATALOGS` dict and a `ci-cd-{dev,stage,prod}`
+  workflow that no longer exists; `.databricksignore` shipped a garbled comment
+  (line-based filtering cut a sentence in half) — it is now generated from the
+  same list as `sync.exclude`; `.gitattributes` shipped design-only rules to
+  repos without `design/`; `scripts/README.md` described removed dicts and
+  listed 4 of 16 scripts; stage/prod always got the dev host (now asked per
+  target); the sibling path could never set the OIDC subject (`--repo`).
+- **`make check-adopter-docs` catches what it used to miss** — it now runs from
+  the template against a generated repo and flags any reference to a path, doc
+  or `make` target the repo does not have (not just `projects/`), plus
+  `customer_sales` leftovers.
+- **Tracked agent settings shipped a write grant.** `.claude/settings.json`
+  carried `Bash(PROTECTED_EDIT_OK=1 git commit …)` (a commit that skips the
+  protected-files guard) into every adopter. Removed; `check-agent-settings`
+  now rejects any tracked grant that is not a read-only `make` target, and the
+  adopter's allow-list is regenerated from its own Makefile.
+- **The framework-bump bot runs only the gates an adopter has.** Its gate list
+  is fenced per component (a dropped component's `make` target would fail the
+  loop and turn every bump PR into a draft), and the PR body names `schemas/`
+  and the authoring skill only when the repo carries them.
 - **Framework bumps worked only sometimes.** Root causes found in the bot's run
   history: jobs refused by GitHub billing ("recent account payments have
   failed or your spending limit needs to be increased", 2026-08-31 and

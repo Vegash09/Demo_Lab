@@ -11,19 +11,19 @@ UV     ?= uv
 TARGET ?= dev
 
 .DEFAULT_GOAL := help
+# Optional sections declare their OWN .PHONY targets next to their rules and are
+# fenced `# adopter-if:<feature> start/end`: the adopter scaffold
+# (scripts/scaffold_adopter.py) drops a section whose feature the new repo did
+# not choose, declaration included. In this repo every section is live.
 .PHONY: help install lock lint fmt test validate-configs validate \
-        deploy run destroy publish-wheel bootstrap-uc enable-githooks \
-        commit-protected clean sync-skills check-skills publish-genie-skills \
-        sync-schemas check-schemas check-lockstep check-framework-current \
-        check-framework-surface bump-framework check-domains \
-        check-sync-lists check-templates-doc check-adopter-docs check-agent-settings \
-        spec-local dry-run-local run-local validate-connect design \
-        new-adopter configure-adopter
+        deploy run destroy publish-wheel bootstrap-uc clean \
+        check-lockstep check-framework-current bump-framework check-domains \
+        check-sync-lists
 
 help:  ## Show available targets
 	@printf "\ndatalab · make targets (TARGET=$(TARGET))\n\n"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-	@printf "\nFirst-time setup:  \033[33mmake install enable-githooks\033[0m\n\n"
+	@printf "\nFirst-time setup:  \033[33mmake install$(if $(wildcard .githooks), enable-githooks,)\033[0m\n\n"
 
 # ---- python env (uv-managed) ------------------------------------------------
 install:  ## Create/refresh .venv from uv.lock (`uv sync`)
@@ -52,16 +52,19 @@ CONFIG_DIRS := $(wildcard config) $(wildcard projects/*/config)
 validate-configs: install  ## Validate every domain's <layer>/<table>.yml artifacts (pydantic + dqx checks)
 	$(UV) run python -m datalab.framework $(CONFIG_DIRS)
 
+# adopter-if:schemas start
 # ---- vendored editor schemas (generated from the PINNED framework) ----------
 # schemas/*.json power editor validation via the yaml-language-server header in
 # every config file. They are GENERATED from the datalab Pydantic models of the
 # pinned framework version installed in .venv — never hand-edited, never
 # hand-copied from the framework repo (that's how they went stale pre-0.6.0).
+.PHONY: sync-schemas check-schemas
 sync-schemas: install  ## Regenerate schemas/*.json from the pinned datalab framework
 	$(UV) run python scripts/sync_schemas.py --write
 
 check-schemas: install  ## Fail if schemas/*.json drifted from the pinned framework (CI + pre-commit)
 	$(UV) run python scripts/sync_schemas.py --check
+# adopter-if:schemas end
 
 # ---- framework version lockstep ---------------------------------------------
 # The framework version lives in TWO functional places: the `datalab` git tag in
@@ -81,8 +84,13 @@ check-lockstep:  ## Fail if the datalab git tag, var.datalab_version, uv.lock an
 check-framework-current:  ## Fail if a newer datalab-framework release exists than the pinned tag (CI)
 	$(UV) run --no-project python scripts/check_framework_current.py
 
+# adopter-if:schemas&any-agent start
+# Reads the vendored schemas/ and the .agents authoring skill, so it ships only
+# with both.
+.PHONY: check-framework-surface
 check-framework-surface:  ## Fail if the authoring skill misses a kind the pinned framework offers (CI + pre-commit)
 	$(UV) run --no-project python scripts/check_framework_surface.py
+# adopter-if:schemas&any-agent end
 
 # ---- domain registry ---------------------------------------------------------
 # scripts/domains.py is the ONE place listing this repo's domains; the per-target
@@ -94,27 +102,35 @@ check-domains: install  ## Resolve the domain registry against variables/, targe
 check-sync-lists: install  ## Fail if databricks.yml sync.exclude and .databricksignore diverged (CI)
 	$(UV) run python scripts/check_sync_lists.py
 
+# adopter-if:template start
 # The bootstrap-adopter-repo skill's references/templates.md is the documented
 # MANUAL FALLBACK for converting a repo by hand. It only earns that role while
 # it matches the engine byte for byte — it had silently drifted into shipping an
 # uncommentable environment_version and an empty-layer-dir instruction that the
 # config validator rejects. This diffs every mirrored code block.
+.PHONY: check-templates-doc check-adopter-docs
 check-templates-doc:  ## Fail if the adopter templates doc drifted from scripts/scaffold_adopter.py (CI + pre-commit)
 	$(UV) run --no-project python scripts/check_templates_doc.py
 
-# Run INSIDE a generated adopter repo (the scaffold smoke test does): fails if
-# any surface an adopter reads still names the template's workspace, deploy SP,
-# SQL warehouse or the directories the conversion deletes. No-ops in this repo.
-check-adopter-docs:  ## Fail if a generated adopter still carries template identity/layout (CI)
-	$(UV) run --no-project python scripts/check_adopter_docs.py
+# Checks a GENERATED adopter (ADOPTER=<dir>; the scaffold smoke test runs it on
+# every profile it builds): fails if a surface the adopter reads still names the
+# template's workspace, deploy SP or SQL warehouse, or points at a file, doc or
+# make target that repo does not have (a dropped component, template-only
+# material). Without ADOPTER= it no-ops here — this repo is the template.
+check-adopter-docs:  ## Fail if a generated adopter (ADOPTER=<dir>) carries template identity or dangling references (CI)
+	$(UV) run --no-project python scripts/check_adopter_docs.py $(if $(ADOPTER),--root $(ADOPTER),)
+# adopter-if:template end
 
+# adopter-if:hooked-agent start
 # The COMMITTED agent configs (.claude/settings.json, .cursor/hooks.json,
 # .codex/hooks.json) are shared with every developer AND copied into every
 # generated adopter repo, so a machine-specific path in them is dead weight in
 # one place and a leak in the other. Per-developer grants belong in the
 # gitignored .claude/settings.local.json, which overrides the tracked file.
+.PHONY: check-agent-settings
 check-agent-settings:  ## Fail if a committed agent-harness config is tied to one machine (CI + pre-commit)
 	$(UV) run --no-project python scripts/check_agent_settings.py
+# adopter-if:hooked-agent end
 
 bump-framework:  ## Upgrade the framework pin end to end (VERSION=x.y.z): pyproject tag + datalab_version + uv.lock + schemas
 	@if [ -z "$(VERSION)" ]; then \
@@ -124,41 +140,62 @@ bump-framework:  ## Upgrade the framework pin end to end (VERSION=x.y.z): pyproj
 	$(UV) run --no-project python scripts/bump_framework.py --version $(VERSION)
 	$(UV) lock
 	$(UV) sync
+# adopter-if:schemas start
 	$(UV) run python scripts/sync_schemas.py --write
+# adopter-if:schemas end
 	$(UV) run --no-project python scripts/check_lockstep.py
+# adopter-if:schemas&any-agent start
 	@$(UV) run --no-project python scripts/check_framework_surface.py || \
 		echo "NOTE: document the new kinds in the authoring skill (part of this bump) — CI gates it."
+# adopter-if:schemas&any-agent end
 	@echo "Framework pinned to $(VERSION). Add the release's corresponding changes (framework CHANGELOG), record the bump in CHANGELOG.md, commit, then make publish-wheel APPLY=1 per target."
 
+# adopter-if:any-agent start
 # ---- agent skills (one canonical source: .agents/skills) --------------------
 # Authored ONCE under .agents/skills (read natively by Cursor + Codex); the
 # .claude/skills copy is GENERATED for Claude Code (symlinks are unreliable
 # there). Genie Code is reached separately via `publish-genie-skills`.
+# adopter-if:any-agent end
+# adopter-if:agent-claude start
+.PHONY: sync-skills check-skills
 sync-skills:  ## Regenerate the .claude/skills copy from canonical .agents/skills
 	$(UV) run python scripts/sync_skills.py --write
 
 check-skills:  ## Fail if the .claude/skills copy drifted from .agents/skills (CI + pre-commit)
 	$(UV) run python scripts/sync_skills.py --check
+# adopter-if:agent-claude end
 
+# adopter-if:agent-genie start
 # Publish the canonical .agents/skills into Databricks Genie Code, whose skills
 # live in the Workspace .assistant/skills/ (NOT the repo). Dry-run by default;
 # APPLY=1 pushes via `databricks workspace import-dir`. Override the target with
 # GENIE_SKILLS_PATH=<ws path> (default /Users/<you>/.assistant/skills) and the
 # CLI profile with PROFILE=<name>. See AGENTS.md.
+.PHONY: publish-genie-skills
 publish-genie-skills:  ## Publish .agents/skills to Genie's Workspace .assistant/skills (dry-run; APPLY=1 to push)
 	$(UV) run python scripts/publish_genie_skills.py \
 		$(if $(APPLY),--apply,) \
 		$(if $(GENIE_SKILLS_PATH),--workspace-dir $(GENIE_SKILLS_PATH),) \
 		$(if $(PROFILE),--profile $(PROFILE),)
+# adopter-if:agent-genie end
 
-# ---- design assets (architecture diagrams -> images) ------------------------
-# Re-export design/*.drawio to design/images/*.png with the draw.io Desktop CLI
-# (set DRAWIO=/path if it isn't on PATH or at the default macOS location). The
-# CLI isn't available in CI, so this is a developer/agent step: run it after
-# editing a .drawio source and commit the regenerated PNGs. The README, docs/
-# and design/OVERVIEW.md embed these images. See the maintain-design-diagram skill.
-design:  ## Re-export design/*.drawio diagrams to design/images/*.png (needs draw.io Desktop)
-	python3 scripts/export_design.py
+# adopter-if:design start
+# ---- design package (diagrams -> images; config -> pipeline inventory) -------
+# `design` re-renders design/PIPELINES.md from the config/ artifacts (every
+# table, its source, target kind and quality gate — scripts/design_inventory.py)
+# and re-exports design/*.drawio to design/images/*.png with the draw.io Desktop
+# CLI (set DRAWIO=/path if it isn't on PATH or at the default macOS location;
+# skipped with a note when draw.io is absent). The CLI isn't available in CI, so
+# CI runs only `check-design`, which fails while PIPELINES.md is stale. Commit
+# the regenerated files. See the maintain-design-diagram skill.
+.PHONY: design check-design
+design: install  ## Re-render design/PIPELINES.md from config/ + re-export design/*.drawio to PNG (draw.io Desktop)
+	$(UV) run python scripts/design_inventory.py --write
+	python3 scripts/export_design.py --if-available
+
+check-design: install  ## Fail if design/PIPELINES.md is stale against the config/ artifacts (CI)
+	$(UV) run python scripts/design_inventory.py --check
+# adopter-if:design end
 
 # ---- bundle (Declarative Automation Bundle) ---------------------------------
 validate:  ## databricks bundle validate -t $(TARGET)
@@ -189,11 +226,13 @@ publish-wheel: install  ## Build the framework wheel from the pinned git dep + p
 		$(if $(APPLY),--apply,) \
 		$(if $(PROFILE),--profile $(PROFILE),)
 
+# adopter-if:local-dev start
 # ---- local OSS run (spark-pipelines, no Databricks) -------------------------
 # The `local` profile (datalab.framework.local) downgrades the medallion to a
 # batch materialized-view graph the OSS `spark-pipelines` CLI can run on sample
 # data. Fidelity caveat: CDC is approximated (SCD1 dedup), Auto Loader/sinks are
 # skipped — engine-owned semantics are still verified by `make deploy run`.
+.PHONY: spec-local dry-run-local run-local validate-connect
 LOCAL_DOMAIN_CONFIG ?= projects/customer_sales/config/customer_sales
 LOCAL_TRANSFORMS    ?= projects/customer_sales/src/customer_sales_etl/transformations
 LOCAL_LANDING       ?= $(CURDIR)/projects/customer_sales/sample_data/landing/sales/customers
@@ -239,6 +278,7 @@ validate-connect:  ## Validate one dataset on a LIVE cluster via isolated Databr
 		--with "$(DATALAB_GIT_REQ)" --with-editable $(CONNECT_DOMAIN) --with "$(DBCONNECT)" \
 		python scripts/validate_connect.py \
 		--config-dir $(CONNECT_CONFIG) --layer $(LAYER) --table $(TABLE) $(CONNECT_ARGS)
+# adopter-if:local-dev end
 
 # One-time per target, BEFORE the first deploy. Out-of-band of the bundle so
 # `bundle destroy` never touches catalogs/schemas/volumes/grants. Dry run by
@@ -263,7 +303,9 @@ bootstrap-uc:  ## Print/apply UC bootstrap SQL for $(TARGET) (WAREHOUSE_ID=… t
 		$(UV) run python scripts/bootstrap_uc.py --target $(TARGET) $(BOOTSTRAP_FLAGS); \
 	fi
 
+# adopter-if:githooks start
 # ---- git --------------------------------------------------------------------
+.PHONY: enable-githooks commit-protected
 enable-githooks:  ## Enable the repo's pre-commit guard for protected files
 	git config core.hooksPath .githooks
 	@echo "  core.hooksPath -> .githooks"
@@ -277,7 +319,9 @@ commit-protected:  ## Commit staged changes past the protected-files guard (make
 		exit 1; \
 	fi
 	PROTECTED_EDIT_OK=1 git commit -m "$(MSG)"
+# adopter-if:githooks end
 
+# adopter-if:template start
 # ---- adopter scaffold -------------------------------------------------------
 # Two ways to turn this reference repo into a customer's single-domain adopter.
 # Both run the SAME deterministic engine (scripts/scaffold_adopter.py), so the
@@ -287,48 +331,70 @@ commit-protected:  ## Commit staged changes past the protected-files guard (make
 # .cursor/mcp.json: SQL warehouse id + CLI profile, which the old flow ignored).
 # CATALOG must be the BASE catalog name — no _dev/_stage/_prod suffix (the bundle
 # appends those per target; the engine rejects a suffixed name). docs/ADOPTING.md.
+#
+# Every value below is optional on the command line (VAR=value) and prefills the
+# matching question of the configurator's form (skipping it). AGENTS= picks the
+# coding agents (claude,codex,cursor,genie | all | none) and COMPONENTS= the
+# optional components (docs,design,schemas,local-dev,githooks,pr-template,
+# dependabot,framework-bot,mcp | all | none | default, or +x/-x edits such as
+# COMPONENTS=+design,-githooks). ANSWERS=<file> replays a previous run's
+# .datalab-adopter.json. Only COMMAND-LINE values are forwarded: make also
+# imports environment variables, and generic names like HOST or REPO are
+# exported by some shells/CI images — one must never leak into a customer repo.
+# `--flag=value` (not `--flag value`) so a value starting with `-` — e.g.
+# COMPONENTS=-githooks — is not mistaken for another option.
+scaffold_arg = $(if $(filter command line,$(origin $(1))),$(2)="$($(1))",)
+SCAFFOLD_FLAGS = \
+	$(call scaffold_arg,CATALOG,--catalog) \
+	$(call scaffold_arg,CUSTOMER,--customer) \
+	$(call scaffold_arg,DESCRIPTION,--description) \
+	$(call scaffold_arg,REPO,--repo) \
+	$(call scaffold_arg,HOST,--host) \
+	$(call scaffold_arg,HOST_STAGE,--host-stage) \
+	$(call scaffold_arg,HOST_PROD,--host-prod) \
+	$(call scaffold_arg,CATALOG_DEV,--catalog-dev) \
+	$(call scaffold_arg,CATALOG_STAGE,--catalog-stage) \
+	$(call scaffold_arg,CATALOG_PROD,--catalog-prod) \
+	$(call scaffold_arg,WAREHOUSE_ID,--warehouse-id) \
+	$(call scaffold_arg,MCP_PROFILE,--mcp-profile) \
+	$(call scaffold_arg,DEPLOY_SP,--deploy-sp) \
+	$(call scaffold_arg,READER_GROUP,--reader-group) \
+	$(call scaffold_arg,ENGINEER_GROUP,--engineer-group) \
+	$(call scaffold_arg,ADMIN_GROUP,--admin-group) \
+	$(call scaffold_arg,FRAMEWORK_TAG,--framework-tag) \
+	$(call scaffold_arg,AGENTS,--agents) \
+	$(call scaffold_arg,COMPONENTS,--components) \
+	$(call scaffold_arg,ANSWERS,--answers)
 
 # configure-adopter: convert THIS clone (made from the GitHub template) in place.
-# Interactive by default: prompts ONLY for catalog + host (a prefilled value
-# skips its prompt), everything else defaults with a printed fill-before-deploy
-# TODO list. YES=1 skips all prompts + the confirm (requires CATALOG=) for
-# scripted use. This is the path the bootstrap-adopter-repo skill drives.
-# --no-project: the script is stdlib-only, so it runs before `make install` and
-# without touching the (still reference) project env.
-configure-adopter:  ## Configure THIS template clone in place into an adopter (prompts for catalog+host only; prefill CATALOG=, HOST=, ...; YES=1 for non-interactive)
-	$(UV) run --no-project python scripts/scaffold_adopter.py --in-place $(if $(YES),--yes,--interactive) \
-		$(if $(CATALOG),--catalog $(CATALOG),) \
-		$(if $(HOST),--host $(HOST),) \
-		$(if $(WAREHOUSE_ID),--warehouse-id $(WAREHOUSE_ID),) \
-		$(if $(MCP_PROFILE),--mcp-profile $(MCP_PROFILE),) \
-		$(if $(DEPLOY_SP),--deploy-sp $(DEPLOY_SP),) \
-		$(if $(READER_GROUP),--reader-group $(READER_GROUP),) \
-		$(if $(ENGINEER_GROUP),--engineer-group $(ENGINEER_GROUP),) \
-		$(if $(ADMIN_GROUP),--admin-group $(ADMIN_GROUP),) \
-		$(if $(FRAMEWORK_TAG),--framework-tag $(FRAMEWORK_TAG),)
+# Interactive by default: a short form (identity → workspace & environments →
+# access → coding agents → components → framework) with a default for every
+# question, then a keep/drop summary to confirm. YES=1 runs it non-interactively
+# (needs CATALOG= or ANSWERS=). This is the path the bootstrap-adopter-repo skill
+# drives. --no-project: the script is stdlib-only, so it runs before
+# `make install` and without touching the (still reference) project env.
+.PHONY: configure-adopter new-adopter
+configure-adopter:  ## Configure THIS template clone in place into an adopter (interactive form; prefill CATALOG=, HOST=, AGENTS=, COMPONENTS=, ...; YES=1 non-interactive)
+	$(UV) run --no-project python scripts/scaffold_adopter.py --in-place \
+		$(if $(YES),--yes,--interactive) $(SCAFFOLD_FLAGS)
 
 # new-adopter: generate a fresh sibling repo from THIS repo (copies only
-# git-TRACKED files — no secrets/state). Required: CATALOG=<name> OUT=<dir>.
-# Optional: HOST=, WAREHOUSE_ID=, MCP_PROFILE=, DEPLOY_SP=, READER_GROUP=,
-# ENGINEER_GROUP=, ADMIN_GROUP=, FRAMEWORK_TAG=, FORCE=1.
-# --no-project (same as configure-adopter): the script is stdlib-only, so this
-# must not sync the project env — that would demand read access to the private
-# framework repo before the newcomer's first command can even run.
-new-adopter:  ## Generate a new adopter repo in a sibling dir (CATALOG=<name> OUT=<dir>; optional HOST=, WAREHOUSE_ID=, MCP_PROFILE=, DEPLOY_SP=, *_GROUP=, FORCE=1)
-	@if [ -z "$(CATALOG)" ] || [ -z "$(OUT)" ]; then \
-		echo "ERROR: pass CATALOG and OUT:  make new-adopter CATALOG=acme OUT=../acme-datalab"; \
+# git-TRACKED files — no secrets/state). Required: OUT=<dir>. With CATALOG= or
+# ANSWERS= it runs non-interactively (the CI/agent path); with neither — or with
+# INTERACTIVE=1 — it walks the same form as configure-adopter. FORCE=1
+# overwrites a non-empty OUT. --no-project (same as configure-adopter): the
+# script is stdlib-only, so this must not sync the project env — that would
+# demand read access to the private framework repo before the newcomer's first
+# command can even run.
+new-adopter:  ## Generate a new adopter repo in a sibling dir (OUT=<dir>; CATALOG=/ANSWERS= for non-interactive; AGENTS=, COMPONENTS=, FORCE=1)
+	@if [ -z "$(OUT)" ]; then \
+		echo "ERROR: pass OUT:  make new-adopter OUT=../acme-datalab [CATALOG=acme]"; \
 		exit 1; \
 	fi
-	$(UV) run --no-project python scripts/scaffold_adopter.py --catalog $(CATALOG) --out $(OUT) \
-		$(if $(HOST),--host $(HOST),) \
-		$(if $(WAREHOUSE_ID),--warehouse-id $(WAREHOUSE_ID),) \
-		$(if $(MCP_PROFILE),--mcp-profile $(MCP_PROFILE),) \
-		$(if $(DEPLOY_SP),--deploy-sp $(DEPLOY_SP),) \
-		$(if $(READER_GROUP),--reader-group $(READER_GROUP),) \
-		$(if $(ENGINEER_GROUP),--engineer-group $(ENGINEER_GROUP),) \
-		$(if $(ADMIN_GROUP),--admin-group $(ADMIN_GROUP),) \
-		$(if $(FRAMEWORK_TAG),--framework-tag $(FRAMEWORK_TAG),) \
-		$(if $(FORCE),--force,)
+	$(UV) run --no-project python scripts/scaffold_adopter.py --out "$(OUT)" \
+		$(if $(or $(INTERACTIVE),$(if $(or $(CATALOG),$(ANSWERS)),,1)),--interactive,--yes) \
+		$(SCAFFOLD_FLAGS) $(if $(FORCE),--force,)
+# adopter-if:template end
 
 # ---- cleanup ----------------------------------------------------------------
 clean:  ## Remove .venv and caches

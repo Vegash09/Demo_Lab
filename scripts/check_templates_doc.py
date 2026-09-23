@@ -41,9 +41,16 @@ DOC = REPO_ROOT / ".agents/skills/bootstrap-adopter-repo/references/templates.md
 # The engine substitutes @@TOKEN@@ per run; the doc is generic, so it spells the
 # same slots as <angle-bracket> placeholders (listed at the top of the doc).
 PLACEHOLDERS = {
+    "@@CATALOG_DEV@@": "<dev-catalog>",
+    "@@CATALOG_STAGE@@": "<stage-catalog>",
+    "@@CATALOG_PROD@@": "<prod-catalog>",
     "@@CATALOG@@": "<catalog>",
+    "@@CUSTOMER@@": "<customer>",
+    "@@DESCRIPTION@@": "<description>",
     "@@FRAMEWORK_TAG@@": "<framework-tag>",
     "@@DATALAB_VERSION@@": "<framework-version>",
+    "@@HOST_STAGE@@": "<stage-host>",
+    "@@HOST_PROD@@": "<prod-host>",
     "@@HOST@@": "<host>",
     "@@DEPLOY_SP@@": "<deploy-sp-app-id>",
     "@@READER_GROUP@@": "<reader-group>",
@@ -51,12 +58,20 @@ PLACEHOLDERS = {
     "@@ADMIN_GROUP@@": "<admin-group>",
     "@@WAREHOUSE_ID@@": "<warehouse-id>",
     "@@MCP_PROFILE@@": "<cli-profile>",
+    "@@TEMPLATE_URL@@": "<template-url>",
+    "@@AGENTS_LIST@@": "<agents>",
+    "@@COMPONENTS_LIST@@": "<components>",
+    "@@SYNC_EXCLUDE@@": "<sync-exclude-entries>",
+    "@@IGNORE_ENTRIES@@": "<ignore-entries>",
 }
 
-# Every file the engine WRITES WHOLE (write_domain + write_repo_level) must be
-# mirrored: doc heading path -> the engine constant holding its template. Files
-# the engine only PATCHES in place (Makefile, scripts/, CI/CD, .mcp.json …) are
-# described in prose instead and are not checked here.
+# Every file the engine WRITES WHOLE (write_domain + write_repo_level +
+# write_design) must be mirrored: doc heading path -> the engine constant
+# holding its template. Two whole-written design files are described in prose
+# instead: the starter draw.io XML (a diagram, not something to hand-copy) and
+# design/PIPELINES.md (RENDERED from config/ by scripts/design_inventory.py).
+# Files the engine only PATCHES in place (Makefile, scripts/, CI/CD, .mcp.json …)
+# are described in prose too and are not checked here.
 MIRRORED: dict[str, str] = {
     "config/<catalog>/domain.yml": "DOMAIN_YML",
     "config/<catalog>/bronze/events_raw.yml": "BRONZE_YML",
@@ -77,6 +92,9 @@ MIRRORED: dict[str, str] = {
     "targets/prod.yml": "TARGET_PROD",
     "README.md": "README_MD",
     "CHANGELOG.md": "CHANGELOG_MD",
+    ".databricksignore": "DATABRICKSIGNORE",
+    ".gitattributes": "GITATTRIBUTES_DESIGN",
+    "design/OVERVIEW.md": "DESIGN_OVERVIEW_MD",
 }
 
 HEADING_RE = re.compile(r"^###\s+`([^`]+)`\s*$")

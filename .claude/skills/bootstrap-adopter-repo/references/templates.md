@@ -9,10 +9,20 @@ ROOT. Replace every placeholder before writing:
   environment per target (`acme` → `acme` / `acme_stage` / `acme_prod`), so a
   suffixed name yields `config/<catalog>_prod/` and a doubled `..._prod_prod`
   catalog. (`docs/NAMING.md`.)
+- `<dev-catalog>` / `<stage-catalog>` / `<prod-catalog>` — the per-target
+  catalogs; default `<catalog>`, `<catalog>_stage`, `<catalog>_prod`.
+- `<customer>` / `<description>` — the customer's display name and a one-line
+  description of the data product (default: derived from `<catalog>`).
 - `<owner>` / `<customer-repo>` — the new repo's GitHub owner / name.
-- `<host>` — the customer's Databricks workspace URL.
+- `<host>` — the customer's (dev) Databricks workspace URL; `<stage-host>` /
+  `<prod-host>` — the stage / prod workspaces (default: the same `<host>`).
 - `<warehouse-id>` — a SQL warehouse id in the customer's workspace (UC bootstrap
   + the MCP grounding config).
+- `<agents>` / `<components>` — the chosen coding agents and optional components
+  (comma lists, or `none`); `<template-url>` —
+  `https://github.com/dediggibyte/datalab/blob/main`.
+- `<sync-exclude-entries>` / `<ignore-entries>` — the dev-only paths this repo
+  HAS, one per line (see the `databricks.yml` and `.databricksignore` notes).
 - `<cli-profile>` — the `databricks auth login` profile for the read-only MCP
   grounding (default `<catalog>_dev`).
 - `<deploy-sp-app-id>` — the CI/CD deploy service principal application id.
@@ -31,6 +41,16 @@ single root `pyproject.toml`. Field reference: the framework `docs/FRAMEWORK.md`
 > This doc is the human-readable record + the manual fallback, and
 > `make check-templates-doc` (CI + pre-commit) fails if any code block below
 > stops matching the engine's template. When they disagree, change the doc.
+
+> **Optional pieces.** Sections fenced `<!-- adopter-if:<feature> start/end -->`
+> (the README below, and the template's Makefile, CI, AGENTS.md, docs and guard
+> scripts) are kept only when the new repo chose that coding agent or component
+> — `docs`, `design`, `schemas`, `local-dev`, `githooks`, `pr-template`,
+> `dependabot`, `framework-bot`, `mcp`, or `agent-<name>` / `any-agent` /
+> `hooked-agent`; `!x` negates, `a|b` / `a&b` combine. By hand: keep the
+> sections whose feature you chose, delete the rest, and delete the marker
+> lines themselves. Which FILES each choice owns: [Optional pieces — which
+> files each choice owns](#optional-pieces--which-files-each-choice-owns).
 
 ---
 
@@ -306,22 +326,17 @@ include:
 # aligned with .databricksignore — `make check-sync-lists` (CI) enforces it.
 sync:
   exclude:
-    - tests
-    - docs
-    - .github
-    - .claude
-    - .cursor
-    - .codex
-    - .agents
-    - .githooks
-    - .mcp.json
-    - Makefile
-    - uv.lock
-    - .markdownlint.json
+<sync-exclude-entries>
 ```
 
-Keep this list ALIGNED with `.databricksignore` — `make check-sync-lists` (run in
-CI) fails on divergence.
+`<sync-exclude-entries>` lists, as `    - <path>` lines in this order, only the
+dev-only paths the repo HAS: `tests`, then `docs` / `design` / `sample_data`
+(when those components were chosen), `.github`, then `.claude` (claude or
+codex), `.cursor` (claude, codex or cursor), `.codex`, `.agents` (any agent),
+`.githooks`, `.mcp.json` (claude + mcp), and always `Makefile`, `uv.lock`,
+`.markdownlint.json`, `.datalab-adopter.json`. The engine writes this list and
+`.databricksignore` from ONE function (`sync_excludes`), so the two can never
+disagree — `make check-sync-lists` (CI) fails if hand-edits make them diverge.
 
 ### `pyproject.toml`
 
@@ -441,87 +456,164 @@ targets:
     workspace:
       host: <host>
     variables:
-      catalog: <catalog>
+      catalog: <dev-catalog>
 ```
 
 ### `targets/stage.yml`
 
 ```yaml
-# stage target — production mode, explicit root_path.
+# stage target — production mode, explicit root_path. Deployed by CI on a
+# vX.Y.Z-rcN tag once the `stage` GitHub Environment carries its secrets.
 targets:
   stage:
     mode: production
     workspace:
-      host: <host>
+      host: <stage-host>
       root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
     variables:
-      catalog: <catalog>_stage
+      catalog: <stage-catalog>
 ```
 
 ### `targets/prod.yml`
 
 ```yaml
-# prod target — production mode, explicit root_path.
+# prod target — production mode, explicit root_path. Deployed by CI on a vX.Y.Z
+# tag once the `prod` GitHub Environment carries its secrets.
 targets:
   prod:
     mode: production
     workspace:
-      host: <host>
+      host: <prod-host>
       root_path: /Workspace/Bundles/${bundle.name}/${bundle.target}
     variables:
-      catalog: <catalog>_prod
+      catalog: <prod-catalog>
 ```
 
-If stage/prod live in DIFFERENT workspaces, change their `host:` by hand — the
-generator writes the one host you gave it into all three targets.
+All three targets are always written — a customer without a stage (or prod)
+workspace yet simply leaves that GitHub Environment without Databricks secrets,
+and CI/CD skips it gracefully until it is wired. The configurator's form asks
+whether stage/prod live in other workspaces (`--host-stage` / `--host-prod`)
+and lets you rename the per-target catalogs (`--catalog-{dev,stage,prod}`).
 
 ### `README.md`
+
+The `adopter-if` sections below keep the README true for every selection — no
+`make enable-githooks` without the git hooks, template-repo links instead of
+`docs/` links without the docs, a hand-authoring pointer instead of the skill
+without an agent.
 
 ````markdown
 # <catalog>-datalab
 
+**<customer>** — <description>
+
 Single-domain [datalab](https://github.com/dediggibyte/datalab-framework) adopter
-repo for **<catalog>**, generated from the datalab template. Every target table
+repo for <customer>, generated from the datalab template. Every target table
 is ONE YAML artifact, generated into Lakeflow Spark Declarative Pipelines,
 quality-checked with dqx, and deployed as a Declarative Automation Bundle.
 
-> Document of record for agents + humans: **[AGENTS.md](AGENTS.md)**. Wiring to
-> the framework: **[docs/ADOPTING.md](docs/ADOPTING.md)**. Author your first table:
+<!-- adopter-if:docs start -->
+> Document of record for agents + humans: **[AGENTS.md](AGENTS.md)**. First-deploy
+> checklist: **[docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md)**. Wiring to the
+> framework: **[docs/ADOPTING.md](docs/ADOPTING.md)**. Author your first table:
 > **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**.
+<!-- adopter-if:docs end -->
+<!-- adopter-if:!docs start -->
+> Document of record for agents + humans: **[AGENTS.md](AGENTS.md)**. This repo
+> was generated without the `docs/` guides; the first-deploy checklist, the
+> framework wiring reference and the authoring walkthrough live in the datalab
+> template repo: [NEW_ADOPTER.md](<template-url>/docs/NEW_ADOPTER.md) ·
+> [ADOPTING.md](<template-url>/docs/ADOPTING.md) ·
+> [GETTING_STARTED.md](<template-url>/docs/GETTING_STARTED.md).
+<!-- adopter-if:!docs end -->
+<!-- adopter-if:design start -->
+> Architecture and the generated pipeline inventory for <customer>:
+> **[design/OVERVIEW.md](design/OVERVIEW.md)**.
+<!-- adopter-if:design end -->
 
 ## Quick start
 
 ```bash
 make lock install                # resolve the framework git dep into .venv
-make enable-githooks             # protected-files pre-commit guard (one-time)
 make validate-configs lint test  # pydantic + dqx · ruff · pytest (local Spark)
 make validate                    # databricks bundle validate -t dev
 ```
+<!-- adopter-if:githooks start -->
+
+Once per clone, turn on the branch-first / protected-files pre-commit guard:
+`make enable-githooks`.
+<!-- adopter-if:githooks end -->
 
 ## First deploy (one-time setup per target)
 
+<!-- adopter-if:docs start -->
 The full ordered checklist — prerequisites, GitHub/OIDC wiring, and the
 account-level persona groups that must exist BEFORE bootstrap — is
-**[docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md)**. The commands, once those
-prerequisites stand (`PROFILE=` pins the workspace — without it the SDK uses
-your DEFAULT CLI profile, which may point somewhere else):
+**[docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md)** (start at step 3: this repo is
+already generated).
+<!-- adopter-if:docs end -->
+<!-- adopter-if:!docs start -->
+The full ordered checklist — prerequisites, GitHub/OIDC wiring, and the
+account-level persona groups that must exist BEFORE bootstrap — is the datalab
+template repo's [docs/NEW_ADOPTER.md](<template-url>/docs/NEW_ADOPTER.md)
+(start at step 3: this repo is already generated).
+<!-- adopter-if:!docs end -->
+The commands, once those prerequisites stand (`PROFILE=` pins the workspace —
+without it the SDK uses your DEFAULT CLI profile, which may point somewhere
+else):
 
 ```bash
-databricks auth login --host <workspace-url> --profile <cli-profile>
-make bootstrap-uc TARGET=dev WAREHOUSE_ID=<id> PROFILE=<cli-profile>
+databricks auth login --host <host> --profile <cli-profile>
+make bootstrap-uc TARGET=dev WAREHOUSE_ID=<warehouse-id> PROFILE=<cli-profile>
 make publish-wheel TARGET=dev APPLY=1 PROFILE=<cli-profile>
 git add -A && git commit -m "configure <catalog> adopter" && git push  # CI needs the regenerated uv.lock
 make deploy
+```
+
+<!-- adopter-if:local-dev start -->
+Seed the landing volume with the starter sample, then refresh the pipeline:
+
+```bash
 databricks fs cp sample_data/landing/<catalog>/events/events.json \
-    dbfs:/Volumes/<catalog>/landing/<catalog>/events/ --profile <cli-profile>
+    dbfs:/Volumes/<dev-catalog>/landing/<catalog>/events/ --profile <cli-profile>
 make run
 ```
+<!-- adopter-if:local-dev end -->
+<!-- adopter-if:!local-dev start -->
+Drop a JSON file into `/Volumes/<dev-catalog>/landing/<catalog>/events/`,
+then refresh the pipeline with `make run`.
+<!-- adopter-if:!local-dev end -->
 
 ## Add tables
 
+<!-- adopter-if:any-agent start -->
 Use the `author-ldp-artifact` agent skill: one `config/<catalog>/<layer>/<table>.yml`
 artifact per table, pure `@transform` functions in `src/<catalog>_etl/transforms/`,
 registered in `config/<catalog>/domain.yml` `imports:`.
+<!-- adopter-if:any-agent end -->
+<!-- adopter-if:!any-agent start -->
+Author one `config/<catalog>/<layer>/<table>.yml` artifact per table, pure
+`@transform` functions in `src/<catalog>_etl/transforms/`, registered in
+`config/<catalog>/domain.yml` `imports:`. Field reference: the framework's
+[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/<framework-tag>/docs/FRAMEWORK.md);
+the datalab template repo's
+[author-ldp-artifact skill](<template-url>/.agents/skills/author-ldp-artifact/SKILL.md)
+doubles as a human guide (plain-language rule → dqx check mapping).
+<!-- adopter-if:!any-agent end -->
+<!-- adopter-if:design start -->
+
+After adding or changing tables, run `make design`: it re-renders the pipeline
+inventory in `design/PIPELINES.md` (CI's `make check-design` fails while it is
+stale) and re-exports the draw.io diagram when draw.io Desktop is installed.
+<!-- adopter-if:design end -->
+
+## How this repo was generated
+
+From the datalab template with — coding agents: **<agents>**; components:
+**<components>**. Every answer is recorded in `.datalab-adopter.json`; to
+regenerate with a newer template (e.g. to diff in its improvements), run
+`make new-adopter ANSWERS=<path-to>/.datalab-adopter.json OUT=<dir>` from a
+clone of the datalab template repo.
 ````
 
 ### `CHANGELOG.md`
@@ -531,8 +623,30 @@ registered in `config/<catalog>/domain.yml` `imports:`.
 
 ## Unreleased
 
-- Initial <catalog> adopter repo generated from the datalab template
-  (one minimal bronze table; extend with the author-ldp-artifact skill).
+- Initial <catalog> adopter repo for <customer>, generated from the datalab
+  template (one minimal bronze table to extend). Coding agents: <agents>;
+  components: <components>.
+```
+
+### `.databricksignore`
+
+Written from the same entry list as `databricks.yml`'s `sync.exclude` (above);
+`<ignore-entries>` is that list one per line, directories with a trailing `/`.
+
+```gitignore
+# Exclusions for `databricks sync` and the Databricks IDE extension.
+#
+# IMPORTANT: `databricks bundle deploy` does NOT read this file — it honors
+# .gitignore plus the `sync.exclude:` block in databricks.yml. Keep this list
+# ALIGNED with that block so the sync command and the bundle deploy exclude the
+# same dev-only surfaces (`make check-sync-lists` enforces it).
+#
+# The deploy MUST ship pyproject.toml + src/** + config/** + resources/** — the
+# domain wheel is built by the databricks.yml `artifacts:`, and the framework
+# wheel is installed from this catalog's artifacts.wheels UC Volume (AGENTS.md
+# "Wheel delivery").
+
+<ignore-entries>
 ```
 
 ### `rbac.yml`
@@ -555,6 +669,107 @@ step 5.
 
 ---
 
+## Design package (only with the `design` component)
+
+The template's own `design/` describes ITS reference domains, so it is never
+copied; the adopter gets a package generated for the customer:
+
+- `design/OVERVIEW.md` — the narrative (below).
+- `design/02_implementation_end_to_end.drawio` — a starter implementation map
+  with the same bands, ids and edge colours as the template's, so the
+  `maintain-design-diagram` skill's recipes apply unchanged
+  (`scaffold_adopter.DESIGN_DRAWIO`; open it in draw.io rather than hand-copying
+  the XML).
+- `design/01_design_config_driven_medallion.drawio` — the template's conceptual
+  design spec, with its worked-example references repointed at `<catalog>`
+  (`DESIGN_SPEC_EDITS`).
+- `design/PIPELINES.md` — **rendered** by `scripts/design_inventory.py` from
+  the `config/` artifacts: `make design` re-renders it (and re-exports the PNGs
+  when draw.io Desktop is installed); CI's `make check-design` fails while it
+  is stale. Never hand-write it — run `make design` after `make install`.
+- `scripts/design_inventory.py`, `scripts/export_design.py`, the `design` /
+  `check-design` make targets, the CI step, and (with an agent) the
+  `maintain-design-diagram` skill ship with it.
+
+### `design/OVERVIEW.md`
+
+````markdown
+# <customer> — `<catalog>` lakehouse on Databricks
+
+<description>
+
+> This is the living design package for this repo. The editable architecture
+> map is [`02_implementation_end_to_end.drawio`](02_implementation_end_to_end.drawio)
+> (`make design` renders it to `design/images/` when draw.io Desktop is
+> installed); the framework's conceptual design is
+> [`01_design_config_driven_medallion.drawio`](01_design_config_driven_medallion.drawio).
+> **[PIPELINES.md](PIPELINES.md) is generated from `config/`** — every table,
+> its source, target kind and quality gate — and CI fails while it is stale.
+
+## At a glance
+
+| | |
+|---|---|
+| **Customer** | <customer> |
+| **Domain / base catalog** | `<catalog>` — config in `config/<catalog>/`, code in `src/<catalog>_etl/` |
+| **Pipeline** | `<catalog>_etl` — Lakeflow Spark Declarative Pipeline, serverless |
+| **Refresh** | `<catalog>_etl_refresh` — daily (paused in dev) |
+| **Framework** | datalab `<framework-tag>` (git dependency + UC-Volume wheel) |
+| **Pipeline inventory** | [PIPELINES.md](PIPELINES.md) (generated — `make design`) |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  dev["Engineer or coding agent<br/>writes one YAML artifact per table"] --> cfg["config/<catalog>/&lt;layer&gt;/&lt;table&gt;.yml"]
+  cfg --> fw["datalab framework<br/>validates + generates"]
+  fw --> sdp["Lakeflow SDP pipeline<br/><catalog>_etl"]
+  land["landing volume<br/>/Volumes/&lt;catalog&gt;/landing/<catalog>/"] -->|Auto Loader| sdp
+  sdp --> bronze["bronze"] --> silver["silver<br/>dqx gate + quarantine"] --> gold["gold"]
+  gold --> use["BI · Genie · apps"]
+  gh["GitHub Actions<br/>OIDC, no stored secret"] -->|bundle deploy| sdp
+```
+
+The medallion starts with one bronze table; [PIPELINES.md](PIPELINES.md) holds
+the live table-by-table lineage.
+
+## Environments and promotion
+
+| Target | Workspace | Catalog | Mode | Deployed by |
+|---|---|---|---|---|
+| dev | `<host>` | `<dev-catalog>` | development | every push to `main` |
+| stage | `<stage-host>` | `<stage-catalog>` | production | a `vX.Y.Z-rcN` tag |
+| prod | `<prod-host>` | `<prod-catalog>` | production | a `vX.Y.Z` tag |
+
+Promotion never edits a config file: catalogs, schemas and paths are bundle
+variables resolved per target.
+
+## Keeping this package current
+
+- **Tables** — after adding or changing a `config/<catalog>/…` artifact, run
+  `make design`; it re-renders [PIPELINES.md](PIPELINES.md). CI runs
+  `make check-design` and fails while the inventory is stale.
+- **Architecture** — when a new edge job, notebook, source system or consumer
+  appears, add it to `02_implementation_end_to_end.drawio` (the band and colour
+  conventions are in its legend) and refresh this overview's narrative.
+````
+
+### `.gitattributes`
+
+Only with `design` (the template's own `.gitattributes` holds nothing but design
+rules, so without the component the adopter has none):
+
+```gitattributes
+# GitHub Linguist: design/ is documentation (draw.io sources, their PNG exports,
+# the overview and the generated pipeline inventory), not source — keep it out
+# of the repository's language statistics.
+design/**              linguist-documentation
+# Rendered by `make design` (scripts/design_inventory.py) — collapse it in diffs.
+design/PIPELINES.md    linguist-generated
+```
+
+---
+
 ## Files to EDIT in place (not full rewrites)
 
 ### `Makefile`
@@ -569,10 +784,13 @@ step 5.
 - `CONNECT_CONFIG ?= config/<catalog>` and `CONNECT_DOMAIN ?= .`
 - `CONFIG_DIRS := config` (drop the `projects/*/config` wildcard + its comment),
   and the `lint:` help comment → "Ruff lint over scripts/ and src/".
-- DELETE the `design:` target (and `design` from `.PHONY`) — `design/` does not
-  exist in an adopter. Also delete `scripts/export_design.py` and the
-  `maintain-design-diagram` skill from BOTH `.agents/skills/` and
-  `.claude/skills/` (both, or `make check-skills` fails on mirror drift).
+- The `run:` help text and the comment above `PIPELINE` name `<catalog>_etl`,
+  not the template's `customer_sales_etl` / second domain.
+- Resolve the `# adopter-if:<feature> start/end` sections: each optional section
+  (schemas, the agent-skill targets, design, local dev, git hooks, and the
+  template-only scaffold targets) declares its own `.PHONY` inside its fence, so
+  deleting a section you did not choose removes its declaration too. Keep the
+  sections you chose and delete every marker line.
 
 ### `scripts/domains.py`
 
@@ -607,6 +825,9 @@ DEPLOY_SP = "<deploy-sp-app-id>"
 - DELETE everything below the `# --- template-only below: stripped from generated
   adopters …` marker (the scaffold smoke-test job exercises the TEMPLATE layout
   and would fail in an adopter).
+- Resolve the `# adopter-if:<feature>` steps (skills mirror, agent-config check,
+  templates-doc check, schemas check, design check, local dry-run): keep a step
+  only if the repo has what it checks.
 - Keep the GitHub App token steps ("Mint a read-only token for datalab-framework"
   + the HTTPS `insteadOf` rewrite). The adopter repo must set the
   `DATALAB_FRAMEWORK_APP_CLIENT_ID` variable + `DATALAB_FRAMEWORK_APP_PRIVATE_KEY` secret
@@ -659,14 +880,22 @@ template-specific identity that must be repointed:
   `landing.<catalog>` / `exports.<catalog>`.
 - `docs/GETTING_STARTED.md`, `docs/ADOPTING.md` — every `projects/…` example path
   must name the template repo explicitly (those folders are deleted here).
+- The worked examples are re-cast in the CUSTOMER's catalog: `docs/NAMING.md`'s
+  config-tree and environment tables (`<catalog>`, `<dev-catalog>` …),
+  `docs/ARCHITECTURE.md`'s system / lanes / data-view diagrams and its
+  environment table (per-target catalogs + workspaces), `docs/AGENT_MCP.md`'s
+  example query, `docs/ADOPTING.md`'s wheel volume. The template-facing
+  sections (`ADOPTING.md`'s quick start, `NEW_ADOPTER.md` steps 1–2,
+  `AGENT_MCP.md`'s adopter setup) become short "this repo was generated" notes.
+- Passages about a component the repo did not choose are fenced
+  `<!-- adopter-if:<feature> -->` and dropped. Without the `docs` component the
+  whole folder is left out and every surviving `docs/<X>.md` reference (in
+  AGENTS.md, README, skills, workflow comments) is relinked to the template
+  repo's copy — `docs/FRAMEWORK.md` to the framework repo's reference.
 
-`make check-adopter-docs` (CI) fails the conversion if any of this survives.
-
-### `.databricksignore`
-
-Align with the new `databricks.yml` `sync.exclude` — remove the `projects/*`,
-`design/` and `omnigent/` lines (those paths don't exist in an adopter); keep
-the rest. `make check-sync-lists` enforces the alignment.
+`make check-adopter-docs ADOPTER=<dir>` (template CI, every generated profile)
+fails if any of this survives: template identity, or a reference to a path or
+`make` target the repo does not have.
 
 ### `AGENTS.md`
 
@@ -676,11 +905,15 @@ The engine (`patch_agents_md`) swaps every region fenced with
 `<!-- template-only:<name> start/end -->` markers for adopter text (root-level
 layout, `<catalog>_etl` architecture), re-points example file paths at "the
 template repo's `projects/...`", rewrites the second domain's
-`var.sales_datalab_wheel` / MCP-profile references, and fails if any dead
-reference survives. Manual fallback: delete each fenced region, write the
-adopter equivalent (layout + architecture for YOUR domain), and verify
-`grep -n "projects/\|design/\|omnigent" AGENTS.md | grep -v "template repo"`
-comes back empty.
+`var.sales_datalab_wheel` / MCP-profile references, resolves the
+`<!-- adopter-if:<feature> -->` passages, and rewrites the sentences that
+ENUMERATE optional pieces (which harness configs wire the branch guard, which
+guards hold the protected set, the schema regeneration, the bump bot) to name
+only what the repo has. The codebase-layout block lists only the chosen
+agents/components. Manual fallback: delete each fenced region, write the adopter
+equivalent (layout + architecture for YOUR domain), and verify
+`grep -n "projects/\|omnigent" AGENTS.md | grep -v "template repo"` comes back
+empty.
 
 ### `.cursor/rules/project.mdc` and the agent skills
 
@@ -708,3 +941,42 @@ it) — fill it before relying on the grounding (`docs/AGENT_MCP.md`).
 "--profile", "<cli-profile>",
 "--meta",    "warehouse_id=<warehouse-id>"
 ```
+
+### `.claude/settings.json`, `.codex/hooks.json`, `.cursor/hooks.json`
+
+Kept only for their agent. The Claude settings' `permissions.allow` is
+regenerated to hold exactly the READ-ONLY `make` targets this repo defines
+(`help`, `lint`, `test`, `validate-configs`, `dry-run-local`, `check-*`) — never
+a write grant, never a grant for a target the repo lacks. Without the
+`pr-template` component, every hook entry running `pr_template_guard.py` is
+removed from all three configs (the guard would otherwise demand a template the
+repo does not have). `make check-agent-settings` verifies every hook script
+still exists.
+
+---
+
+## Optional pieces — which files each choice owns
+
+| Choice | Files it brings (gone when not chosen) |
+|---|---|
+| any agent | `.agents/skills/` (minus `bootstrap-adopter-repo` — template-only; `query-databricks` needs `mcp`; `maintain-design-diagram` needs `design`) |
+| `claude` | `CLAUDE.md`, `.claude/settings.json`, `.claude/skills/` (copy of `.agents/skills`), `scripts/sync_skills.py` |
+| `claude` or `codex` | `.claude/hooks/protected_files_guard.py` |
+| `claude`, `codex` or `cursor` | `.cursor/hooks/branch_guard.py` (+ `pr_template_guard.py` with `pr-template`), `scripts/check_agent_settings.py` |
+| `codex` | `.codex/hooks.json` |
+| `cursor` | `.cursor/hooks.json`, `.cursor/rules/` (+ `.cursor/mcp.json` with `mcp`) |
+| `genie` | `scripts/publish_genie_skills.py` |
+| `docs` | `docs/` (+ `docs/AGENT_MCP.md` with `mcp`; `docs/MIGRATION.md` never — template history) |
+| `design` | `design/` (generated), `.gitattributes`, `scripts/export_design.py`, `scripts/design_inventory.py` |
+| `schemas` | `schemas/`, `scripts/sync_schemas.py` (and the `$schema` header in each config YAML) |
+| `local-dev` | `sample_data/`, `scripts/validate_connect.py` |
+| `githooks` | `.githooks/` |
+| `pr-template` | `.github/pull_request_template.md`, `.github/workflows/pr-template-check.yml` |
+| `dependabot` | `.github/dependabot.yml` |
+| `framework-bot` | `.github/workflows/framework-bump.yml` |
+| `mcp` (with claude / cursor) | `.mcp.json` (claude), `.cursor/mcp.json` (cursor), `docs/AGENT_MCP.md`, the `query-databricks` skill |
+| never | `projects/`, `omnigent/`, `uv.lock` (regenerated by `make lock`), the template's `design/`, `scripts/scaffold_adopter.py`, `scripts/check_templates_doc.py`, `scripts/check_adopter_docs.py` |
+
+The engine's `TOP_LEVEL` + `PATH_RULES` tables are the source of this list; a
+new top-level file in the template that is not classified there fails the
+scaffold.

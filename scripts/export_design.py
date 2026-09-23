@@ -10,6 +10,9 @@ regenerated images. See the ``maintain-design-diagram`` skill.
 The draw.io Desktop CLI is located via, in order: the ``DRAWIO`` environment
 variable, a ``drawio`` binary on ``PATH``, then the default macOS app path. The
 CLI is not available in CI, so this is a developer/agent-only step.
+``--if-available`` turns "CLI not found" into a note and a clean exit — what
+``make design`` uses, since it also re-renders the pipeline inventory
+(scripts/design_inventory.py), which needs no draw.io at all.
 
 draw.io's ``--page-index`` export is unreliable for multi-page files (it can
 silently re-export page 0), so multi-page sources are split into single-page
@@ -18,6 +21,7 @@ temporary files first and each is exported on its own.
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shutil
@@ -35,16 +39,19 @@ EXPORT_FLAGS = ["-x", "-f", "png", "-s", "2", "--crop", "-b", "16"]
 DEFAULT_MACOS_DRAWIO = "/Applications/draw.io.app/Contents/MacOS/draw.io"
 
 
-def find_drawio() -> str:
-    """Return a usable draw.io CLI path or exit with an actionable message."""
+def find_drawio() -> str | None:
+    """Return a usable draw.io CLI path, or None when there is none."""
     candidate = os.environ.get("DRAWIO") or shutil.which("drawio") or DEFAULT_MACOS_DRAWIO
     if Path(candidate).exists() or shutil.which(candidate):
         return candidate
-    sys.exit(
-        "draw.io Desktop CLI not found. Install draw.io Desktop or set "
-        "DRAWIO=/path/to/draw.io (tried: $DRAWIO, `drawio` on PATH, "
-        f"{DEFAULT_MACOS_DRAWIO})."
-    )
+    return None
+
+
+NOT_FOUND = (
+    "draw.io Desktop CLI not found. Install draw.io Desktop or set "
+    "DRAWIO=/path/to/draw.io (tried: $DRAWIO, `drawio` on PATH, "
+    f"{DEFAULT_MACOS_DRAWIO})."
+)
 
 
 def page_stem(name: str, index: int) -> str:
@@ -78,8 +85,20 @@ def export_source(drawio: str, src: Path) -> None:
             render(drawio, page, IMAGES / f"{stem}.png")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Re-export design/*.drawio to PNG.")
+    parser.add_argument(
+        "--if-available",
+        action="store_true",
+        help="skip with a note (exit 0) when the draw.io Desktop CLI is not installed",
+    )
+    args = parser.parse_args(argv)
     drawio = find_drawio()
+    if drawio is None:
+        if args.if_available:
+            print(f"skipping the PNG export — {NOT_FOUND}")
+            return
+        sys.exit(NOT_FOUND)
     sources = sorted(DESIGN.glob("*.drawio"))
     if not sources:
         sys.exit("no design/*.drawio sources found")

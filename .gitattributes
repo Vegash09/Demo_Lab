@@ -17,3 +17,5 @@ design/**                               linguist-documentation
 # The standalone share is GENERATED (regenerated out-of-band, see AGENTS.md /
 # the maintain-design-diagram skill) — also collapse it in diffs.
 design/datalab-customer-overview.html   linguist-generated
+# The pipeline inventory is rendered from config/ by `make design`.
+design/PIPELINES.md                     linguist-generated

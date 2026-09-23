@@ -23,6 +23,7 @@ on day zero.
 | **Account-admin** access (or an admin who will run step 5 for you) + the **Databricks account id** and **workspace id** | customer account admin | account-level persona groups + the OIDC federation policy — a workspace PAT will NOT do |
 | Tools: `uv`, `gh`, `databricks` CLI ≥ v0.294.0, Java 17+ | you | everything below |
 
+<!-- template-only:new-adopter-generate start -->
 ## 1. Generate the repo from the template
 
 ```bash
@@ -41,14 +42,30 @@ clone.* (One-time, template admin: `gh repo edit dediggibyte/datalab
 make configure-adopter
 ```
 
-Two prompts — base catalog name (lowercase, **no** `_dev`/`_stage`/`_prod`
-suffix) and workspace host — then a summary to confirm; everything else
-defaults, and leftover placeholders are printed as fill-before-deploy TODOs.
-Prefill any value to skip its prompt (`CATALOG=acme HOST=… WAREHOUSE_ID=…
-DEPLOY_SP=…`), or run fully scripted with `YES=1` (requires `CATALOG=`).
-✅ *Success: `scaffold: done.` and `config/<catalog>/` exists.* ❌ *An "anchor
-not found" error names exactly which file drifted — report it on the template
-repo.*
+A short form, each question with a default you accept with Enter:
+
+1. **Customer & repo** — base catalog name (lowercase, **no**
+   `_dev`/`_stage`/`_prod` suffix), customer display name, a one-line
+   description, the GitHub `<owner>/<repo>` (the OIDC federation subject).
+2. **Workspace & environments** — the dev workspace host; whether stage/prod
+   live in other workspaces (then their hosts); the per-environment catalogs;
+   the SQL warehouse id, CLI profile and deploy SP.
+3. **Access groups** — reader / engineer / admin (account-level).
+4. **Coding agents** — any of claude, codex, cursor, genie, or none.
+5. **Components** — docs, design, schemas, local-dev, githooks, pr-template,
+   dependabot, framework-bot, mcp (what each ships:
+   [ADOPTING.md](ADOPTING.md#what-each-choice-ships)).
+6. **Framework** — the datalab release tag to pin.
+
+Then a summary of what will ship and what is left out, and the fill-before-deploy
+TODOs for any placeholder you kept. Prefill any answer to skip its question
+(`CATALOG=acme HOST=… AGENTS=claude,cursor COMPONENTS=+design`), or run fully
+scripted with `YES=1` (requires `CATALOG=` or `ANSWERS=`). The answers are
+saved to `.datalab-adopter.json`. ✅ *Success: `scaffold: done.` and
+`config/<catalog>/` exists.* ❌ *An "anchor not found" or "docs still point at
+material this repo does not have" error names exactly which file drifted —
+nothing was written; report it on the template repo.*
+<!-- template-only:new-adopter-generate end -->
 
 ## 3. Local gates
 
@@ -67,25 +84,32 @@ lock` → your machine lacks framework read access; `gh auth login` +
 ```bash
 gh variable set DATALAB_FRAMEWORK_APP_CLIENT_ID --body "Iv23li…"
 gh secret set DATALAB_FRAMEWORK_APP_PRIVATE_KEY < path/to/app-key.pem
-gh secret set DATALAB_FRAMEWORK_APP_PRIVATE_KEY --app dependabot < path/to/app-key.pem
 ```
 
 Both at **repo/org scope, NOT per-environment** (the CI test job declares no
-`environment:`). The third line mirrors the key into the **Dependabot**
-secret store — dependabot-triggered CI runs read a separate store and fail
-the App-token mint without it. If this repo lives in the **same org** as the
-framework repo, also grant Dependabot access to the framework repo so its
-`uv` updater can resolve the lockfile (org Settings → Code security →
-Dependabot → private repository access, or the `repository-access` API — see
+`environment:`). Then create GitHub **Environments** `dev`, `stage`, `prod`,
+each with **secrets** (not variables — set as variables the deploy skips with
+a green run): `DATABRICKS_HOST` and `DATABRICKS_CLIENT_ID` (the SP application
+id). ✅ *Success: push a commit — `ci / lint + unit test` is green.*
+
+<!-- adopter-if:dependabot start -->
+**Dependabot** reads a separate secret store — mirror the key there too, or
+every dependabot-triggered CI run fails the App-token mint:
+
+```bash
+gh secret set DATALAB_FRAMEWORK_APP_PRIVATE_KEY --app dependabot < path/to/app-key.pem
+```
+
+If this repo lives in the **same org** as the framework repo, also grant
+Dependabot access to the framework repo so its `uv` updater can resolve the
+lockfile (org Settings → Code security → Dependabot → private repository
+access, or the `repository-access` API — see
 [CICD.md](CICD.md#private-framework-dependency-git-auth)); **cross-org** the
 grant can't reach it — give the updater a `registries:` `type: git`
 credential in `dependabot.yml` (PAT in the Dependabot store) or remove the
-`uv` ecosystem there. Then create GitHub **Environments** `dev`, `stage`,
-`prod`, each with **secrets** (not variables — set as variables the deploy
-skips with a green run): `DATABRICKS_HOST` and `DATABRICKS_CLIENT_ID` (the SP
-application id). ✅ *Success: push a commit — `ci / lint + unit test` is
-green; and a dependabot PR (or `@dependabot rebase` on one) is green too,
-its log reading `Secret source: Dependabot`.*
+`uv` ecosystem there. ✅ *Success: a dependabot PR (or `@dependabot rebase` on
+one) is green, its log reading `Secret source: Dependabot`.*
+<!-- adopter-if:dependabot end -->
 
 ## 5. Databricks account-level setup (account admin; once per workspace)
 

@@ -14,8 +14,7 @@
       "Bash(make check-skills)",
       "Bash(make check-sync-lists)",
       "Bash(make check-templates-doc)",
-      "Bash(make dry-run-local)",
-      "Bash(PROTECTED_EDIT_OK=1 git commit -q -m ' *)"
+      "Bash(make dry-run-local)"
     ]
   },
   "hooks": {

@@ -18,11 +18,14 @@ The package has four parts, with one source of truth:
 | **Conceptual design spec** | `design/01_design_config_driven_medallion.drawio` | Multi-page Context → Author → Generate → Run → Ship. Edit only when the *design intent* changes. |
 | **Exported images** | `design/images/*.png` | Generated from the `.drawio` sources by `make design`. Never hand-edit; re-export. The README, `docs/` and `OVERVIEW.md` embed these. |
 | **Customer overview** | `design/OVERVIEW.md` | Customer-facing narrative that embeds the images. Refresh when a change alters the story (a new capability, layer behaviour, or value point). |
+| **Pipeline inventory** | `design/PIPELINES.md` | GENERATED from the `config/` artifacts by `make design` (`scripts/design_inventory.py`): every table, its source, target kind and quality gate, plus a mermaid lineage graph. Never hand-edit; CI's `make check-design` fails while it is stale. |
 
+<!-- adopter-if:template start -->
 > `design/datalab-customer-overview.html` is a **published standalone snapshot**
 > built out-of-band (not by this skill or by `make design`). If your change
 > materially alters `OVERVIEW.md`, flag in the PR that the HTML snapshot needs
 > regenerating — do not hand-edit it.
+<!-- adopter-if:template end -->
 
 The `.drawio` XML is the source of truth. The PNGs are derived; `make design`
 regenerates them (it uses the draw.io Desktop CLI and is dev/agent-only — the
@@ -173,23 +176,28 @@ PY
 make design
 ```
 
-This regenerates every `design/images/*.png` from the `.drawio` sources (it
-splits the multi-page `01_*` file page by page, working around draw.io's
-unreliable `--page-index`). Open the changed PNG to confirm it rendered, and
-**commit the regenerated images alongside the `.drawio` edit** — a diagram edit
+This re-renders `design/PIPELINES.md` from the `config/` artifacts and
+regenerates every `design/images/*.png` from the `.drawio` sources (it splits
+the multi-page `01_*` file page by page, working around draw.io's unreliable
+`--page-index`). Open the changed PNG to confirm it rendered, and **commit the
+regenerated images and inventory alongside the `.drawio` edit** — a diagram edit
 without its re-export leaves the embedded images stale. If `make design` reports
-the CLI is missing, install draw.io Desktop or set `DRAWIO=/path/to/draw.io`.
+the CLI is missing, install draw.io Desktop or set `DRAWIO=/path/to/draw.io` (the
+inventory is re-rendered either way; only the PNG export is skipped).
 
 ### 6. Refresh the customer overview
 
 If the change alters the *story* the customer reads — a new medallion capability,
 a changed layer behaviour, a new execution profile, a new value point — update
 the matching prose in `design/OVERVIEW.md` (it embeds `images/01_*` and
-`images/02_*`, so the re-exported images flow through automatically). When
-`OVERVIEW.md` changes materially, note in the PR that
+`images/02_*`, so the re-exported images flow through automatically). A purely
+structural diagram tweak that doesn't change the narrative needs no
+`OVERVIEW.md` edit.
+<!-- adopter-if:template start -->
+When `OVERVIEW.md` changes materially, note in the PR that
 `design/datalab-customer-overview.html` (the standalone share) needs
-regenerating out-of-band. A purely structural diagram tweak that doesn't change
-the narrative needs no `OVERVIEW.md` edit.
+regenerating out-of-band.
+<!-- adopter-if:template end -->
 
 ### 7. Cross-check AGENTS.md and docs
 
@@ -197,8 +205,8 @@ Scan AGENTS.md's "Architecture" and "Codebase layout" sections (and the relevant
 `docs/`). If the change also affects those — a new framework module in the tree,
 a new lane/profile — update them in the same PR. The diagram, images, OVERVIEW,
 AGENTS.md and docs/ are the human-and-agent-facing descriptions of the system;
-they must stay aligned. Per the maintenance protocol, framework changes also
-update `docs/FRAMEWORK.md`.
+they must stay aligned. Framework behavior itself is documented in the
+framework repo's `docs/FRAMEWORK.md` — change it there, not here.
 
 ### 8. Don't touch
 
@@ -206,14 +214,16 @@ update `docs/FRAMEWORK.md`.
 - The legend — only change it if you introduce a new flow tier / edge color.
 - The band wrapper rectangles (`config_band`, `framework_band`, etc.) — resize
   only if a row genuinely needs more vertical space.
-- The exported PNGs by hand, or the standalone HTML — regenerate, don't edit.
+- The exported PNGs or `design/PIPELINES.md` by hand — regenerate them (`make design`).
+- The standalone HTML — it is regenerated out-of-band. <!-- adopter-if:template -->
 
 ## Common change → action recipes
 
 **"Added a new table artifact"** → New box in `config_band`, plus the medallion
 table box in `pipeline_band` and a green data-flow edge from its upstream. Edit
-`cfg_*` text to match. `make design`. If it adds a customer-visible capability,
-add a line to OVERVIEW.md's medallion section.
+`cfg_*` text to match. `make design` (it also re-renders `design/PIPELINES.md`;
+CI's `make check-design` fails without it). If it adds a customer-visible
+capability, add a line to OVERVIEW.md's medallion section.
 
 **"Added a new @transform / @check_function"** → Usually no new box — it lives
 inside `dom_transforms` / `dom_checks`. Edit that box's text if the surface
@@ -240,7 +250,8 @@ anywhere" table.
 
 - Editing a `.drawio` source but forgetting `make design` — the README/docs
   embed stale images.
-- Hand-editing a PNG or the standalone HTML instead of regenerating.
+- Hand-editing a PNG or `design/PIPELINES.md` instead of regenerating.
+- Hand-editing the standalone HTML instead of regenerating it. <!-- adopter-if:template -->
 - Adding a box outside the bands (floating in whitespace).
 - A write-edge from a job/notebook INTO an SDP-owned table — violates the
   single-writer invariant; edge lanes are read-only (teal).
@@ -257,9 +268,12 @@ Before declaring the design updated, verify:
    errors).
 2. Every new box has a unique `id`; every new edge's `source`/`target` exists.
 3. No sibling boxes overlap by more than a few px; all boxes are in-bounds.
-4. `make design` ran and the regenerated `design/images/*.png` are staged with
-   the `.drawio` edit.
-5. `design/OVERVIEW.md` still reads true (updated if the narrative changed); the
-   standalone HTML is flagged in the PR if it needs regenerating.
-6. The change is described in AGENTS.md (and `docs/FRAMEWORK.md` for framework
-   changes) in the same PR.
+4. `make design` ran and the regenerated `design/images/*.png` and
+   `design/PIPELINES.md` are staged with the `.drawio` edit (`make check-design`
+   passes).
+5. `design/OVERVIEW.md` still reads true (updated if the narrative changed).
+   <!-- adopter-if:template start -->
+   The standalone HTML is flagged in the PR if it needs regenerating.
+   <!-- adopter-if:template end -->
+6. The change is described in AGENTS.md in the same PR (framework behavior
+   changes belong in the framework repo).

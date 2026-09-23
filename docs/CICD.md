@@ -38,12 +38,14 @@ flowchart LR
 | Workflow | Trigger | What runs |
 |---|---|---|
 | `ci-cd.yml` | PRs to `main` (CI only, vs dev); pushes to `main` (CI + deploy dev); `v*-rc*` tags (stage); `v*` tags (prod); manual with a target choice | ONE workflow for every target — a `params` job derives the target/deploy flags from the trigger, then calls the common CI/CD workflows |
-| `framework-bump.yml` | twice-daily schedule, manual (optional dry run), `repository_dispatch` `datalab-framework-released` | watches `datalab-framework` for a new `vX.Y.Z` release and opens the MANDATORY bump PR (`make bump-framework`: pyproject tag + `var.datalab_version` + `uv.lock` + regenerated `schemas/` + re-pinned framework-doc links), with every CI gate's result and the framework CHANGELOG between the pins in its body — a DRAFT when the release needs corresponding changes; see "Framework bumps" |
-| `pr-template-check.yml` | every PR | enforces the unified PR template |
+| `framework-bump.yml` | twice-daily schedule, manual (optional dry run), `repository_dispatch` `datalab-framework-released` | watches `datalab-framework` for a new `vX.Y.Z` release and opens the MANDATORY bump PR (`make bump-framework`: pyproject tag + `var.datalab_version` + `uv.lock` + regenerated `schemas/` + re-pinned framework-doc links), with every CI gate's result and the framework CHANGELOG between the pins in its body — a DRAFT when the release needs corresponding changes; see "Framework bumps" | <!-- adopter-if:framework-bot -->
+| `pr-template-check.yml` | every PR | enforces the unified PR template | <!-- adopter-if:pr-template -->
 
+<!-- adopter-if:dependabot start -->
 Dependabot (`.github/dependabot.yml`) keeps the GitHub Actions pins and regular
-Python dev deps fresh; the framework pin is deliberately excluded there — the
-framework-bump workflow owns that multi-file lockstep.
+Python dev deps fresh; the framework pin is deliberately excluded there —
+`make bump-framework` owns that multi-file lockstep.
+<!-- adopter-if:dependabot end -->
 
 Reusable pieces:
 
@@ -83,9 +85,10 @@ mandate.
 |---|---|---|
 | `make check-framework-current` (CI job `framework pin is the latest release`, every PR + main) | a newer published `vX.Y.Z` GitHub Release exists than the pinned tag | merge the bot's bump PR (or `make bump-framework VERSION=x.y.z`) |
 | `make check-lockstep` (CI) | the git tag, `var.datalab_version`, `uv.lock` or any framework-doc link disagree | `make bump-framework VERSION=x.y.z` |
-| `make check-schemas` (CI) | `schemas/` differ from the pinned framework's models | `make sync-schemas` |
-| `make check-framework-surface` (CI + pre-commit) | the `author-ldp-artifact` skill misses a target/source kind of the pinned schema | document the new kind in the skill, `make sync-skills` |
+| `make check-schemas` (CI) | `schemas/` differ from the pinned framework's models | `make sync-schemas` | <!-- adopter-if:schemas -->
+| `make check-framework-surface` (CI + pre-commit) | the `author-ldp-artifact` skill misses a target/source kind of the pinned schema | document the new kind in the skill, `make sync-skills` | <!-- adopter-if:schemas&any-agent -->
 
+<!-- adopter-if:framework-bot start -->
 **The bot** (`framework-bump.yml`) opens the bump PR, and it adapts to what the
 release needs:
 - **Checks:** a cheap check job runs twice a day. It compares the pin with the
@@ -132,12 +135,15 @@ end of the framework's `release.yml` that sends it would make the bump PR
 appear minutes after a release instead of at the next scheduled check. It needs
 a token that can write to this repo, stored as a framework-repo secret. Nothing
 sends it today; the schedule and the stale-pin gate make it optional.
+<!-- adopter-if:framework-bot end -->
 
+<!-- adopter-if:template start -->
 **Break-glass (template only).** During an incident, a prod hotfix may need to
 ship before a breaking framework release is adopted. Setting the repo or org
 **variable** `DATALAB_FRAMEWORK_MANDATE=warn` downgrades both framework gates to
 warnings. Delete it as soon as the bump merges; leaving it set disables the
 mandate.
+<!-- adopter-if:template end -->
 
 ## Private framework dependency (git auth)
 
@@ -171,6 +177,7 @@ Set up once (org owner):
    `lint + test` job declares no `environment:`, so it only sees repo/org
    variables and secrets.
 
+   <!-- adopter-if:dependabot start -->
    **Dependabot-triggered runs read `secrets.*` from a different store** —
    Settings → Secrets and variables → **Dependabot** (Actions *variables*
    still resolve). Mirror the key there too:
@@ -199,6 +206,7 @@ Set up once (org owner):
    store is still wrong; the conclusive probe is a run Dependabot itself
    triggers (`@dependabot rebase`), whose log reads `Secret source:
    Dependabot`.
+   <!-- adopter-if:dependabot end -->
 
 In `common-ci-steps.yml` / `common-cd-steps.yml`, the flow is three steps:
 fail fast if the client id / key are missing → `actions/create-github-app-token@v3`
