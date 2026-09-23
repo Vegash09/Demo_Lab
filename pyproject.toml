@@ -45,8 +45,9 @@ dev = [
 
 [tool.pytest.ini_options]
 # Framework unit tests live in the datalab-framework repo; here we run each
-# reference domain's own tests (transforms + end-to-end contract).
-testpaths = ["projects"]
+# reference domain's own tests (transforms + end-to-end contract) and the
+# repo-integrity scripts' tests (scripts/tests — stdlib, no Spark).
+testpaths = ["projects", "scripts/tests"]
 addopts   = "-ra --tb=short"
 
 [tool.ruff]
@@ -76,6 +77,6 @@ package = false   # workspace + dev-env root, not a built package
 members = ["projects/customer_sales", "projects/sales"]
 
 [tool.uv.sources]
-datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v0.10.0" }
+datalab = { git = "https://github.com/dediggibyte/datalab-framework.git", tag = "v1.0.0" }
 customer_sales_etl = { workspace = true }
 sales_etl = { workspace = true }

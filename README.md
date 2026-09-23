@@ -92,7 +92,7 @@ flowchart TD
 | [docs/NEW_ADOPTER.md](docs/NEW_ADOPTER.md) | you are standing up a repo for a NEW customer — the one ordered checklist: prerequisites, generate + convert, GitHub/OIDC wiring, bootstrap, first deploy |
 | [docs/ADOPTING.md](docs/ADOPTING.md) | you need the reference behind that checklist: the two consumption paths (git dep + UC-Volume wheel), framework credentials, pinning + publishing, UC bootstrap, first-deploy traps |
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | you are authoring your first table on the framework — empty folder → deployed pipeline |
-| [framework repo: docs/FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) | you are adding a table or domain: artifact schema, generated graph, target kinds, data-quality semantics, the SDP capability matrix — the reusable framework's reference (separate repo) |
+| [framework repo: docs/FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md) | you are adding a table or domain: artifact schema, generated graph, target kinds, data-quality semantics, the SDP capability matrix — the reusable framework's reference (separate repo) |
 | [docs/NAMING.md](docs/NAMING.md) | you are naming anything: folder paths mirror the UC namespace (catalog → schema → table), package/resource naming rules |
 | [projects/customer_sales/](projects/customer_sales/README.md) | you want a finished example to copy — complete worked domain, mirrors an adopter repo |
 | [design/OVERVIEW.md](design/OVERVIEW.md) | you want the customer-facing tour — how datalab drives transformations across bronze → silver → gold, with the architecture diagrams (shareable standalone: `design/datalab-customer-overview.html`) |
@@ -162,7 +162,7 @@ flowchart LR
 
 Adding your own table is one artifact + (rarely) one pure `@transform`
 function — the walkthrough is in the framework repo's
-[docs/FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md);
+[docs/FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md);
 [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) takes a brand-new domain
 from empty folder to deployed pipeline.
 

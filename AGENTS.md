@@ -14,7 +14,7 @@ Read this before editing. Keep it accurate when you change the system.
 > publish-wheel` / the `deploy-dab` action). Keep the git tag and
 > `var.datalab_version` in lockstep. The framework **reference** (artifact anatomy,
 > target kinds, dqx, the SDP capability matrix) lives in that repo's
-> [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md);
+> [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md);
 > to stand up your own repo on the framework, see [`docs/ADOPTING.md`](docs/ADOPTING.md).
 <!-- template-only:repo-intro end -->
 
@@ -32,7 +32,7 @@ Bundle).
   CDC), authored from natural language via the `author-ldp-artifact` skill,
   validated by Pydantic models and generated into LDP datasets by
   `datalab.framework.generate` — see the framework repo's
-  [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)
+  [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md)
   (the full reference, including the SDP capability matrix). The per-domain
   `transformations/pipeline.py` is 3 lines. Never `import dlt` (deprecated).
 - **Framework vs domain — strict separation**: the REUSABLE framework (models,
@@ -145,8 +145,10 @@ scripts/domains.py        THE domain registry: which domains this repo deploys; 
                           Adding a domain = one DOMAINS entry here (+ the usual config/src/resources/vars)
 scripts/bootstrap_uc.py   One-time UC bootstrap per target: every registry domain catalog's schemas/volumes/GRANTs, incl. its artifacts.wheels Volume holding the framework wheel (make bootstrap-uc; catalogs/groups come from scripts/domains.py)
 scripts/publish_wheel.py  Build the FRAMEWORK wheel for the TARGET's resolved datalab_version + upload it into EACH registry catalog's artifacts.wheels UC Volume (make publish-wheel; CI runs it in deploy-dab before bundle deploy; --catalog-for <domain>=<catalog> mirrors --var catalog overrides)
-scripts/check_lockstep.py  Assert the framework pin agrees everywhere: pyproject git tag == var.datalab_version == uv.lock tag == uv.lock package version; notes any per-target datalab_version override (make check-lockstep; CI gate)
-scripts/bump_framework.py  Rewrite the pin at every site — driven by `make bump-framework VERSION=x.y.z` (edits + lock + schema regen + lockstep check); the framework-bump workflow opens this as a bot PR on new framework tags
+scripts/check_lockstep.py  Assert the framework pin agrees everywhere: pyproject git tag == var.datalab_version == uv.lock tag == uv.lock package version == every framework-doc link's ref; notes any per-target datalab_version override (make check-lockstep; CI gate)
+scripts/bump_framework.py  Rewrite the pin at every site — driven by `make bump-framework VERSION=x.y.z` (edits + framework-doc links re-pinned + lock + schema regen + lockstep check); the framework-bump workflow opens this as a bot PR on new framework tags
+scripts/check_framework_current.py  MANDATE: fail while a newer published datalab-framework release exists than the pin (make check-framework-current; its own CI job). Mode var DATALAB_FRAMEWORK_MANDATE: enforce by default in the template, warn by default in generated adopters; `warn` in the template = incident break-glass
+scripts/check_framework_surface.py  Fail while the author-ldp-artifact skill misses a target/source kind of the pinned framework's schema — the corresponding change a feature release needs (make check-framework-surface; CI + pre-commit)
 scripts/check_sync_lists.py  Assert databricks.yml sync.exclude == .databricksignore (make check-sync-lists; CI gate)
 scripts/check_templates_doc.py  Assert the bootstrap-adopter-repo skill's references/templates.md (the documented MANUAL
                           fallback) still mirrors scaffold_adopter.py's file templates byte for byte (make check-templates-doc; CI + pre-commit)
@@ -264,7 +266,7 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   [+cdc | +cdc_from_snapshot] / materialized_view / temporary_view /
   delta_sink / kafka_sink). NL→artifact recipe: `author-ldp-artifact` skill;
   full reference incl. the SDP capability matrix: the framework repo's
-  [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
+  [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md).
 - Business logic stays in `src/<catalog>_etl/transforms/` as pure functions
   registered with `@transform("<domain>.<name>")`. **A transform never names a
   catalog/schema and never reads `spark.conf` itself** — everything it needs comes
@@ -443,10 +445,13 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   lockstep places HERE — the `datalab` git tag in `pyproject.toml`
   `[tool.uv.sources]` and `variables/medallion.yml` `datalab_version` (the Volume
   filename). **Upgrade with `make bump-framework VERSION=x.y.z`** — one command
-  that rewrites both, re-locks, regenerates the vendored `schemas/` and asserts
-  the lockstep; CI enforces the agreement (`make check-lockstep` +
-  `make check-schemas`), and the scheduled `framework-bump.yml` workflow opens
-  this bump as a bot PR when the framework releases a new tag. Then
+  that rewrites both, re-pins the framework-doc links, re-locks, regenerates the
+  vendored `schemas/` and asserts the lockstep; CI enforces the agreement
+  (`make check-lockstep` + `make check-schemas`), and the `framework-bump.yml`
+  workflow opens this bump as a bot PR when the framework releases a new tag.
+  **Adopting every framework release is MANDATORY** — `make
+  check-framework-current` fails CI on every PR and on main while a newer
+  release exists (see "Framework bumps are mandatory" below). Then
   `make publish-wheel APPLY=1` (record it in CHANGELOG.md; the framework's own
   `__version__` lives in the datalab-framework repo). A target can soak-test a
   newer framework by overriding `datalab_version` in its `targets/<env>.yml`
@@ -511,6 +516,31 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   `git -c http.https://github.com/.extraheader= …` (leave the header intact
   elsewhere, or the bot's own `git push` breaks). This cost six weeks of a silently
   stale framework pin — see `.github/workflows/framework-bump.yml`.
+- **Framework bumps are mandatory in the template, and a bump carries its
+  corresponding changes.** The datalab template must run the LATEST
+  datalab-framework release: `make check-framework-current` (its own CI job)
+  fails every PR and main while a newer published `vX.Y.Z` exists. A generated
+  adopter repo gets the same gates in warn mode unless it sets
+  `DATALAB_FRAMEWORK_MANDATE=enforce`. The `framework-bump.yml` bot (twice
+  daily, on demand, or on a `repository_dispatch` — nothing sends one yet) opens
+  the bump PR; merge it. A bump is
+  not just the pin: it re-pins the framework-doc links (`check-lockstep`),
+  regenerates `schemas/` (`check-schemas`), and must teach the
+  `author-ldp-artifact` skill every new target/source kind
+  (`check-framework-surface`) and migrate anything the framework CHANGELOG
+  flags **BREAKING**. When a gate fails on the new version (a failing `make
+  bump-framework` included) the bot opens the PR as a DRAFT listing the failing
+  gates and the framework CHANGELOG between the pins — push the corresponding
+  changes to that branch (the bot never overwrites human commits), then mark it
+  ready. It
+  works only if Settings → Actions → General → "Allow GitHub Actions to create
+  and approve pull requests" is ON (otherwise it files a `framework-bump`
+  issue with a one-click compare link) and the account's Actions billing /
+  spending limit lets jobs start (runs died "not started because recent account
+  payments have failed" on 2026-08-31 and 2026-09-21). Break-glass for an
+  incident only: the `DATALAB_FRAMEWORK_MANDATE=warn` repo/org variable
+  downgrades the framework gates to warnings — remove it once the bump merges.
+  Details: `docs/CICD.md` "Framework bumps".
 - **A version/staleness check that finds NOTHING must fail, not warn.** The bump
   bot read its tag list through a pipeline (`$(git ls-remote … | grep … | tail -1)`);
   when the git call failed, the pipeline's status came from `tail` (success), the
@@ -772,9 +802,13 @@ change:
    in `pyproject.toml` + `var.datalab_version` in lockstep, re-locks, and
    REGENERATES `schemas/*.json` from the newly pinned models
    (`make sync-schemas` — never hand-copy them; `make check-schemas` +
-   `make check-lockstep` gate CI). Then `make publish-wheel APPLY=1` and record
-   the bump in `CHANGELOG.md`. The scheduled `framework-bump.yml` workflow opens
-   this bump as a bot PR automatically on new framework release tags.
+   `make check-lockstep` gate CI). Then add the release's corresponding changes
+   (new kinds in the `author-ldp-artifact` skill — `make
+   check-framework-surface`; migrations for BREAKING entries), `make
+   publish-wheel APPLY=1` and record the bump in `CHANGELOG.md`. The
+   `framework-bump.yml` workflow opens this bump as a bot PR automatically on
+   new framework release tags, and adopting it is mandatory (`make
+   check-framework-current` fails CI while the pin is behind).
 4. If you change the protected set itself, update **all three** in one commit:
    `.claude/hooks/protected_files_guard.py`, `.githooks/pre-commit`, and the
    table below.
@@ -808,7 +842,7 @@ change:
 | `^\.cursor/(rules\|hooks)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks (skills are read from `.agents/skills`) |
 | `^\.codex/hooks\.json$`, `^\.agents/skills/.*` | Codex hooks.json + `.agents/skills` (the canonical authored agent-skills source) |
 | `^scripts/sync_skills\.py$` | agent-skills sync generator (canonical `.agents/skills` → `.claude/skills` copy) |
-| `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists\|check_templates_doc\|check_adopter_docs\|check_agent_settings)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check, adopter-scaffold doc lockstep, adopter doc drift, agent-config portability |
+| `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists\|check_templates_doc\|check_adopter_docs\|check_agent_settings\|check_framework_current\|check_framework_surface)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check, adopter-scaffold doc lockstep, adopter doc drift, agent-config portability, mandatory framework adoption + surface coverage |
 | `^schemas/.*\.json$` | vendored editor schemas — GENERATED from the pinned framework (`make sync-schemas`), never hand-edited |
 | `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) |
 | `^\.githooks/.*` | git pre-commit guard |

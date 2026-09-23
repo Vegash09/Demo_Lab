@@ -22,6 +22,24 @@ opens the bump PR automatically; then `make publish-wheel`.
 ## [Unreleased]
 
 ### Added
+- **Adopting every datalab-framework release is MANDATORY in the template.**
+  New `make check-framework-current` (its own CI job, every PR + main) fails
+  while a newer PUBLISHED framework release exists than the pinned tag — merge
+  the bump PR. One mode variable, `DATALAB_FRAMEWORK_MANDATE`, governs both new
+  gates: `enforce` by default in the template, `warn` by default in generated
+  adopter repos (set `enforce` to opt in); `warn` in the template is the
+  incident break-glass.
+  New `make check-framework-surface` (CI + pre-commit) fails while the
+  `author-ldp-artifact` skill misses a target/source kind of the pinned
+  framework's schema — the corresponding change a feature release needs (the
+  skill had silently never learned `foreach_batch_sink`). Both scripts join the
+  protected surface; the scaffold smoke test runs them in the generated repo.
+- **Framework-doc links are pinned to the framework version.** Every link into
+  the framework repo (`…/datalab-framework/blob/<ref>/…`) now names the pinned
+  tag instead of `main` (which ran ahead of the pin and described features this
+  repo couldn't use yet): `make bump-framework` re-pins them, `make
+  check-lockstep` fails on drift, and the scaffold pins a generated adopter's
+  links to ITS `--framework-tag`.
 - **`make check-agent-settings`** (CI + pre-commit) — fails if a COMMITTED
   agent-harness config (`.claude/settings.json`, `.cursor/hooks.json`,
   `.codex/hooks.json`) contains a machine-specific absolute path, or a hook
@@ -39,6 +57,15 @@ opens the bump PR automatically; then `make publish-wheel`.
   Attribution is checked per paragraph, not per line. No-ops in this repo.
 
 ### Fixed
+- **Framework bumps worked only sometimes.** Root causes found in the bot's run
+  history: jobs refused by GitHub billing ("recent account payments have
+  failed or your spending limit needs to be increased", 2026-08-31 and
+  2026-09-21 — a whole day lost each time); the App private key missing
+  (2026-08-16/17/18); the 06:17 cron routinely starting 5–6 h late; and the
+  bump path itself never having run end to end — every real bump (0.5.0, 0.6.0,
+  0.9.0, 0.10.0) was made by hand, and its `gh pr create` would have been
+  refused because "Allow GitHub Actions to create and approve pull requests" is
+  off on this repo. See the bot entry under Changed.
 - **The adopter templates doc no longer hands out a broken conversion.** It
   shipped `environment_version: "4"` uncommented (Databricks' fingerprint gate
   then leaves a brand-new pipeline unable to run), told the reader to pre-create
@@ -118,6 +145,31 @@ opens the bump PR automatically; then `make publish-wheel`.
   which is exactly how the 2026-07/08 outage presented.
 
 ### Changed
+- **Framework pinned to datalab 1.0.0** (from 0.10.0): git tag +
+  `var.datalab_version` + `uv.lock` + regenerated `schemas/` (managed tables,
+  checkpoint import, AUTO CDC partial updates, dq fixes — the framework's first
+  release under its strict feature=MAJOR / fix=MINOR policy; not breaking). The
+  corresponding changes: the `author-ldp-artifact` skill documents every source
+  and target kind (new `managed_table`, plus `foreach_batch_sink` / `view` /
+  `sql` / `python` / `snapshot_function` it never covered), `replace_where`,
+  `import_checkpoint_conf`, the CDC partial-update fields and `dq.variables_conf`
+  substitution; the framework reference links are pinned to v1.0.0. Every gate
+  passes unchanged (configs, 22 domain tests).
+- **The framework-bump bot is reliable.** It checks twice a day in a cheap job
+  (the heavy bump job starts only when due) and accepts a
+  `datalab-framework-released` `repository_dispatch`. It runs EVERY CI gate on
+  the bumped tree and always opens the PR — a DRAFT labeled
+  `needs-corresponding-changes` listing the failing gates plus the framework
+  CHANGELOG between the pins, BREAKING entries and new capabilities — instead of
+  opening nothing (a failing `make bump-framework` is reported the same way).
+  It compares against the newest PUBLISHED release, force-pushes its own branch
+  only when it holds nothing but bot commits (a pushed-but-unopened branch used
+  to wedge every later run), dispatches `ci-cd.yml` on it (GITHUB_TOKEN PRs
+  trigger no CI), closes older bump PRs only after the new one exists and only
+  when they carry no human commits, supports a manual dry run, files/updates a
+  `framework-bump` tracking issue on any failure (e.g. PR creation refused) and
+  closes those issues once the pin is current. docs/CICD.md "Framework bumps"
+  documents the flow and its three external prerequisites.
 - **Framework pin bumped `0.9.0` → `0.10.0`** and `gold.sales_by_category` no
   longer hardcodes its joined table. The transform used to build the dimension's
   name itself:

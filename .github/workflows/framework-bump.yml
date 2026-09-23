@@ -1,51 +1,78 @@
 name: "Bot · framework version bump"
 
-# Watches dediggibyte/datalab-framework for a new vX.Y.Z release tag and opens a
-# ready-to-review PR that performs the FULL lockstep bump via `make
-# bump-framework`: pyproject.toml git tag + var.datalab_version + uv.lock +
-# regenerated schemas/. Dependabot cannot do this (it neither understands
-# [tool.uv.sources] git tags nor multi-file lockstep), hence a bespoke bot.
+# Adopting every datalab-framework release is MANDATORY for this template
+# (scripts/check_framework_current.py fails CI on every PR and on main while the
+# pin is behind). This bot does the adopting: when dediggibyte/datalab-framework
+# publishes a new vX.Y.Z tag it opens ONE PR that performs the full lockstep
+# bump (`make bump-framework`: pyproject.toml git tag + var.datalab_version +
+# uv.lock + regenerated schemas/ + framework-doc links re-pinned) and lists the
+# CORRESPONDING CHANGES the release needs — the framework CHANGELOG between the
+# two pins, and every CI gate's result on the bumped tree. Dependabot cannot do
+# this (it neither understands [tool.uv.sources] git tags nor multi-file
+# lockstep), hence a bespoke bot. See docs/CICD.md "Framework bumps".
 #
-# The PR is created with the default GITHUB_TOKEN, so GitHub does NOT trigger
-# the CI/CD workflow on it (an anti-recursion rule for bot-created PRs). To
-# compensate, this workflow runs the full CI quality gates itself before opening
-# the PR; a maintainer can still trigger CI by pushing to the branch or
-# closing/reopening the PR. After merge, the dev deploy publishes the new wheel
-# to each project catalog's artifacts.wheels Volume automatically (deploy-dab).
+# Why it used to work only sometimes, and what changed:
+#   * a scheduled run that GitHub delayed, dropped, or refused to start (billing
+#     / spending limit) cost a whole day — the check now runs twice a day, costs
+#     one cheap job (the heavy bump job starts only when a bump is due), and it
+#     accepts a repository_dispatch so a framework release CAN trigger it at once
+#     (the sender is optional — docs/CICD.md "Framework bumps");
+#   * gates failing on the new version (= the release needs corresponding
+#     changes) opened NO PR at all — the PR now always opens, as a DRAFT listing
+#     the failing gates (a failing `make bump-framework` included), and any
+#     other failure files a tracking issue, so the work is never invisible;
+#   * a PR-creation failure left the branch pushed, and every later run then
+#     failed re-pushing it — the bot branch is force-pushed, but never over a
+#     human's commits, and superseded bump PRs are closed only once the new PR
+#     exists and only when they hold nothing but bot commits;
+#   * GITHUB_TOKEN PRs trigger no CI — the bot dispatches ci-cd.yml on its
+#     branch, so the PR carries real checks;
+#   * "Allow GitHub Actions to create and approve pull requests" OFF makes PR
+#     creation fail — the bot then opens/updates a tracking issue with a
+#     one-click compare link and fails loudly naming the setting.
 
 on:
   schedule:
-    - cron: "17 6 * * *"   # daily, off the top of the hour
+    - cron: "17 6,18 * * *"   # twice a day, off the top of the hour
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Do everything except push / open the PR (prints the PR body)"
+        type: boolean
+        default: false
+  repository_dispatch:
+    # Optional instant trigger: the framework's release can send this event
+    # (needs a token with access to this repo — docs/CICD.md "Framework bumps").
+    types: [datalab-framework-released]
 
 permissions:
-  contents: write        # push the bump branch
-  pull-requests: write   # open the bump PR
+  contents: read
+
+concurrency:
+  group: framework-bump
+  cancel-in-progress: false
 
 jobs:
-  bump:
+  check:
+    name: "is the framework pin the latest release?"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read    # is the bump PR already open?
+      issues: write          # close framework-bump tracking issues once current
+    outputs:
+      bump:    ${{ steps.versions.outputs.bump }}
+      current: ${{ steps.versions.outputs.current }}
+      latest:  ${{ steps.versions.outputs.latest }}
+      version: ${{ steps.versions.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v10.0.1
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Set up Java (local Spark for the pre-PR test run)
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
 
       - name: Fail clearly if the framework App credentials are missing
         # Without this the run dies inside create-github-app-token with a bare
         # "private-key input must be set", which reads as an action bug rather
-        # than "the secret is gone". Mirrors common-ci-steps.yml. Both values are
-        # repo/org scoped, NOT per-environment: this job declares no
-        # `environment:`, so an environment secret would be invisible here.
+        # than "the secret is gone" (it did, three days running in Aug 2026).
+        # Both values are repo/org scoped, NOT per-environment.
         env:
           CLIENT_ID: ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
           APP_KEY:   ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
@@ -74,128 +101,340 @@ jobs:
 
       - name: Compare the pinned tag with the framework's latest release tag
         id: versions
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FRAMEWORK_TOKEN: ${{ steps.framework_token.outputs.token }}
+        # Plain python3 (stdlib tomllib): this job installs nothing, so the
+        # routine "nothing to do" run stays cheap. check_framework_current.py
+        # fails on ZERO readable tags — staleness would otherwise be unknown and
+        # pass as "nothing to do" (how the pin once sat at v0.6.0 for weeks).
         run: |
           set -euo pipefail
-          current=$(uv run --no-project python -c 'import tomllib,pathlib;print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["tool"]["uv"]["sources"]["datalab"]["tag"])')
-          # `-c http.https://github.com/.extraheader=` is LOAD-BEARING. actions/checkout
-          # persists `http.https://github.com/.extraheader = AUTHORIZATION: basic
-          # <GITHUB_TOKEN>` into the repo-LOCAL git config, and an explicit
-          # Authorization header BEATS the credentials in the URL that the
-          # `insteadOf` rewrite above supplies. Any git command run from the
-          # workspace therefore reaches the PRIVATE framework repo as the
-          # GITHUB_TOKEN — which cannot see it — and gets "Repository not found".
-          # (uv's clone is unaffected: it targets ~/.cache/uv, outside this repo,
-          # so the gitdir-scoped header never applies. That asymmetry is why CI
-          # stayed green while this job silently found nothing for six weeks.)
-          # Unsetting the header lets the rewritten URL's App token be used.
-          tags=$(git -c http.https://github.com/.extraheader= \
-                     ls-remote --tags --refs \
-                     https://github.com/dediggibyte/datalab-framework.git 'v*')
-          latest=$(printf '%s\n' "$tags" \
-                   | awk -F/ '{print $NF}' \
-                   | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-                   | sort -V | tail -1) || true
+          current=$(python3 -c 'import tomllib,pathlib;print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["tool"]["uv"]["sources"]["datalab"]["tag"])')
+          # the newest PUBLISHED release (gh + the reader App token); a bare tag
+          # whose release workflow hasn't published yet is not a release
+          latest=$(GH_TOKEN="$FRAMEWORK_TOKEN" python3 scripts/check_framework_current.py --latest)
           echo "current=$current latest=$latest"
-          if [ -z "$latest" ]; then
-            # NOT a warning. Reading zero tags means the bot cannot tell whether
-            # the pin is stale, so treating it as "nothing to do" reports success
-            # while doing nothing — exactly how the pin sat at v0.6.0 while the
-            # framework shipped v0.9.0.
-            echo "::error title=Cannot read framework tags::Read no vX.Y.Z tag from dediggibyte/datalab-framework, so staleness of the pin ($current) is UNKNOWN. Check the App installation and that the token can read the repo."
-            exit 1
-          elif [ "$latest" = "$current" ] || [ "$(printf '%s\n' "$latest" "$current" | sort -V | tail -1)" = "$current" ]; then
-            echo "::notice::pin $current is current (latest framework tag: $latest)."
+          branch="chore/bump-datalab-framework-${latest#v}"
+          if [ "$(printf '%s\n' "$latest" "$current" | sort -V | tail -1)" = "$current" ]; then
+            echo "::notice::pin $current is current (latest framework release: $latest)."
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+            # the adoption landed (possibly by hand) — close leftover tracking issues
+            for n in $(GH_TOKEN="$GITHUB_TOKEN" gh issue list --state open --label framework-bump --json number --jq '.[].number' 2>/dev/null); do
+              GH_TOKEN="$GITHUB_TOKEN" gh issue close "$n" --comment "The framework pin is $current, the latest release — adopted. Closing."
+            done
+          elif [ "$(GH_TOKEN="$GITHUB_TOKEN" gh pr list --head "$branch" --state open --json number --jq length)" != "0" ]; then
+            echo "::warning title=Framework bump pending::the bump PR to $latest (from $branch) is open but not merged — CI fails on every PR until it merges (adopting releases is mandatory)."
             echo "bump=false" >> "$GITHUB_OUTPUT"
           else
-            echo "bump=true"            >> "$GITHUB_OUTPUT"
-            echo "current=$current"     >> "$GITHUB_OUTPUT"
-            echo "latest=$latest"       >> "$GITHUB_OUTPUT"
-            echo "version=${latest#v}"  >> "$GITHUB_OUTPUT"
+            {
+              echo "bump=true"
+              echo "current=$current"
+              echo "latest=$latest"
+              echo "version=${latest#v}"
+            } >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Skip if a bump PR for this version is already open
-        id: existing
-        if: steps.versions.outputs.bump == 'true'
+  bump:
+    name: "bump to ${{ needs.check.outputs.latest }}"
+    needs: check
+    if: needs.check.outputs.bump == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the bot branch
+      pull-requests: write   # open the bump PR, close the ones it supersedes
+      issues: write          # fallback tracking issue when PR creation is refused
+      actions: write         # dispatch ci-cd.yml on the bot branch
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      LATEST:  ${{ needs.check.outputs.latest }}
+      CURRENT: ${{ needs.check.outputs.current }}
+      BRANCH:  chore/bump-datalab-framework-${{ needs.check.outputs.version }}
+      DRY_RUN: ${{ inputs.dry_run == true }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Java (local Spark for the pre-PR test run)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Mint a read-only token for datalab-framework (GitHub App)
+        id: framework_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id:    ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
+          private-key:  ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+          owner:        dediggibyte
+          repositories: datalab-framework
+
+      - name: Route the private framework clone over HTTPS with the token
         env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: chore/bump-datalab-framework-${{ steps.versions.outputs.version }}
+          FRAMEWORK_TOKEN: ${{ steps.framework_token.outputs.token }}
         run: |
-          open=$(gh pr list --head "$BRANCH" --state open --json number --jq length)
-          if [ "$open" != "0" ]; then
-            echo "::notice::PR from $BRANCH already open — nothing to do."
-            echo "proceed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "proceed=true" >> "$GITHUB_OUTPUT"
-          fi
+          git config --global \
+            url."https://x-access-token:${FRAMEWORK_TOKEN}@github.com/dediggibyte/datalab-framework".insteadOf \
+            "https://github.com/dediggibyte/datalab-framework"
 
       - name: Run the lockstep bump (make bump-framework)
-        if: steps.versions.outputs.bump == 'true' && steps.existing.outputs.proceed == 'true'
-        run: make bump-framework VERSION=${{ steps.versions.outputs.version }}
-
-      - name: Pre-validate the bump (the CI gates, since bot PRs don't trigger CI)
-        if: steps.versions.outputs.bump == 'true' && steps.existing.outputs.proceed == 'true'
+        id: bumpstep
+        # continue-on-error: a release that breaks the bump itself (uv lock,
+        # schema regen) is exactly one that needs corresponding changes — it is
+        # reported as a failing gate on a DRAFT PR, never a silent red run.
+        continue-on-error: true
         run: |
-          make lint
-          make validate-configs
-          make test
-          make check-lockstep
-          make check-schemas
+          set -o pipefail
+          make bump-framework VERSION="$VERSION" 2>&1 | tee "$RUNNER_TEMP/gate-bump-framework.log"
 
-      - name: Open the bump PR
-        if: steps.versions.outputs.bump == 'true' && steps.existing.outputs.proceed == 'true'
+      - name: Run every CI gate on the bumped tree (a failure = a corresponding change is needed)
+        id: gates
+        # NOT fail-fast: each gate's result goes into the PR body, and a failing
+        # gate makes the PR a DRAFT instead of suppressing it. This is the list
+        # the `test` job of common-ci-steps.yml runs.
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.versions.outputs.version }}
-          LATEST:  ${{ steps.versions.outputs.latest }}
-          CURRENT: ${{ steps.versions.outputs.current }}
+          BUMP_OUTCOME: ${{ steps.bumpstep.outcome }}
         run: |
-          BRANCH="chore/bump-datalab-framework-$VERSION"
+          set +e
+          report="$RUNNER_TEMP/gates.md"; : > "$report"; failed=""
+          if [ "$BUMP_OUTCOME" = "success" ]; then
+            echo "- [x] \`make bump-framework VERSION=$VERSION\`" >> "$report"
+          else
+            failed="bump-framework"
+            {
+              echo "- [ ] \`make bump-framework VERSION=$VERSION\` — **FAILS on $LATEST**:"
+              echo '  ```'
+              tail -n 25 "$RUNNER_TEMP/gate-bump-framework.log" | sed 's/^/  /'
+              echo '  ```'
+            } >> "$report"
+          fi
+          for gate in lint validate-configs test check-lockstep check-schemas \
+                      check-framework-current check-framework-surface check-domains \
+                      check-sync-lists check-templates-doc check-skills check-agent-settings; do
+            if make "$gate" > "$RUNNER_TEMP/gate-$gate.log" 2>&1; then
+              echo "- [x] \`make $gate\`" >> "$report"
+            else
+              failed="$failed $gate"
+              {
+                echo "- [ ] \`make $gate\` — **FAILS on $LATEST**:"
+                echo '  ```'
+                tail -n 25 "$RUNNER_TEMP/gate-$gate.log" | sed 's/^/  /'
+                echo '  ```'
+              } >> "$report"
+            fi
+          done
+          echo "failed=${failed# }" >> "$GITHUB_OUTPUT"
+          if [ -n "$failed" ]; then
+            echo "::warning title=Corresponding changes needed::gates failing on $LATEST: ${failed# } — the bump PR opens as a DRAFT listing them."
+          fi
+
+      - name: Collect the framework CHANGELOG between the two pins
+        env:
+          GH_TOKEN: ${{ steps.framework_token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if ! gh api -H "Accept: application/vnd.github.raw" \
+               "repos/dediggibyte/datalab-framework/contents/CHANGELOG.md?ref=$LATEST" \
+               > "$RUNNER_TEMP/framework-changelog.md"; then
+            echo "_(could not read the framework CHANGELOG at $LATEST)_" > "$RUNNER_TEMP/framework-changelog.md"
+          fi
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          def key(v):
+              return tuple(int(x) for x in v.split("."))
+
+          tmp = Path(os.environ["RUNNER_TEMP"])
+          text = (tmp / "framework-changelog.md").read_text()
+          current, latest = os.environ["CURRENT"].lstrip("v"), os.environ["LATEST"].lstrip("v")
+          heads = list(re.finditer(r"^## \[(\d+\.\d+\.\d+)\].*$", text, re.M))
+          sections, breaking, added = [], [], []
+          for i, m in enumerate(heads):
+              if not key(current) < key(m.group(1)) <= key(latest):
+                  continue
+              body = text[m.start(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+              # demote the section's own ## / ### headings: the PR body's
+              # top-level sections must stay exactly the PR template's
+              sections.append(re.sub(r"^(#{2,3}) ", lambda h: "#" * (len(h.group(1)) + 2) + " ",
+                                     body.strip(), flags=re.M))
+              # the framework's own flag (scripts/check_version_policy.py): a
+              # bullet that STARTS with BREAKING, any case, optionally bold
+              breaking += [" ".join(b.split()) for b in re.findall(
+                  r"^\s*[-*]\s+(?:\*\*)?breaking\b[:*\s-]*(.+(?:\n[ \t]+\S.*)*)", body, re.M | re.I)]
+              block = re.search(r"^### Added\n(.*?)(?=^### |\Z)", body, re.M | re.S)
+              if block:
+                  # a bold title may wrap onto the next line: DOTALL + collapse
+                  added += [" ".join(x.split()) for x in
+                            re.findall(r"^- \*\*(.+?)\*\*", block.group(1), re.M | re.S)]
+          notes = ["### Corresponding changes this release needs", ""]
+          notes.append("- [ ] **Breaking changes migrated** in configs / code: "
+                       + ("; ".join(breaking) if breaking else "none flagged BREAKING by the framework"))
+          notes.append("- [ ] **New capabilities documented for authors** — every new `kind` must be in "
+                       "`.agents/skills/author-ldp-artifact/SKILL.md` (`make check-framework-surface` gates "
+                       "it); consider an NL cue for each new option"
+                       + (": " + "; ".join(added) if added else ""))
+          notes.append("- [x] Pin, `var.datalab_version`, `uv.lock`, `schemas/` and framework-doc links "
+                       "moved by `make bump-framework`")
+          notes += ["", "<details><summary>Framework CHANGELOG, "
+                    f"{os.environ['CURRENT']} → {os.environ['LATEST']}</summary>", "",
+                    "\n\n".join(sections) or "_(no sections found)_", "", "</details>"]
+          (tmp / "framework-notes.md").write_text("\n".join(notes) + "\n")
+          PY
+
+      - name: Build the PR body
+        env:
+          FAILED: ${{ steps.gates.outputs.failed }}
+        run: |
+          status="Every CI gate passes on the bumped tree — ready to review and merge."
+          [ -n "$FAILED" ] && status="**DRAFT — gates failing on $LATEST: \`$FAILED\`.** Push the corresponding changes to this branch (see the list below), then mark ready for review."
+          {
+            echo "<!-- datalab-pr-template: v1 -->"
+            echo "## Summary"
+            echo
+            echo "Automated framework bump: [datalab-framework $LATEST](https://github.com/dediggibyte/datalab-framework/releases/tag/$LATEST) was released, and adopting it is mandatory (\`make check-framework-current\` fails CI until this merges). This PR moves the pin from $CURRENT in full lockstep."
+            echo
+            echo "$status"
+            echo
+            echo "## Change type"
+            echo
+            echo "- [x] Framework version bump (datalab git tag + var.datalab_version)"
+            echo "- [x] Dependencies"
+            echo
+            echo "## Changes"
+            echo
+            echo "- \`pyproject.toml\`: datalab git tag $CURRENT -> $LATEST"
+            echo "- \`variables/medallion.yml\`: datalab_version -> $VERSION"
+            echo "- \`uv.lock\`: re-resolved"
+            echo "- \`schemas/*.json\`: regenerated from the $LATEST models"
+            echo "- framework-doc links re-pinned to $LATEST"
+            echo
+            cat "$RUNNER_TEMP/framework-notes.md"
+            echo
+            echo "## Test plan"
+            echo
+            echo "Every gate ran in the bump workflow on the bumped tree:"
+            echo
+            cat "$RUNNER_TEMP/gates.md"
+            echo "- [ ] Dev pipeline refresh after merge (\`make run\`)"
+            echo
+            echo "## Deployment / rollout notes"
+            echo
+            echo "The dev deploy publishes datalab-$VERSION to each project catalog's artifacts.wheels Volume before \`bundle deploy\` (deploy-dab). Pipeline/job environments cache dependencies — trigger a full restart if the new version doesn't show up."
+            echo
+            echo "## Checklist"
+            echo
+            echo "- [x] Protected-file changes are intentional and captured in \`AGENTS.md\` (version pin bump — the documented lockstep flow)"
+            echo "- [x] Pipeline code uses \`pyspark.pipelines\` only (no \`dlt\` imports, no writes in dataset functions)"
+            echo "- [x] Dependencies: \`pyproject.toml\` updated via \`uv lock\` (uv.lock committed)"
+            echo "- [x] No secrets committed (\`.env\` stays out of git)"
+            echo
+            echo "---"
+            echo "CI was dispatched on this branch by the bump workflow (bot PRs don't trigger it themselves)."
+          } > "$RUNNER_TEMP/pr-body.md"
+          cat "$RUNNER_TEMP/pr-body.md"
+
+      - name: Commit + push the bot branch
+        if: env.DRY_RUN != 'true'
+        run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$BRANCH"
-          git add pyproject.toml uv.lock variables/medallion.yml schemas/
-          git commit -m "chore: bump datalab framework $CURRENT -> $LATEST (tag + var.datalab_version + lock + schemas)"
-          git push -u origin "$BRANCH"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            git fetch --quiet origin "$BRANCH"
+            humans=$(git log --format='%ae' "origin/main..origin/$BRANCH" | grep -vc '^41898282+github-actions\[bot\]@users.noreply.github.com$' || true)
+            if [ "$humans" != "0" ]; then
+              echo "::notice::$BRANCH already carries $humans human commit(s) — not overwriting it; opening the PR from it as is."
+              exit 0
+            fi
+          fi
+          git switch -C "$BRANCH"
+          git add -A
+          git commit -m "chore: bump datalab framework $CURRENT -> $LATEST (tag + var.datalab_version + lock + schemas + doc links)"
+          # Bot-owned (verified above): a previous run may have pushed it and then
+          # failed to open the PR; without --force every later run would die here.
+          git push --force origin "$BRANCH"
 
-          # Body must satisfy pr-template-check (marker + required ## headings).
-          cat > /tmp/pr-body.md <<EOF
-          <!-- datalab-pr-template: v1 -->
-          ## Summary
+      - name: Open the bump PR (a DRAFT when gates fail)
+        id: pr
+        if: env.DRY_RUN != 'true'
+        env:
+          FAILED: ${{ steps.gates.outputs.failed }}
+        run: |
+          args=(--title "chore: bump datalab framework $CURRENT -> $LATEST"
+                --body-file "$RUNNER_TEMP/pr-body.md" --base main --head "$BRANCH")
+          [ -n "$FAILED" ] && args+=(--draft)
+          if ! out=$(gh pr create "${args[@]}" 2>&1); then
+            echo "$out"
+            exit 1
+          fi
+          echo "$out"
+          url=$(printf '%s\n' "$out" | grep -Eo 'https://github.com/[^ ]+/pull/[0-9]+' | tail -1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          if [ -n "$FAILED" ]; then
+            gh label create needs-corresponding-changes --color D93F0B \
+              --description "Framework bump: gates fail until the release's corresponding changes land" --force
+            gh pr edit "$url" --add-label needs-corresponding-changes
+          fi
 
-          Automated framework bump: [datalab-framework $LATEST](https://github.com/dediggibyte/datalab-framework/releases/tag/$LATEST) was released; this PR moves the pin from $CURRENT in full lockstep. Review the framework's [CHANGELOG](https://github.com/dediggibyte/datalab-framework/blob/$LATEST/CHANGELOG.md) for behavioral changes before merging.
+      - name: Run CI on the bump PR (GITHUB_TOKEN PRs trigger none)
+        if: steps.pr.outcome == 'success'
+        continue-on-error: true   # the PR exists; a dispatch hiccup must not file a "no PR" issue
+        # workflow_dispatch IS allowed from GITHUB_TOKEN; its check runs land on
+        # the branch head commit, i.e. on the PR. target=dev => CI only, no deploy.
+        run: gh workflow run ci-cd.yml --ref "$BRANCH" -f target=dev
 
-          ## Change type
+      - name: Close the bump PRs this one supersedes (bot-only ones)
+        if: steps.pr.outcome == 'success'
+        continue-on-error: true   # housekeeping only
+        # Only once the new PR exists, only PRs whose commits are ALL the bot's,
+        # and the branch is kept: a PR carrying human corresponding-changes work
+        # gets a pointer comment instead, so nothing anyone pushed is discarded.
+        env:
+          NEW_PR: ${{ steps.pr.outputs.url }}
+        run: |
+          gh pr list --state open --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("chore/bump-datalab-framework-")) | select(.headRefName != env.BRANCH) | .number' |
+          while read -r n; do
+            others=$(gh pr view "$n" --json commits \
+              --jq '[.commits[].authors[].email | select(. != "41898282+github-actions[bot]@users.noreply.github.com")] | length')
+            if [ "$others" = "0" ]; then
+              gh pr close "$n" --comment "Superseded by $NEW_PR (datalab-framework $LATEST)."
+            else
+              gh pr comment "$n" --body "datalab-framework $LATEST is out: $NEW_PR bumps to it. This PR carries human commits, so it stays open — merge it first or port its changes onto the new branch."
+            fi
+          done
 
-          - [x] Framework version bump (datalab git tag + var.datalab_version)
-          - [x] Dependencies
-
-          ## Changes
-
-          - \`pyproject.toml\`: datalab git tag $CURRENT -> $LATEST
-          - \`variables/medallion.yml\`: datalab_version -> $VERSION
-          - \`uv.lock\`: re-resolved
-          - \`schemas/*.json\`: regenerated from the $LATEST models
-
-          ## Test plan
-
-          - [x] \`make lint\` passes (ran in the bump workflow)
-          - [x] \`make test\` passes (unit tests, local Spark — ran in the bump workflow)
-          - [x] \`make validate-configs\`, \`make check-lockstep\`, \`make check-schemas\` pass (ran in the bump workflow)
-          - [ ] Dev pipeline refresh after merge (\`make run\`)
-
-          ## Deployment / rollout notes
-
-          The dev deploy publishes datalab-$VERSION to each project catalog's artifacts.wheels Volume before \`bundle deploy\` (deploy-dab). Pipeline/job environments cache dependencies — trigger a full restart if the new version doesn't show up.
-
-          ## Checklist
-
-          - [x] Protected-file changes are intentional and captured in \`AGENTS.md\` (version pin bump only — the documented lockstep flow)
-          - [x] Pipeline code uses \`pyspark.pipelines\` only (no \`dlt\` imports, no writes in dataset functions)
-          - [x] Dependencies: \`pyproject.toml\` updated via \`uv lock\` (uv.lock committed)
-          - [x] No secrets committed (\`.env\` stays out of git)
-
-          ---
-          NOTE: bot-created PRs do not trigger the CI/CD workflow (GITHUB_TOKEN anti-recursion). The gates above already ran inside the bump workflow; push any commit to this branch (or close/reopen) to run CI proper.
-          EOF
-          gh pr create --title "chore: bump datalab framework $CURRENT -> $LATEST" \
-            --body-file /tmp/pr-body.md --base main --head "$BRANCH"
+      - name: Fallback — record the bump in a tracking issue (no PR could be opened)
+        # ANY failure of this job (PR creation refused, push rejected, a crash):
+        # the release must stay visible as work to do.
+        if: failure() && env.DRY_RUN != 'true'
+        run: |
+          compare="https://github.com/${{ github.repository }}/compare/main...$BRANCH?expand=1"
+          title="Framework $LATEST released — adopt it (bump PR could not be opened)"
+          {
+            echo "datalab-framework **$LATEST** is released and adopting it is mandatory, but the bump workflow could not open the PR (run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} — read its failing step)."
+            echo
+            echo "The usual cause: **Settings → Actions → General → Workflow permissions → \"Allow GitHub Actions to create and approve pull requests\"** is off (org policy may need it first)."
+            echo
+            echo "If the branch was pushed, open the PR with one click: $compare — otherwise run \`make bump-framework VERSION=$VERSION\` locally."
+            echo
+            cat "$RUNNER_TEMP/framework-notes.md" 2>/dev/null || echo "_(framework notes not produced)_"
+            echo
+            echo "### Gates on the bumped tree"
+            cat "$RUNNER_TEMP/gates.md" 2>/dev/null || echo "_(gates did not run)_"
+          } > "$RUNNER_TEMP/issue-body.md"
+          gh label create framework-bump --color 1D76DB --description "Framework version adoption" --force
+          existing=$(gh issue list --state open --label framework-bump --search "\"$LATEST released\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file "$RUNNER_TEMP/issue-body.md"
+          else
+            gh issue create --title "$title" --label framework-bump --body-file "$RUNNER_TEMP/issue-body.md"
+          fi
+          echo "::error title=Bump PR not opened::Could not open the bump PR for $LATEST — see the tracking issue (labelled framework-bump)."

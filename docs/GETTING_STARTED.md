@@ -14,7 +14,7 @@ Where things are explained in depth:
 
 | Question | Doc |
 |---|---|
-| What does every artifact field mean? | [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) — the reference |
+| What does every artifact field mean? | [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md) — the reference |
 | What does a finished domain look like? | [projects/customer_sales/](https://github.com/dediggibyte/datalab/tree/main/projects/customer_sales) in the template repo — the complete worked example |
 | How do I name folders/packages/resources? | [NAMING.md](NAMING.md) — folder paths mirror the UC namespace |
 | How do the pieces fit (lanes, governance)? | [ARCHITECTURE.md](ARCHITECTURE.md) |
@@ -158,7 +158,7 @@ target:
 ```
 
 Every field, every source kind (files/kafka/fan-in `sources:`), backfills,
-snapshot CDC and sinks: [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
+snapshot CDC and sinks: [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md).
 
 ## 4. Add python only where a mapping can't express it
 
@@ -295,10 +295,10 @@ promote to stage/prod, and the head branch is deleted on merge
 
 | Symptom | Where to look |
 |---|---|
-| `make validate-configs` fails | The error names file + dotted field + fix; field reference in [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) |
+| `make validate-configs` fails | The error names file + dotted field + fix; field reference in [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md) |
 | Unknown transform/check/snapshot function | Its module isn't in `domain.yml` `imports:`, or the package isn't in pyproject `packages` |
 | Stream fails on UPDATE/DELETE from a source table | Add `options: {skipChangeCommits: "true"}` — see FRAMEWORK.md gotchas |
 | `Missing pipeline configuration 'datalab.…'` | Add the key to the pipeline resource `configuration:` mapping |
 | `ModuleNotFoundError` on Databricks | `pyproject.toml`/source tree didn't ship (`.databricksignore`) or the env cached an old install — full restart |
 | Bundle validate/deploy errors | `deploy-databricks-bundle` skill troubleshooting table; [CICD.md](CICD.md) for OIDC |
-| Anything SDP the YAML can't express | The capability matrix in [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md) — extend the framework, don't hand-wire |
+| Anything SDP the YAML can't express | The capability matrix in [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md) — extend the framework, don't hand-wire |

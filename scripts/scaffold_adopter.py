@@ -1306,7 +1306,7 @@ ADOPTER_REPO_INTRO = """\
 > action). Keep the git tag and `var.datalab_version` in lockstep. The framework
 > **reference** (artifact anatomy, target kinds, dqx, the SDP capability matrix)
 > lives in that repo's
-> [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md);
+> [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/@@FRAMEWORK_TAG@@/docs/FRAMEWORK.md);
 > first-deploy checklist: [`docs/NEW_ADOPTER.md`](docs/NEW_ADOPTER.md).
 """
 
@@ -1678,6 +1678,16 @@ def gather_interactive(args, default_tag: str) -> dict[str, str]:
 # Entry point
 # --------------------------------------------------------------------------- #
 
+def pin_framework_doc_links(out: Path, tag: str) -> None:
+    """Point every framework-repo link in the generated repo at ITS pinned tag
+    (check_lockstep fails otherwise). The copied docs carry the template's pin,
+    which differs when --framework-tag chose another release."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from bump_framework import pin_framework_links, tracked_text_files
+
+    pin_framework_links(tracked_text_files(out), tag)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -1808,6 +1818,7 @@ def main(argv: list[str] | None = None) -> int:
     patch_codeowners(out)
     patch_dependabot(out)
     patch_workflow_comments(out)
+    pin_framework_doc_links(out, tag)
 
     print("scaffold: done. Next:")
     if args.in_place:

@@ -7,7 +7,11 @@ description: Create or modify a pipeline table from a natural-language request b
 
 This repo is a config-driven framework: a target table is ONE YAML artifact.
 You never write `dp.*` wiring. Full reference (every field + the SDP
-capability matrix): `docs/FRAMEWORK.md`.
+capability matrix): `docs/FRAMEWORK.md`, which links the framework's reference
+AT THE PINNED VERSION (`pyproject.toml` `[tool.uv.sources]`) — never author
+against a feature newer than the pin. Every kind the pinned framework offers is
+listed under "Source and target kinds" below (CI checks this list against the
+vendored schema: `make check-framework-surface`).
 
 ## Where the artifact goes
 
@@ -33,7 +37,8 @@ schema_version: 1
 name: <table>                  # == file name
 comment: <one line, business language>
 source:                        # where the data comes from (OR sources:, below)
-  kind: table                  #   table | cloud_files | files | view | kafka
+  kind: table                  #   table | cloud_files | files | view | kafka |
+                               #   sql | python | snapshot_function (kinds below)
   name: <upstream table>
   layer: <upstream layer>      #   resolves via domain.yml (preferred)
   as_stream: true              #   stream for incremental, omit for batch
@@ -54,22 +59,52 @@ quality:                       # table-level rules + quarantine settings
   checks: [...]                #   multi-column / dataset-level dqx rules
   quarantine: {}               #   error rules AUTO-quarantine even without this
 target:
-  kind: streaming_table        #   streaming_table | materialized_view |
-                               #   temporary_view | delta_sink | kafka_sink
+  kind: streaming_table        #   streaming_table | managed_table |
+                               #   materialized_view | temporary_view |
+                               #   delta_sink | kafka_sink | foreach_batch_sink
   cdc:                         #   upsert/SCD from a change feed (streaming source)
     keys: [<business key>]
     sequence_by: <ordering col>   # list for tiebreaks: [ts, seq_no]
     scd_type: 1                #   2 for history tracking (__START_AT/__END_AT)
     # apply_as_deletes / apply_as_truncates / column_list / except_columns /
     # ignore_null_updates / track_history_*: see docs/FRAMEWORK.md
+    # partial updates (ONE NULL-handling form): ignore_null_updates_columns /
+    # ignore_null_updates_except_columns / columns_to_update (an array<string>
+    # column — list it under columns: so it survives the projection)
 ```
+
+### Source and target kinds
+
+| `source.kind` | Use for |
+|---|---|
+| `table` | a UC table — batch, or `as_stream: true` for incremental; `change_data_feed: true` reads its CDF |
+| `view` | a dataset defined earlier in the SAME pipeline (streams by default) |
+| `cloud_files` | files landing in cloud storage, ingested incrementally (Auto Loader) |
+| `files` | a BATCH read of files — materialized views and backfills |
+| `kafka` | Kafka / Event Hubs / MSK (`bootstrap_servers_conf` is a conf KEY) |
+| `sql` | a batch SELECT (`${conf:<key>}` placeholders; same-pipeline datasets by short name) |
+| `python` | a registered `@dataframe_source` function (JDBC pulls, custom connectors) |
+| `snapshot_function` | a `@snapshot_source` walker over historical snapshot SETS — only with `cdc_from_snapshot` |
+
+| `target.kind` | Use for |
+|---|---|
+| `streaming_table` | incremental append; + `cdc:` (upsert/SCD), + `cdc_from_snapshot:`, + `replace_where:` (atomic predicate-slice replace, single BATCH source) |
+| `managed_table` | a plain, NON-streaming managed table fed by append flows (`sources:` fan-in + batch `backfill:`), no CDC / `replace_where` — framework ≥ 1.0.0, SDP **Beta**, Databricks runtime only (the local profile makes it an MV); the workspace must have the managed-tables Beta enabled; it can't take over an existing table's name (switching `kind` = drop + reprocess) |
+| `materialized_view` | batch tables and aggregates ("normal delta tables") |
+| `temporary_view` | pipeline-scoped / dynamic views (quality is annotate-only) |
+| `delta_sink` | streaming append to an EXTERNAL Delta table or path |
+| `kafka_sink` | publish to Kafka (value column via `framework.to_json_value`) |
+| `foreach_batch_sink` | any other destination: a `@batch_sink` handler `fn(df, batch_id, **args)` writes each micro-batch — keep it idempotent on `batch_id`; may run SQL `BEGIN ATOMIC … END;` transactions |
 
 Choosing `target.kind`: incremental/append → `streaming_table`; upsert/SCD
 from a change feed → `streaming_table` + `cdc`; SCD from periodic FULL
 snapshots (nightly dumps) → `streaming_table` + `cdc_from_snapshot` (batch
-source); batch table or aggregate ("normal delta table") →
+source); rolling-window batch reprocessing → `streaming_table` +
+`replace_where`; append-only table that must be a plain, NON-streaming managed
+table → `managed_table`; batch table or aggregate ("normal delta table") →
 `materialized_view`; pipeline-scoped/dynamic view → `temporary_view`;
-external destinations only → `delta_sink` / `kafka_sink`.
+external destinations → `delta_sink` / `kafka_sink`, or `foreach_batch_sink`
+when no built-in sink fits.
 
 NL cues for the rest of the surface (details: `docs/FRAMEWORK.md`):
 
@@ -83,6 +118,12 @@ NL cues for the rest of the surface (details: `docs/FRAMEWORK.md`):
 | "publish to Kafka" | `target.kind: kafka_sink` + `transform: [{function: framework.to_json_value, args: {key: <id>}}]` |
 | "cluster/partition by …" | `cluster_by:` / `cluster_by_auto: true` / `partition_cols:` (clustering XOR partitioning) |
 | "the MV must never silently full-recompute" | `target.refresh_policy: incremental_strict` |
+| "reprocess the last N days on every run" | `target.replace_where: <SQL predicate>` (streaming_table, one BATCH source, no fan-in/backfill) |
+| "several feeds into ONE plain (non-streaming) table" | `target.kind: managed_table` + `sources:` (Beta; append flows only) |
+| "move our existing Structured Streaming job here without reprocessing" | `sources[].import_checkpoint_conf: <conf key holding the checkpoint path>` on a `managed_table` or sink target (imported on the flow's FIRST update only; stop the old job first) |
+| "write every micro-batch to our API / JDBC / two places at once" | `target.kind: foreach_batch_sink` + a `@batch_sink` handler in `src/<domain>_etl/` |
+| "only update the columns present in each change", "NULL must not overwrite X" | `cdc.columns_to_update: <array col>` / `cdc.ignore_null_updates_columns: [...]` (or `_except_columns`) |
+| "threshold differs per environment" in a dq rule | `{{ name }}` in the rule + `domain.yml` `dq.variables_conf: [datalab.name]` (substituted since framework 1.0.0; an undeclared placeholder fails `make validate-configs`) |
 
 ## Natural language → dqx rules
 

@@ -18,7 +18,7 @@ checks/
 The datasets themselves are declared in the artifacts under
 `../../config/customer_sales/<schema>/<table>.yml` (this folder's python is
 referenced from there via the `imports:` list and transform registry names —
-see the framework repo's [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)).
+see the framework repo's [`docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md)).
 The full tour of the example lives in
 `projects/customer_sales/README.md`.
 

@@ -25,7 +25,7 @@ Two capabilities have **no deployed example on purpose**: fan-in `sources:` and
 `backfill:` need second physical sources (extra landing paths / archive tables)
 that this demo workspace doesn't have, and a broken dev refresh is worse than a
 doc'd gap — their shapes live in the framework repo's
-[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)
+[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md)
 ("Fan-in" / "Backfills").
 
 ## How an example maps to YOUR repo
@@ -60,5 +60,5 @@ mechanism below is for the multi-domain reference repo only):
 
 Step-by-step: [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
 Wire your repo to the framework: [docs/ADOPTING.md](../docs/ADOPTING.md).
-Authoring reference: the framework repo's [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
+Authoring reference: the framework repo's [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md).
 Naming convention: [docs/NAMING.md](../docs/NAMING.md).

@@ -401,12 +401,18 @@ make bump-framework VERSION=<x.y.z>
 ```
 
 It rewrites the git **tag** in `pyproject.toml` `[tool.uv.sources] datalab` and
-`var.datalab_version` in `variables/medallion.yml`, runs `make lock` (CI runs
+`var.datalab_version` in `variables/medallion.yml`, re-pins every link into the
+framework repo (docs, skills) to the new tag, runs `make lock` (CI runs
 `uv sync --frozen` and fails on drift), regenerates the vendored `schemas/*.json`
 from the newly pinned models (`make sync-schemas`), and asserts the lockstep
 (`make check-lockstep` — also a CI gate, so a partial bump can't merge). Then:
 
-1. Commit everything the bump touched (pyproject, medallion.yml, uv.lock, schemas/).
+1. Add the release's corresponding changes: read the framework CHANGELOG
+   between the two versions, migrate anything flagged **BREAKING**, and document
+   every new target/source kind in `.agents/skills/author-ldp-artifact/SKILL.md`
+   (`make check-framework-surface` names them; `make sync-skills` after).
+   Commit everything the bump touched (`git status` — pyproject, medallion.yml,
+   uv.lock, schemas/, the re-pinned docs, the skill).
 2. `make publish-wheel TARGET=<t> APPLY=1` — build the new version from the new
    tag and upload it into each project catalog's `artifacts.wheels` volume
    (CI's deploy also publishes before `bundle deploy`).
@@ -414,7 +420,12 @@ from the newly pinned models (`make sync-schemas`), and asserts the lockstep
 
 You usually don't even start this by hand: the scheduled **framework-bump
 workflow** (`.github/workflows/framework-bump.yml`) watches the framework repo
-for new release tags and opens the lockstep PR for you.
+for new releases and opens the lockstep PR for you — a draft listing the
+corresponding changes when the new version needs any. The template treats that
+PR as mandatory (`make check-framework-current` fails CI until it merges); in
+your adopter repo the same check only warns unless you set the
+`DATALAB_FRAMEWORK_MANDATE` variable to `enforce` (docs/CICD.md "Framework
+bumps").
 
 **Caching gotcha:** pipeline/job environments cache dependencies. A new framework
 version may not appear until the environment rebuilds — trigger a full pipeline
@@ -510,6 +521,6 @@ pipeline has a stable update history, and expect to iterate.
 - [NAMING.md](NAMING.md) — the folder ↔ UC namespace convention.
 - [CICD.md](CICD.md) — GitHub OIDC CI/CD, dev/stage/prod promotion.
 - Framework reference (authoring fields, SDP capability matrix):
-  [`datalab-framework/docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
+  [`datalab-framework/docs/FRAMEWORK.md`](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md).
   The local `docs/FRAMEWORK.md` is a thin pointer to it.
 - [AGENTS.md](../AGENTS.md) — conventions, gotchas, protected-file protocol.

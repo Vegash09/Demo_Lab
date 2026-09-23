@@ -9,6 +9,10 @@ repo, and every one of them must reference the same release:
     uv.lock                   the resolved `datalab` package VERSION (what the built
                               wheel is named after — the filename var.datalab_wheel
                               points at is composed from this, not from the tag)
+    docs / skills / scaffold  every link into the framework repo
+                              (…/datalab-framework/blob/<ref>/…) names the pinned
+                              tag, so the reference an author follows matches the
+                              framework this repo actually runs
 
 Historically this lockstep was enforced only by prose and a PR-template
 checkbox, and it drifted (docs referenced 0.5.0 while the pin was 0.6.0, and
@@ -30,6 +34,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bump_framework import FRAMEWORK_LINK_RE, is_pinnable_ref, tracked_text_files  # noqa: E402
 
 TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 
@@ -85,6 +92,22 @@ def lock_version() -> str:
     raise SystemExit("uv.lock: no `datalab` package entry found")
 
 
+def stale_framework_links(paths, tag: str, root: Path) -> list[str]:
+    """Every framework-repo link whose ref is not the pinned ``tag``."""
+    problems = []
+    for path in paths:
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for m in FRAMEWORK_LINK_RE.finditer(line):
+                ref = m.group(2)
+                if is_pinnable_ref(ref) and ref != tag:
+                    problems.append(
+                        f"{path.relative_to(root)}:{lineno} links the framework at "
+                        f"{ref!r}, not the pinned {tag} — the reference must describe the "
+                        "version this repo runs (`make bump-framework` re-pins it)"
+                    )
+    return problems
+
+
 def target_overrides() -> dict[str, str]:
     """Per-target `datalab_version` overrides from targets/*.yml.
 
@@ -129,6 +152,8 @@ def main() -> int:
             f"var.datalab_wheel would point at datalab-{version}-py3-none-any.whl "
             f"while the built wheel is datalab-{packaged}-py3-none-any.whl"
         )
+
+    problems += stale_framework_links(tracked_text_files(REPO_ROOT), tag, REPO_ROOT)
 
     if problems:
         print("framework version pin is OUT OF LOCKSTEP:", file=sys.stderr)

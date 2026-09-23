@@ -16,7 +16,7 @@ flowchart LR
 Today the framework is an external dependency (the `datalab-framework` repo);
 complete reference domains live under `projects/` (this repo's example:
 `projects/customer_sales/config/customer_sales/`). See the framework repo's
-[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)
+[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md)
 and the naming contract in [NAMING.md](NAMING.md).
 
 ## Concept map (legacy → current)

@@ -107,6 +107,19 @@
           "title": "Column List",
           "type": "array"
         },
+        "columns_to_update": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Columns To Update"
+        },
         "except_columns": {
           "default": [],
           "items": {
@@ -119,6 +132,22 @@
           "default": false,
           "title": "Ignore Null Updates",
           "type": "boolean"
+        },
+        "ignore_null_updates_columns": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignore Null Updates Columns",
+          "type": "array"
+        },
+        "ignore_null_updates_except_columns": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignore Null Updates Except Columns",
+          "type": "array"
         },
         "keys": {
           "items": {
@@ -527,7 +556,7 @@
     },
     "FlowSource": {
       "additionalProperties": false,
-      "description": "One named source flow of a multi-source (fan-in) streaming table.\n\n``name`` is part of the generated flow name \u2014 SDP uses the flow name as\nthe streaming-checkpoint identity, so RENAMING a flow abandons its\ncheckpoint and reprocesses from scratch. Pick stable names.",
+      "description": "One named source flow of a multi-source (fan-in) streaming table,\nmanaged table or sink.\n\n``name`` is part of the generated flow name \u2014 SDP uses the flow name as\nthe streaming-checkpoint identity, so RENAMING a flow abandons its\ncheckpoint and reprocesses from scratch. Pick stable names.",
       "properties": {
         "comment": {
           "anyOf": [
@@ -540,6 +569,19 @@
           ],
           "default": null,
           "title": "Comment"
+        },
+        "import_checkpoint_conf": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][\\w.]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Import Checkpoint Conf"
         },
         "name": {
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
@@ -716,6 +758,63 @@
         "bootstrap_servers_conf"
       ],
       "title": "KafkaSource",
+      "type": "object"
+    },
+    "ManagedTableTarget": {
+      "additionalProperties": false,
+      "description": "Non-streaming managed table written by one or more append flows\n(dp.create_table + dp.append_flow; Beta upstream, Databricks SDP runtime\nonly). Append flows only: no CDC, snapshot CDC or REPLACE WHERE. The name\ncannot already belong to a streaming table or materialized view, and an\nexisting managed table cannot be adopted \u2014 switching kind means dropping\nthe table first.",
+      "properties": {
+        "cluster_by": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Cluster By",
+          "type": "array"
+        },
+        "cluster_by_auto": {
+          "default": false,
+          "title": "Cluster By Auto",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "managed_table",
+          "title": "Kind",
+          "type": "string"
+        },
+        "partition_cols": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Partition Cols",
+          "type": "array"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema"
+        },
+        "table_properties": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Table Properties",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ManagedTableTarget",
       "type": "object"
     },
     "MaterializedViewTarget": {
@@ -1446,6 +1545,7 @@
           "delta_sink": "#/$defs/DeltaSinkTarget",
           "foreach_batch_sink": "#/$defs/ForeachBatchSinkTarget",
           "kafka_sink": "#/$defs/KafkaSinkTarget",
+          "managed_table": "#/$defs/ManagedTableTarget",
           "materialized_view": "#/$defs/MaterializedViewTarget",
           "streaming_table": "#/$defs/StreamingTableTarget",
           "temporary_view": "#/$defs/TemporaryViewTarget"
@@ -1455,6 +1555,9 @@
       "oneOf": [
         {
           "$ref": "#/$defs/StreamingTableTarget"
+        },
+        {
+          "$ref": "#/$defs/ManagedTableTarget"
         },
         {
           "$ref": "#/$defs/MaterializedViewTarget"

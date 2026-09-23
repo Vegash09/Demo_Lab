@@ -44,7 +44,7 @@ PROTECTED: list[tuple[str, str]] = [
      "Codex hooks.json + .agents/skills (the CANONICAL authored agent-skills source)"),
     (r"^scripts/sync_skills\.py$",
      "agent-skills sync generator — canonical (.agents/skills) → .claude/skills copy contract"),
-    (r"^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs|check_agent_settings)\.py$",
+    (r"^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs|check_agent_settings|check_framework_current|check_framework_surface)\.py$",
      "repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check"),
     (r"^schemas/.*\.json$",
      "vendored editor schemas — GENERATED from the pinned framework (make sync-schemas), never hand-edited"),

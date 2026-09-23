@@ -144,6 +144,17 @@ jobs:
       - name: Unit tests (local Spark)
         run: uv run pytest
 
+      - name: Authoring skill documents every kind of the pinned framework
+        # Mirror of `make check-framework-surface`: a framework release that adds
+        # a target/source kind needs that kind documented in the author-ldp-artifact
+        # skill — the corresponding change a bump must carry (the skill never
+        # learned foreach_batch_sink until this gate existed). Last among the
+        # blocking steps, so a gap never hides lint/test results. Enforced in the
+        # template; a warning in generated adopters (DATALAB_FRAMEWORK_MANDATE).
+        env:
+          DATALAB_FRAMEWORK_MANDATE: ${{ vars.DATALAB_FRAMEWORK_MANDATE }}
+        run: python3 scripts/check_framework_surface.py
+
       - name: Local SDP graph dry-run (OSS spark-pipelines)
         # Guards the local-run profile (datalab.framework.local): generates the
         # spark-pipeline.yml and runs `spark-pipelines dry-run` (syntax/analysis/
@@ -153,6 +164,53 @@ jobs:
         # end while the SDP + dqx + Spark Connect path stabilizes upstream.
         run: make dry-run-local
         continue-on-error: true
+
+  framework-current:
+    name: "framework pin is the latest release"
+    # Mirror of `make check-framework-current`, as its OWN job so a stale pin
+    # never hides lint/test results. In the TEMPLATE, adopting every
+    # datalab-framework release is MANDATORY: while a newer release exists this
+    # fails every PR and main (deploys wait on `ci`) until the framework-bump
+    # bot's PR merges. Generated adopter repos only warn unless they set the
+    # DATALAB_FRAMEWORK_MANDATE variable to `enforce`; in the template, `warn`
+    # is the incident break-glass. See docs/CICD.md "Framework bumps".
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check framework App credentials are configured
+        env:
+          CLIENT_ID: ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
+          APP_KEY:   ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$CLIENT_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error title=Missing framework App credentials::Reading the PRIVATE dediggibyte/datalab-framework releases needs the datalab-framework reader GitHub App, but the DATALAB_FRAMEWORK_APP_CLIENT_ID variable and/or DATALAB_FRAMEWORK_APP_PRIVATE_KEY secret is not set. See docs/CICD.md."
+            exit 1
+          fi
+
+      - name: Mint a read-only token for datalab-framework (GitHub App)
+        id: framework_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id:    ${{ vars.DATALAB_FRAMEWORK_APP_CLIENT_ID }}
+          private-key:  ${{ secrets.DATALAB_FRAMEWORK_APP_PRIVATE_KEY }}
+          owner:        dediggibyte
+          repositories: datalab-framework
+
+      - name: Route the private framework clone over HTTPS with the token
+        # Only for the script's git-tags fallback (GitHub Releases are read with gh).
+        env:
+          FRAMEWORK_TOKEN: ${{ steps.framework_token.outputs.token }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${FRAMEWORK_TOKEN}@github.com/dediggibyte/datalab-framework".insteadOf \
+            "https://github.com/dediggibyte/datalab-framework"
+
+      - name: Framework pin is the latest published release
+        env:
+          GH_TOKEN: ${{ steps.framework_token.outputs.token }}
+          DATALAB_FRAMEWORK_MANDATE: ${{ vars.DATALAB_FRAMEWORK_MANDATE }}
+        run: python3 scripts/check_framework_current.py
 
   validate-bundle:
     name: "bundle validate (${{ inputs.target }})"
@@ -265,6 +323,7 @@ jobs:
           make test
           make check-schemas
           make check-lockstep
+          make check-framework-surface
           make check-domains
           make check-sync-lists
           # check-skills was missing here: the scaffold edits skills under BOTH

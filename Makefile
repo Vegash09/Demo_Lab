@@ -14,7 +14,8 @@ TARGET ?= dev
 .PHONY: help install lock lint fmt test validate-configs validate \
         deploy run destroy publish-wheel bootstrap-uc enable-githooks \
         commit-protected clean sync-skills check-skills publish-genie-skills \
-        sync-schemas check-schemas check-lockstep bump-framework check-domains \
+        sync-schemas check-schemas check-lockstep check-framework-current \
+        check-framework-surface bump-framework check-domains \
         check-sync-lists check-templates-doc check-adopter-docs check-agent-settings \
         spec-local dry-run-local run-local validate-connect design \
         new-adopter configure-adopter
@@ -68,8 +69,20 @@ check-schemas: install  ## Fail if schemas/*.json drifted from the pinned framew
 # (the Volume wheel filename), with uv.lock resolving the tag. check-lockstep
 # asserts all three agree (CI runs it); bump-framework is the one-shot that
 # performs a full, drift-free upgrade.
-check-lockstep:  ## Fail if the datalab git tag, var.datalab_version and uv.lock disagree
+check-lockstep:  ## Fail if the datalab git tag, var.datalab_version, uv.lock and framework-doc links disagree
 	$(UV) run --no-project python scripts/check_lockstep.py
+
+# Adopting every framework release is MANDATORY in the template (docs/CICD.md
+# "Framework bumps"): check-framework-current fails while a newer published
+# vX.Y.Z exists; check-framework-surface fails while the authoring skill misses
+# a target/source kind of the pinned framework (the corresponding change a
+# feature release needs). DATALAB_FRAMEWORK_MANDATE=enforce|warn — enforce by
+# default in the template, warn in generated adopters; warn = break-glass.
+check-framework-current:  ## Fail if a newer datalab-framework release exists than the pinned tag (CI)
+	$(UV) run --no-project python scripts/check_framework_current.py
+
+check-framework-surface:  ## Fail if the authoring skill misses a kind the pinned framework offers (CI + pre-commit)
+	$(UV) run --no-project python scripts/check_framework_surface.py
 
 # ---- domain registry ---------------------------------------------------------
 # scripts/domains.py is the ONE place listing this repo's domains; the per-target
@@ -113,7 +126,9 @@ bump-framework:  ## Upgrade the framework pin end to end (VERSION=x.y.z): pyproj
 	$(UV) sync
 	$(UV) run python scripts/sync_schemas.py --write
 	$(UV) run --no-project python scripts/check_lockstep.py
-	@echo "Framework pinned to $(VERSION). Review CHANGELOG.md, then commit + make publish-wheel APPLY=1 per target."
+	@$(UV) run --no-project python scripts/check_framework_surface.py || \
+		echo "NOTE: document the new kinds in the authoring skill (part of this bump) — CI gates it."
+	@echo "Framework pinned to $(VERSION). Add the release's corresponding changes (framework CHANGELOG), record the bump in CHANGELOG.md, commit, then make publish-wheel APPLY=1 per target."
 
 # ---- agent skills (one canonical source: .agents/skills) --------------------
 # Authored ONCE under .agents/skills (read natively by Cursor + Codex); the

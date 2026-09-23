@@ -38,7 +38,7 @@ flowchart LR
 | Workflow | Trigger | What runs |
 |---|---|---|
 | `ci-cd.yml` | PRs to `main` (CI only, vs dev); pushes to `main` (CI + deploy dev); `v*-rc*` tags (stage); `v*` tags (prod); manual with a target choice | ONE workflow for every target — a `params` job derives the target/deploy flags from the trigger, then calls the common CI/CD workflows |
-| `framework-bump.yml` | daily schedule, manual | watches `datalab-framework` for a new `vX.Y.Z` tag and opens a full-lockstep bump PR (`make bump-framework`: pyproject tag + `var.datalab_version` + `uv.lock` + regenerated `schemas/`), pre-validated in-workflow |
+| `framework-bump.yml` | twice-daily schedule, manual (optional dry run), `repository_dispatch` `datalab-framework-released` | watches `datalab-framework` for a new `vX.Y.Z` release and opens the MANDATORY bump PR (`make bump-framework`: pyproject tag + `var.datalab_version` + `uv.lock` + regenerated `schemas/` + re-pinned framework-doc links), with every CI gate's result and the framework CHANGELOG between the pins in its body — a DRAFT when the release needs corresponding changes; see "Framework bumps" |
 | `pr-template-check.yml` | every PR | enforces the unified PR template |
 
 Dependabot (`.github/dependabot.yml`) keeps the GitHub Actions pins and regular
@@ -68,6 +68,76 @@ Reusable pieces:
 - Composite actions: `.github/actions/databricks-setup` (CLI install +
   `~/.databrickscfg` with `auth_type = github-oidc`),
   `.github/actions/deploy-dab`.
+
+## Framework bumps (mandatory in the template)
+
+The datalab **template repo** (the repo every adopter starts from,
+recognisable by its reference domains under `projects/`) must always run the **latest**
+datalab-framework release, and a bump must carry the changes that release
+needs. Both are enforced, not requested. A **generated adopter repo** inherits
+the same gates in *warn* mode (its owners decide when to adopt); setting the
+repo/org **variable** `DATALAB_FRAMEWORK_MANDATE=enforce` opts it into the
+mandate.
+
+| Gate | Fails when | Fix |
+|---|---|---|
+| `make check-framework-current` (CI job `framework pin is the latest release`, every PR + main) | a newer published `vX.Y.Z` GitHub Release exists than the pinned tag | merge the bot's bump PR (or `make bump-framework VERSION=x.y.z`) |
+| `make check-lockstep` (CI) | the git tag, `var.datalab_version`, `uv.lock` or any framework-doc link disagree | `make bump-framework VERSION=x.y.z` |
+| `make check-schemas` (CI) | `schemas/` differ from the pinned framework's models | `make sync-schemas` |
+| `make check-framework-surface` (CI + pre-commit) | the `author-ldp-artifact` skill misses a target/source kind of the pinned schema | document the new kind in the skill, `make sync-skills` |
+
+**The bot** (`framework-bump.yml`) opens the bump PR, and it adapts to what the
+release needs:
+- **Checks:** a cheap check job runs twice a day. It compares the pin with the
+  newest *published* GitHub Release (a bare tag whose release workflow hasn't
+  published yet doesn't count). The heavy bump job starts only when a bump is
+  due and no bump PR is already open. Once the pin is current, the check job
+  closes any leftover `framework-bump` tracking issues.
+- **Gates:** the bump job runs `make bump-framework` (its failure is reported
+  like any other gate, never a silent stop), then EVERY CI gate on the bumped
+  tree, without stopping at the first failure.
+- **The PR:** it pushes `chore/bump-datalab-framework-<version>` (force-pushed
+  only when the branch holds nothing but bot commits; a human's commits are
+  never overwritten) and opens the PR. The body lists the gate results, the
+  framework CHANGELOG between the two pins, the BREAKING bullets to migrate and
+  the new capabilities to document. If any gate fails, the PR is a **draft**
+  labeled `needs-corresponding-changes`: push those changes to the branch, then
+  mark it ready.
+- **Older bump PRs:** only after the new PR exists, it closes older bump PRs
+  that hold nothing but bot commits. A PR with human commits stays open with a
+  pointer comment, and no branch is deleted.
+- **CI:** it dispatches `ci-cd.yml` on the branch (`target=dev`, CI only),
+  because PRs created with `GITHUB_TOKEN` trigger no workflows.
+- **Any other failure** files or updates a `framework-bump` tracking issue, so a
+  release is never left unadopted without a trace.
+
+It depends on three things outside the code:
+
+1. **Settings → Actions → General → Workflow permissions → "Allow GitHub Actions
+   to create and approve pull requests"** must be ON (an org policy may have to
+   allow it first). While it is off, the bot pushes the branch, files or updates
+   a `framework-bump` issue with a one-click compare link, and fails loudly.
+2. **Actions billing.** A job refused with "recent account payments have failed
+   or your spending limit needs to be increased" never starts. That happened on
+   2026-08-31 and 2026-09-21. Keep the spending limit and payment method
+   healthy; the stale-pin gate still fails every PR in the meantime, so
+   nothing slips through silently.
+3. **The reader App credentials** (`DATALAB_FRAMEWORK_APP_CLIENT_ID` /
+   `DATALAB_FRAMEWORK_APP_PRIVATE_KEY`, see below). Their absence failed the bot
+   three days running in Aug 2026.
+
+**Instant trigger (optional, not set up).** The bot accepts a
+`repository_dispatch` (`event_type: datalab-framework-released`). A step at the
+end of the framework's `release.yml` that sends it would make the bump PR
+appear minutes after a release instead of at the next scheduled check. It needs
+a token that can write to this repo, stored as a framework-repo secret. Nothing
+sends it today; the schedule and the stale-pin gate make it optional.
+
+**Break-glass (template only).** During an incident, a prod hotfix may need to
+ship before a breaking framework release is adopted. Setting the repo or org
+**variable** `DATALAB_FRAMEWORK_MANDATE=warn` downgrades both framework gates to
+warnings. Delete it as soon as the bump merges; leaving it set disables the
+mandate.
 
 ## Private framework dependency (git auth)
 

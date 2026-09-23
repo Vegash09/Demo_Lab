@@ -43,7 +43,7 @@ One config-driven codebase runs three ways; `datalab.profile` (a pipeline
 `configuration` value, default `databricks`) selects the graph. Only the
 Databricks profile is the deploy/production path — the other two are local
 development aids. Details + fidelity caveats: the framework repo's
-[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md)
+[FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md)
 "Run anywhere".
 
 ```mermaid
@@ -104,7 +104,7 @@ Pydantic at pipeline import and registers every LDP object through
 reader/writer adapters; data quality is databrickslabs/dqx end to end. The
 artifact schema and semantics — including fan-in `sources:`, `backfill:`
 once-flows, snapshot CDC, kafka in/out, and the SDP capability matrix — are in
-the framework repo's [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/main/docs/FRAMEWORK.md).
+the framework repo's [FRAMEWORK.md](https://github.com/dediggibyte/datalab-framework/blob/v1.0.0/docs/FRAMEWORK.md).
 
 ## Code organization
 
