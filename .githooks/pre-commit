@@ -98,6 +98,30 @@ if [[ -f scripts/check_framework_surface.py ]] && command -v python3 >/dev/null 
   fi
 fi
 
+# adopter-if:design start
+# ---- the design diagrams are generated, never hand-edited -------------------
+# design/*.drawio come from scripts/design_diagram.py (drawio-architecture-designer
+# kit). A commit touching the estate, the generator or design/ must carry
+# diagrams that match it and pass the layout audit. Needs PyYAML (the dev venv);
+# skipped without it - CI's `make check-design` still gates the PR.
+if [[ -f scripts/design_diagram.py ]]; then
+  design_touched=$(git diff --cached --name-only --diff-filter=ACMRD | grep -E \
+    '^(design/|scripts/(design_|drawio_kit/|export_design)|(projects/[^/]+/)?(config|resources)/|targets/|\.github/workflows/ci-cd\.yml$|Makefile$)' || true)
+  py=python3; [[ -x .venv/bin/python ]] && py=.venv/bin/python
+  if [[ -n "$design_touched" ]] && "$py" -c 'import yaml' >/dev/null 2>&1; then
+    if ! "$py" scripts/design_diagram.py --check >/dev/null 2>&1; then
+      {
+        printf '\n  COMMIT BLOCKED - design/*.drawio are stale, hand-edited, or fail the layout audit.\n\n'
+        printf '  The diagrams are GENERATED (never edit the XML). Regenerate, look, re-stage:\n\n'
+        printf '      make design && make design-preview\n\n'
+        printf '  See the maintain-design-diagram skill.\n\n'
+      } >&2
+      exit 1
+    fi
+  fi
+fi
+# adopter-if:design end
+
 # Entries fenced `# adopter-if:<feature>` are dropped from generated adopters
 # that did not choose the feature (scripts/scaffold_adopter.py) — the same rows
 # as AGENTS.md's table and the agent guard, so the three stay aligned there too.
@@ -136,6 +160,10 @@ PATTERNS=(
   '^\.mcp\.json$'
   '^\.cursor/mcp\.json$'
   # adopter-if:mcp end
+  # adopter-if:design start
+  '^scripts/(design_diagram|design_spec|design_inventory|export_design)\.py$'
+  '^scripts/drawio_kit/.*'
+  # adopter-if:design end
   '^\.githooks/.*'
   '^Makefile$'
   '^\.env(\..*)?$'

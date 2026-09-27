@@ -22,6 +22,24 @@ opens the bump PR automatically; then `make publish-wheel`.
 ## [Unreleased]
 
 ### Added
+- **The design diagrams are generated from the estate, never hand-drawn.**
+  `scripts/design_diagram.py` builds `design/02_implementation_end_to_end.drawio`
+  from `config/`, `resources/*.yml`, `targets/`, `ci-cd.yml` and the new
+  `design/estate.yml` overlay: an estate overview (domains, pipelines, jobs and
+  an inventory table), one lineage page per domain (sources, layers, quarantine,
+  orchestration, edge jobs, consumers) and a delivery page.
+  `scripts/design_spec.py` rebuilds `design/01_*` from its text. Both go through
+  the vendored **drawio-architecture-designer** kit (`scripts/drawio_kit/`,
+  `.agents/skills/drawio-architecture-designer/`): cards sized from their text,
+  arrows routed shape to shape through gutter lanes and corridors, and a layout
+  audit (overflow incl. unbreakable tokens, colour, collisions, arrows through
+  cards, overlapping runs) that fails `--write` and `--check`. The old
+  hand-edited map had 22 arrows with no waypoints running through cards and a
+  second domain bolted onto the bottom. Enforced by
+  `.cursor/hooks/design_drawio_guard.py` (Claude Code, Codex, Cursor),
+  `make check-design` (CI + pre-commit) and `make design-preview`; the images
+  are now one PNG per page (`design/images/02_<n>_<page>.png`). Adopters with
+  the `design` component get the same generator, kit, hook and gate.
 - **`sales.gold.daily_sales_by_currency`** — a new gold materialized view over
   `silver.orders`: order count, recognized revenue and average order value per
   `order_date` and `currency`. Amounts are not FX-converted, so currency is a

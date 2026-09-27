@@ -49,6 +49,16 @@ Quick pointers:
   pytest (local Spark) + `bundle validate`; CD deploys via **GitHub OIDC**
   (no client secret). The OIDC subject must match
   `repo:<owner>/<repo>:environment:<target>`. See docs/CICD.md.
+<!-- adopter-if:design start -->
+- **The design diagrams are GENERATED - never edit `design/*.drawio`.**
+  `make design` rebuilds them from the estate (`config/`, `resources/*.yml`,
+  `targets/`, `design/estate.yml`) through the vendored
+  drawio-architecture-designer kit; `make design-preview` renders PNGs to look
+  at. Any diagram or architecture update follows the `maintain-design-diagram`
+  skill, and any generator/layout change the `drawio-architecture-designer`
+  skill. `.cursor/hooks/design_drawio_guard.py` blocks direct writes and
+  `make check-design` fails CI on drift or a layout finding.
+<!-- adopter-if:design end -->
 - Production-sensitive files are protected by
   `.claude/hooks/protected_files_guard.py` and `.githooks/pre-commit`. Keep
   both + the AGENTS.md "Protected file surface" table in sync when you change

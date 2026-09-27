@@ -9,9 +9,9 @@ the three authoring lanes, the medallion data view, code organization, and
 governance.
 
 <!-- template-only:arch-design-banner start -->
-> Editable architecture diagrams (diagrams.net / draw.io) live in `design/` —
+> Generated architecture diagrams (draw.io, built from the estate) live in `design/` —
 > see [Editing the design diagrams](#editing-the-design-diagrams) for how to
-> open, edit, validate, and keep them in sync with the code.
+> regenerate, preview and keep them in sync with the code.
 <!-- template-only:arch-design-banner end -->
 
 ## System view
@@ -218,91 +218,66 @@ nothing in this repo creates principals.
 <!-- template-only:arch-design-section start -->
 ## Editing the design diagrams
 
-The `design/` folder is the living picture of the architecture plus a
-customer-facing overview. The committed **`.drawio` XML is the source of
-truth**; the PNGs under `design/images/` are *generated* from it by
-`make design`, and the markdown/HTML overviews embed those PNGs. `design/` is
-listed in `.databricksignore`, so none of it ships with the bundle.
+The `design/` folder is the living picture of the estate this repo deploys plus
+a customer-facing overview. The diagrams are **generated, never hand-edited**:
+`scripts/design_diagram.py` builds them from the estate through the vendored
+**drawio-architecture-designer** kit (`scripts/drawio_kit/`,
+`.agents/skills/drawio-architecture-designer/`) - one layout model emitted as
+the `.drawio` file plus an HTML twin, cards sized from their text, arrows
+routed shape to shape through gutter lanes and corridors, and a layout audit
+that must be clean before anything is written. `design/` is listed in
+`.databricksignore`, so none of it ships with the bundle.
 
-| Path | Kind | Update when |
+| Path | Kind | Changes when |
 |---|---|---|
-| `design/01_design_config_driven_medallion.drawio` | Multi-page **design spec** (Context → Author → Generate → Run → Ship) | the *design intent* changes — a new principle, authoring lane, or conceptual flow |
-| `design/02_implementation_end_to_end.drawio` | Single-page **living implementation** map (config / framework / domain / pipeline / edge bands + a CI-CD · profiles · bundle · bootstrap · docs column) | the *implemented architecture* changes — a new table artifact, framework module, edge job/notebook, execution profile, or bundle resource |
-| `design/images/*.png` | **Generated** PNG exports of the diagrams above | never by hand — run `make design` after editing a `.drawio` source |
-| `design/PIPELINES.md` | **Generated** pipeline inventory + mermaid lineage, rendered from the `config/` artifacts (`scripts/design_inventory.py`) | every table change — `make design` re-renders it; CI's `make check-design` fails while it is stale |
-| `design/OVERVIEW.md` | Customer-facing tour that embeds the images | the customer narrative changes (a new capability, layer behaviour, or value point) |
-| `design/datalab-customer-overview.html` | Standalone self-contained share (built out-of-band) | `OVERVIEW.md` changes materially — regenerate the snapshot separately; never hand-edit |
+| `design/02_implementation_end_to_end.drawio` | **Generated** estate map: 1 estate overview (domains, pipelines, jobs + inventory table) · one lineage page per domain (sources, layers, quarantine, orchestration, edge jobs, consumers) · delivery (CI/CD triggers → bundle targets, profiles, gates) | any change to `config/`, `resources/*.yml`, `targets/`, `ci-cd.yml`, the Makefile help or `design/estate.yml` - `make design` |
+| `design/01_design_config_driven_medallion.drawio` | **Generated** design spec (Context → Author → Generate → Run → Ship) from the text in `scripts/design_spec.py` | the *design intent* changes - edit that text, `make design` |
+| `design/estate.yml` | **Hand-written** overlay: upstream source systems, downstream consumers, edge-job reads/writes | a relationship exists that no bundle YAML states |
+| `design/images/*.png` | **Generated** PNG exports (one per page) | never by hand - `make design` |
+| `design/PIPELINES.md` | **Generated** pipeline inventory + mermaid lineage from `config/` (`scripts/design_inventory.py`) | every table change - `make design` |
+| `design/OVERVIEW.md` | Customer-facing tour that embeds the images | the customer narrative changes |
+| `design/datalab-customer-overview.html` | Standalone self-contained share (built out-of-band) | `OVERVIEW.md` changes materially - regenerate separately; never hand-edit |
 
-### Open and edit
-
-All three options read and write the same `.drawio` file — pick whichever fits
-your setup:
-
-- **In the editor (recommended):** install the *Draw.io Integration* extension
-  (`hediet.vscode-drawio`) in VS Code or Cursor and open the `.drawio` file. It
-  renders an embedded editor and saves straight back to the XML, so the git
-  diff stays reviewable.
-- **Web, no install:** open [app.diagrams.net](https://app.diagrams.net),
-  *File → Open from → Device* (or GitHub), edit, then *File → Save*.
-- **Desktop:** the [draw.io Desktop](https://github.com/jgraph/drawio-desktop)
-  app opens the file directly.
-
-### Re-export the images
+### Regenerate, look, commit
 
 ```bash
-make design
+make design            # PIPELINES.md + both .drawio files + design/images/*.png
+make design-preview    # HTML twin + one PNG per page in .design-preview/ (gitignored)
+make check-design      # what CI and the pre-commit hook run
 ```
 
-This re-renders `design/PIPELINES.md` from the `config/` artifacts, then
-regenerates every `design/images/*.png` from the `.drawio` sources via the
-draw.io Desktop CLI (`scripts/export_design.py` splits the multi-page `01_*`
-file page by page, working around draw.io's unreliable `--page-index`). The CLI
-is **not** available in CI, so this is a developer/agent step: run it after
-editing a source and **commit the regenerated PNGs in the same change** (set
-`DRAWIO=/path/to/draw.io` if it isn't on `PATH` or at the default macOS
-location).
+`make design` renders the PNGs with the draw.io Desktop CLI when it is
+installed (set `DRAWIO=/path/to/draw.io` if it isn't on `PATH` or at the default
+macOS location; `scripts/export_design.py` splits multi-page files page by page,
+working around draw.io's unreliable `--page-index`), otherwise from the kit's
+HTML twin via playwright, otherwise it skips the images with a note. Read every
+changed page of `make design-preview` before committing - the audit finds size
+mistakes; only looking finds ugly. Commit the regenerated files with the change
+that caused them.
 
-### Validate before committing
+### Why hand edits fail
 
-Diagrams are plain XML, so validate the parse and geometry (no dangling edges,
-no out-of-bounds shapes, no overlapping sibling boxes) before you commit:
-
-```bash
-python3 - <<'PY'
-import xml.etree.ElementTree as ET
-f = "design/02_implementation_end_to_end.drawio"
-root = ET.parse(f).getroot()                       # raises on malformed XML
-for d in root.findall('.//diagram'):
-    m = d.find('.//mxGraphModel')
-    pw, ph = float(m.get('pageWidth')), float(m.get('pageHeight'))
-    V, E = {}, []
-    for c in m.findall('.//mxCell'):
-        if c.get('vertex') == '1':
-            g = c.find('mxGeometry')
-            V[c.get('id')] = tuple(float(g.get(k, 0)) for k in ('x', 'y', 'width', 'height'))
-        if c.get('edge') == '1':
-            E.append((c.get('source'), c.get('target')))
-    dangling = [(s, t) for s, t in E if s not in V or t not in V]
-    oob = [k for k, (x, y, w, h) in V.items() if x < 0 or y < 0 or x + w > pw or y + h > ph]
-    print(d.get('name'), "| dangling:", dangling or "none", "| oob:", oob or "none")
-PY
-```
-
-(Boxes nested inside a band container overlap it by design — compare siblings,
-not children against their band. The skill's done-check spells this out.)
+Opening a `.drawio` in draw.io (or the *Draw.io Integration* extension) is fine
+for **viewing**. Saving it, or patching its XML, is not:
+`.cursor/hooks/design_drawio_guard.py` denies agent writes to `design/*.drawio`
+and `design/images/*.png` in Claude Code, Codex and Cursor, and
+`make check-design` regenerates both diagrams in memory and fails on any
+difference - as well as on any layout-audit finding (text overflowing its card
+or too wide to wrap, non-black text, colliding cards, an arrow crossing a card
+it does not connect, two unrelated arrows drawn on top of each other). To change
+what a diagram shows, change the estate or `design/estate.yml`; to change how
+it looks, change `scripts/design_diagram.py` / `scripts/design_spec.py`
+following the `drawio-architecture-designer` skill.
 
 ### Keep the design in sync with the code
 
 Updating the design is part of the maintenance contract (AGENTS.md "Coding-agent
-maintenance protocol", step 2): when a change moves the architecture, in the
-**same PR** edit `design/02_implementation_end_to_end.drawio`, run `make design`,
-and refresh `design/OVERVIEW.md` if the customer story changed. The
-`maintain-design-diagram` skill (`.agents/skills/maintain-design-diagram/SKILL.md`)
-is the step-by-step recipe — band/box/edge conventions, the geometry check, the
-re-export, and the overview refresh. Edit `01_*` only when the design intent
-itself changes. `design/datalab-customer-overview.html` is a standalone share
-built out-of-band; regenerate it separately when `OVERVIEW.md` changes
-materially.
+maintenance protocol", step 2): in the **same PR** as an estate change, run
+`make design`, look at the preview, and refresh `design/OVERVIEW.md` if the
+customer story changed. The `maintain-design-diagram` skill
+(`.agents/skills/maintain-design-diagram/SKILL.md`) is the step-by-step recipe.
+`design/datalab-customer-overview.html` is a standalone share built
+out-of-band; regenerate it separately when `OVERVIEW.md` changes materially.
 
 ---
 

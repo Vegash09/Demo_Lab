@@ -162,6 +162,12 @@ scripts/check_adopter_docs.py  Run FROM here against a GENERATED adopter (make c
                           component, template-only material). Attribution is per PARAGRAPH, not per line
 scripts/design_inventory.py  Render design/PIPELINES.md (every table, source, target kind, quality gate + mermaid
                           lineage) from the config/ artifacts (make design; make check-design gates CI)
+scripts/design_diagram.py GENERATE design/*.drawio from the estate (config/ + resources/ + targets/ + ci-cd.yml +
+                          design/estate.yml) through the drawio-architecture-designer kit; --check fails on drift,
+                          a hand edit or any layout-audit finding (make design / check-design / design-preview)
+scripts/design_spec.py    The conceptual spec pages (design/01_*) as text + computed layout, same kit
+scripts/drawio_kit/       VENDORED drawio-architecture-designer kit: layout model -> .drawio + HTML twin, the
+                          layout audit, arrow routing (arrows.py), logo pack + the official Unity Catalog mark
 pyproject.toml            PEP 621 + [dependency-groups].dev + [tool.uv.sources] (datalab → git tag) + [tool.uv.workspace]; root is package=false (builds nothing); each projects/<domain> is a workspace member building its own <catalog>_etl wheel
 uv.lock                   Committed lockfile; CI uses `uv sync --frozen`
 Makefile                  Developer + CI entrypoints (run `make help`)
@@ -175,12 +181,14 @@ Makefile                  Developer + CI entrypoints (run `make help`)
 .githooks/pre-commit      Human-side protected-files guard (enable: make enable-githooks)
 docs/                     GETTING_STARTED, FRAMEWORK (reference), NAMING (folder↔UC convention),
                           ARCHITECTURE, CICD, MIGRATION
-design/                   Customer-facing OVERVIEW.md + architecture diagrams (drawio):
-                          01_*=multi-page design spec, 02_*=living end-to-end implementation,
-                          images/=PNG exports (make design), PIPELINES.md=GENERATED pipeline
-                          inventory (make design; make check-design in CI), datalab-customer-overview.html
-                          (standalone share). Kept in sync via the maintain-design-diagram
-                          skill; excluded from the deployed workspace files via databricks.yml sync.exclude
+design/                   Customer-facing OVERVIEW.md + GENERATED architecture diagrams (never hand-edited):
+                          01_*=multi-page design spec, 02_*=estate map (overview + one lineage page per
+                          domain + delivery), images/=PNG exports, PIPELINES.md=pipeline inventory - all
+                          rebuilt by make design, gated by make check-design; estate.yml=the hand-written
+                          overlay (source systems, consumers, job reads/writes); datalab-customer-overview.html
+                          (standalone share). Kept in sync via the maintain-design-diagram +
+                          drawio-architecture-designer skills; excluded from the deployed workspace files via
+                          databricks.yml sync.exclude
 omnigent/                 Opt-in, dev-time pilot: an Omnigent agent spec (datalab-author.yaml,
                           instructions: ../AGENTS.md) to run the authoring workflow on any
                           harness; no policies ported, excluded from deploy (omnigent/README.md)
@@ -211,7 +219,8 @@ make run              # databricks bundle run customer_sales_etl -t dev (dev ref
 make run-local        # materialize the medallion on sample data via OSS spark-pipelines
 make dry-run-local    # spark-pipelines dry-run (graph validation, no data)
 make validate-connect # run one dataset on a LIVE cluster via isolated Databricks Connect
-make design           # re-render design/PIPELINES.md from config/ + re-export design/*.drawio to PNG (draw.io Desktop)
+make design           # regenerate design/: PIPELINES.md, the .drawio diagrams from the estate, their PNGs
+make design-preview   # the diagrams' HTML twin + PNGs in .design-preview/ - LOOK before committing
 ```
 
 Python: 3.12+ (serverless environment v4 ships 3.12). Java 17+ locally for the
@@ -845,6 +854,30 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   when/how the agent reaches for it.
 <!-- adopter-if:mcp end -->
 <!-- adopter-if:any-agent start -->
+<!-- adopter-if:design start -->
+- **The design diagrams are generated, never hand-drawn - by any agent.** The
+  implementation map used to be draw.io XML that agents patched cell by cell
+  following a recipe of bands and coordinates. It degraded exactly the way that
+  invites: 22 arrows and zero waypoints, so the router drew lines straight
+  through cards and across four bands; edge labels sat on card text; titles
+  clipped; the second domain was bolted onto the bottom as a full-width strip,
+  and every customer estate with more jobs, pipelines or tables made it worse.
+  Now `scripts/design_diagram.py` builds `design/02_*` from the estate
+  (`config/`, `resources/*.yml`, `targets/`, `ci-cd.yml`, `design/estate.yml`)
+  and `scripts/design_spec.py` builds `design/01_*`, both through the vendored
+  **drawio-architecture-designer** kit (`scripts/drawio_kit/`): one layout
+  model emitted as `.drawio` + an HTML twin, cards sized from their text,
+  arrows routed shape to shape through gutter lanes and corridors, cards
+  ordered to cut crossings. The layout audit (text overflow incl. unbreakable
+  tokens, non-black text, colliding cards, arrows through cards, overlapping
+  runs) fails `--write` and `--check`. Enforced three ways:
+  `.cursor/hooks/design_drawio_guard.py` denies agent writes to
+  `design/*.drawio` / `design/images/*.png` (Claude Code, Codex, Cursor);
+  `.githooks/pre-commit` and CI run `make check-design`, which fails on drift,
+  a hand edit, or any audit finding. The generator must stay deterministic —
+  same estate, byte-identical XML. The skill is vendored (not a personal
+  install) so Cursor, Codex and Genie Code apply the same method.
+<!-- adopter-if:design end -->
 - **Agent skills are authored once in `.agents/skills/`, projected per tool.** No
   single folder is read by every coding agent, so the canonical authored source is
   `.agents/skills/` — the cross-tool `agentskills.io` standard, read natively by
@@ -872,11 +905,12 @@ change:
 1. Capture the *why* in this file (Common tasks or Critical knowledge).
 <!-- template-only:maintenance-design start -->
 2. If the architecture moved, update `docs/ARCHITECTURE.md` **and** the `design/`
-   package: edit `design/02_implementation_end_to_end.drawio` (the living
-   diagram), run `make design` to re-export `design/images/`, and refresh
-   `design/OVERVIEW.md` if the customer narrative changed — all in the same PR.
-   Follow the `maintain-design-diagram` skill (`design/01_*` only when the design
-   intent changes).
+   package in the same PR: `make design` regenerates the diagrams from the estate
+   (never edit `design/*.drawio` - they are build outputs), declare anything the
+   bundle cannot state in `design/estate.yml`, look at `make design-preview`, and
+   refresh `design/OVERVIEW.md` if the customer narrative changed. Follow the
+   `maintain-design-diagram` skill; any change to the generator or its layout
+   follows the `drawio-architecture-designer` skill (mandatory).
 <!-- template-only:maintenance-design end -->
 3. **The framework is an external dependency — change it in the
    `datalab-framework` repo, not here** (its `docs/FRAMEWORK.md` is the doc of
@@ -936,6 +970,7 @@ change:
 | `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists\|check_templates_doc\|check_adopter_docs\|check_agent_settings\|check_framework_current\|check_framework_surface)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check, adopter-scaffold doc lockstep, adopter doc drift, agent-config portability, mandatory framework adoption + surface coverage |
 | `^schemas/.*\.json$` | vendored editor schemas — GENERATED from the pinned framework (`make sync-schemas`), never hand-edited | <!-- adopter-if:schemas -->
 | `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) | <!-- adopter-if:mcp -->
+| `^scripts/(design_diagram\|design_spec\|design_inventory\|export_design)\.py$`, `^scripts/drawio_kit/.*` | design generator + the vendored drawio-architecture-designer kit (the diagrams are built by these) | <!-- adopter-if:design -->
 | `^\.githooks/.*` | git pre-commit guard | <!-- adopter-if:githooks -->
 | `^Makefile$` | developer + CI entrypoints |
 | `^\.env(\..*)?$` | secrets — never commit |
@@ -1087,14 +1122,17 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   the conventions in `docs/ARCHITECTURE.md` — never execute them from CI or
   an agent session.
 <!-- template-only:common-task-design start -->
-- **Update the design (diagrams, images, overview)**: edit the diagrams.net
-  (draw.io) source in `design/` — `02_implementation_end_to_end.drawio` when the
-  implemented architecture moves (same PR), `01_design_config_driven_medallion.drawio`
-  only when the design intent changes — then `make design` to re-export
-  `design/images/*.png`, and refresh the customer-facing `design/OVERVIEW.md` if
-  the narrative changed (flag `datalab-customer-overview.html` for out-of-band
-  regeneration). Follow the `maintain-design-diagram` skill for band/colour
-  conventions + the geometry check; full how-to in `docs/ARCHITECTURE.md`
+- **Update the design (diagrams, images, overview)**: the diagrams are
+  GENERATED - never open a `design/*.drawio` in draw.io and save it, never
+  `sed` its XML. Change the source and run `make design`: the estate itself
+  (`config/`, `resources/*.yml`, `targets/`), `design/estate.yml` for source
+  systems, consumers and edge-job reads/writes, `scripts/design_diagram.py` for
+  how the estate pages look, `scripts/design_spec.py` for the conceptual spec
+  text. Then `make design-preview` and read every changed page; refresh
+  `design/OVERVIEW.md` if the narrative changed (flag
+  `datalab-customer-overview.html` for out-of-band regeneration). Follow the
+  `maintain-design-diagram` skill, and the `drawio-architecture-designer` skill
+  for any generator/layout change; full how-to in `docs/ARCHITECTURE.md`
   ("Editing the design diagrams"). `design/` is excluded from the deployed
   workspace files via the `sync.exclude` block in databricks.yml.
 <!-- template-only:common-task-design end -->

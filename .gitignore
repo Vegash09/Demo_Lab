@@ -44,3 +44,5 @@ derby.log
 
 # Scratch
 tmp/
+# make design-preview: the diagrams' HTML twin + PNGs, for looking, never committed
+.design-preview/

@@ -29,6 +29,10 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protected_files_guard.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.cursor/hooks/design_drawio_guard.py\""
           }
         ]
       },
@@ -42,6 +46,10 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.cursor/hooks/pr_template_guard.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.cursor/hooks/design_drawio_guard.py\""
           }
         ]
       }

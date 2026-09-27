@@ -389,6 +389,11 @@ addopts   = "-ra --tb=short"
 [tool.ruff]
 line-length    = 100
 target-version = "py312"
+# adopter-if:design start
+# Vendored verbatim from the drawio-architecture-designer skill (the diagram
+# kit scripts/design_diagram.py builds on) - kept byte-close to its upstream.
+extend-exclude = ["scripts/drawio_kit"]
+# adopter-if:design end
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B"]
@@ -602,9 +607,10 @@ doubles as a human guide (plain-language rule → dqx check mapping).
 <!-- adopter-if:!any-agent end -->
 <!-- adopter-if:design start -->
 
-After adding or changing tables, run `make design`: it re-renders the pipeline
-inventory in `design/PIPELINES.md` (CI's `make check-design` fails while it is
-stale) and re-exports the draw.io diagram when draw.io Desktop is installed.
+After adding or changing tables, jobs or pipelines, run `make design`: it
+re-renders the pipeline inventory in `design/PIPELINES.md` and regenerates the
+draw.io diagrams from the estate (CI's `make check-design` fails while either is
+stale or a diagram was hand-edited). Never edit a `.drawio` file by hand.
 <!-- adopter-if:design end -->
 
 ## How this repo was generated
@@ -675,21 +681,27 @@ The template's own `design/` describes ITS reference domains, so it is never
 copied; the adopter gets a package generated for the customer:
 
 - `design/OVERVIEW.md` — the narrative (below).
-- `design/02_implementation_end_to_end.drawio` — a starter implementation map
-  with the same bands, ids and edge colours as the template's, so the
-  `maintain-design-diagram` skill's recipes apply unchanged
-  (`scaffold_adopter.DESIGN_DRAWIO`; open it in draw.io rather than hand-copying
-  the XML).
-- `design/01_design_config_driven_medallion.drawio` — the template's conceptual
-  design spec, with its worked-example references repointed at `<catalog>`
-  (`DESIGN_SPEC_EDITS`).
-- `design/PIPELINES.md` — **rendered** by `scripts/design_inventory.py` from
-  the `config/` artifacts: `make design` re-renders it (and re-exports the PNGs
-  when draw.io Desktop is installed); CI's `make check-design` fails while it
-  is stale. Never hand-write it — run `make design` after `make install`.
-- `scripts/design_inventory.py`, `scripts/export_design.py`, the `design` /
-  `check-design` make targets, the CI step, and (with an agent) the
-  `maintain-design-diagram` skill ship with it.
+- `design/estate.yml` - the hand-written overlay (below): source systems,
+  consumers and edge-job reads/writes that no bundle YAML states. Starts empty.
+- `design/02_implementation_end_to_end.drawio` and
+  `design/01_design_config_driven_medallion.drawio` - **generated**, never
+  hand-written: `scripts/design_diagram.py` builds the estate map (overview,
+  one lineage page per domain, delivery) from the finished repo, and
+  `scripts/design_spec.py` the conceptual spec, both through the vendored
+  drawio-architecture-designer kit (`scripts/drawio_kit/`). The engine runs the
+  generator LAST (`write_design_diagrams`), after every other file is final; the
+  spec's worked-example lines are repointed at `<catalog>` in the adopter's own
+  `scripts/design_spec.py` (`DESIGN_SPEC_EDITS`), so its `make design`
+  reproduces the same files. By hand: copy those scripts and run `make design`.
+- `design/PIPELINES.md` - **rendered** by `scripts/design_inventory.py` from
+  the `config/` artifacts. Never hand-write it - run `make design` after
+  `make install`; CI's `make check-design` fails while it or a diagram is stale,
+  hand-edited, or fails the layout audit.
+- `scripts/design_inventory.py`, `scripts/design_diagram.py`,
+  `scripts/design_spec.py`, `scripts/drawio_kit/`, `scripts/export_design.py`,
+  the `design` / `check-design` / `design-preview` make targets, the CI step,
+  and (with an agent) the `maintain-design-diagram` + `drawio-architecture-designer`
+  skills and the `.cursor/hooks/design_drawio_guard.py` hook ship with it.
 
 ### `design/OVERVIEW.md`
 
@@ -698,13 +710,14 @@ copied; the adopter gets a package generated for the customer:
 
 <description>
 
-> This is the living design package for this repo. The editable architecture
-> map is [`02_implementation_end_to_end.drawio`](02_implementation_end_to_end.drawio)
-> (`make design` renders it to `design/images/` when draw.io Desktop is
-> installed); the framework's conceptual design is
-> [`01_design_config_driven_medallion.drawio`](01_design_config_driven_medallion.drawio).
-> **[PIPELINES.md](PIPELINES.md) is generated from `config/`** — every table,
-> its source, target kind and quality gate — and CI fails while it is stale.
+> This is the living design package for this repo. The estate map
+> [`02_implementation_end_to_end.drawio`](02_implementation_end_to_end.drawio)
+> (an overview, one lineage page per domain, and the delivery path) and the
+> framework's conceptual design
+> [`01_design_config_driven_medallion.drawio`](01_design_config_driven_medallion.drawio)
+> are **generated** by `make design` from the repo itself - never edit their XML.
+> **[PIPELINES.md](PIPELINES.md) is generated from `config/`** - every table,
+> its source, target kind and quality gate. CI fails while any of them is stale.
 
 ## At a glance
 
@@ -749,10 +762,28 @@ variables resolved per target.
 - **Tables** — after adding or changing a `config/<catalog>/…` artifact, run
   `make design`; it re-renders [PIPELINES.md](PIPELINES.md). CI runs
   `make check-design` and fails while the inventory is stale.
-- **Architecture** — when a new edge job, notebook, source system or consumer
-  appears, add it to `02_implementation_end_to_end.drawio` (the band and colour
-  conventions are in its legend) and refresh this overview's narrative.
+- **Architecture** - new tables, pipelines and jobs appear on the diagrams by
+  themselves on the next `make design`. A source system, consumer or edge-job
+  read/write that no bundle YAML states goes in [`estate.yml`](estate.yml); then
+  `make design`, look at `make design-preview`, and refresh this overview's
+  narrative.
 ````
+
+### `design/estate.yml`
+
+```yaml
+# design/estate.yml - what the diagrams need that no bundle YAML states.
+#
+# design/*.drawio are GENERATED by scripts/design_diagram.py from config/,
+# resources/*.yml, targets/, .github/workflows/ and this file (`make design`;
+# `make check-design` fails CI when they drift). Declare only relationships the
+# code cannot express. Tables are <domain>.<layer>.<table>; an unknown one
+# fails the generator. See the maintain-design-diagram skill.
+#
+# sources:   [{name, detail?, logo?, feeds: [<catalog>.bronze.<table>]}]
+# consumers: [{name, detail?, logo?, reads: [<catalog>.gold.<table>]}]
+# jobs:      {<job resource key>: {reads: [...], writes: <string>}}
+```
 
 ### `.gitattributes`
 
@@ -766,6 +797,8 @@ rules, so without the component the adopter has none):
 design/**              linguist-documentation
 # Rendered by `make design` (scripts/design_inventory.py) — collapse it in diffs.
 design/PIPELINES.md    linguist-generated
+# Generated by `make design` (scripts/design_diagram.py) - collapse them in diffs.
+design/*.drawio        linguist-generated
 ```
 
 ---
@@ -959,7 +992,7 @@ still exists.
 
 | Choice | Files it brings (gone when not chosen) |
 |---|---|
-| any agent | `.agents/skills/` (minus `bootstrap-adopter-repo` — template-only; `query-databricks` needs `mcp`; `maintain-design-diagram` needs `design`) |
+| any agent | `.agents/skills/` (minus `bootstrap-adopter-repo` - template-only; `query-databricks` needs `mcp`; `maintain-design-diagram` and `drawio-architecture-designer` need `design`) |
 | `claude` | `CLAUDE.md`, `.claude/settings.json`, `.claude/skills/` (copy of `.agents/skills`), `scripts/sync_skills.py` |
 | `claude` or `codex` | `.claude/hooks/protected_files_guard.py` |
 | `claude`, `codex` or `cursor` | `.cursor/hooks/branch_guard.py` (+ `pr_template_guard.py` with `pr-template`), `scripts/check_agent_settings.py` |
@@ -967,7 +1000,7 @@ still exists.
 | `cursor` | `.cursor/hooks.json`, `.cursor/rules/` (+ `.cursor/mcp.json` with `mcp`) |
 | `genie` | `scripts/publish_genie_skills.py` |
 | `docs` | `docs/` (+ `docs/AGENT_MCP.md` with `mcp`; `docs/MIGRATION.md` never — template history) |
-| `design` | `design/` (generated), `.gitattributes`, `scripts/export_design.py`, `scripts/design_inventory.py` |
+| `design` | `design/` (generated), `.gitattributes`, `scripts/export_design.py`, `scripts/design_inventory.py`, `scripts/design_diagram.py`, `scripts/design_spec.py`, `scripts/drawio_kit/`, and with a hooked agent `.cursor/hooks/design_drawio_guard.py` |
 | `schemas` | `schemas/`, `scripts/sync_schemas.py` (and the `$schema` header in each config YAML) |
 | `local-dev` | `sample_data/`, `scripts/validate_connect.py` |
 | `githooks` | `.githooks/` |

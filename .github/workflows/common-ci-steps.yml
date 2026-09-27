@@ -131,12 +131,17 @@ jobs:
       # adopter-if:schemas end
 
       # adopter-if:design start
-      - name: Check the design pipeline inventory is current
+      - name: Check the design package is current and cleanly laid out
         # Mirror of `make check-design`: design/PIPELINES.md is RENDERED from the
-        # config/ artifacts (scripts/design_inventory.py). A table added without
-        # `make design` leaves the design describing a pipeline that no longer
-        # exists — the design travels with the code, in the same PR.
-        run: uv run python scripts/design_inventory.py --check
+        # config/ artifacts (scripts/design_inventory.py), and design/*.drawio are
+        # GENERATED from the estate through the drawio-architecture-designer kit
+        # (scripts/design_diagram.py). A table added without `make design` leaves
+        # the design describing a pipeline that no longer exists; a hand-edited
+        # .drawio drifts from the generator; a layout finding (clipped text, an
+        # arrow through a card) fails here instead of in a client review.
+        run: |
+          uv run python scripts/design_inventory.py --check
+          uv run python scripts/design_diagram.py --check
       # adopter-if:design end
 
       - name: Check the domain registry resolves against the bundle files

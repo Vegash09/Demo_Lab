@@ -56,12 +56,13 @@ flowchart LR
     end
 ```
 
-> Editable, higher-fidelity architecture diagrams (diagrams.net / draw.io) live
-> in [`design/`](design/): a multi-page design spec
-> (`01_design_config_driven_medallion.drawio`) and a single-page living
-> implementation map (`02_implementation_end_to_end.drawio`). See
+> Higher-fidelity architecture diagrams (draw.io) live in [`design/`](design/),
+> GENERATED from the estate by `make design`: a multi-page design spec
+> (`01_design_config_driven_medallion.drawio`) and an estate map
+> (`02_implementation_end_to_end.drawio` - overview, one lineage page per domain,
+> delivery). See
 > [Editing the design diagrams](docs/ARCHITECTURE.md#editing-the-design-diagrams)
-> for how to open, edit, validate, and keep them in sync.
+> for how to regenerate, preview and keep them in sync - never edit the XML.
 
 Three invariants hold everywhere:
 
@@ -118,9 +119,9 @@ flowchart TD
 | Deploy | `databricks.yml` + `projects/*/resources/` (adopters: `resources/`) | bundle variables, targets `dev`/`stage`/`prod`, pipeline + jobs |
 | Tests | `projects/*/tests/` (per-domain) | unit tests on a local SparkSession — no workspace needed. Framework unit tests live in the `datalab-framework` repo |
 | CI/CD | `.github/` | ruff + pytest + config validation + `bundle validate` on PRs; OIDC deploys on merge/tags |
-| Agent harness | `.claude/`, `.cursor/`, `.codex/` + `.agents/skills/`, `.githooks/`, `.mcp.json` | rules + skills + PR-template/protected-file guards across three harnesses (`.codex` references the canonical guards; the 5 skills are authored once in `.agents/skills/` — read natively by Cursor + Codex — and copied to `.claude/skills/` via `make sync-skills`, and pushed to Databricks Genie via `make publish-genie-skills`), opt-in Databricks MCP config (read-only UC queries — [docs/AGENT_MCP.md](docs/AGENT_MCP.md)) |
+| Agent harness | `.claude/`, `.cursor/`, `.codex/` + `.agents/skills/`, `.githooks/`, `.mcp.json` | rules + skills + PR-template/protected-file guards across three harnesses (`.codex` references the canonical guards; the 7 skills are authored once in `.agents/skills/` - read natively by Cursor + Codex - and copied to `.claude/skills/` via `make sync-skills`, and pushed to Databricks Genie via `make publish-genie-skills`), opt-in Databricks MCP config (read-only UC queries - [docs/AGENT_MCP.md](docs/AGENT_MCP.md)) |
 | Docs | `docs/` | the child docs mapped above |
-| Design | `design/` | customer-facing [`OVERVIEW.md`](design/OVERVIEW.md) + draw.io sources (`01_*` spec, `02_*` living map), `images/` PNG exports (`make design`) and a standalone share HTML; kept in sync via the `maintain-design-diagram` skill ([how to edit](docs/ARCHITECTURE.md#editing-the-design-diagrams)) |
+| Design | `design/` | customer-facing [`OVERVIEW.md`](design/OVERVIEW.md) + GENERATED draw.io diagrams (`01_*` spec, `02_*` estate map - `scripts/design_diagram.py` via the vendored drawio-architecture-designer kit), `images/` PNG exports and `PIPELINES.md` (`make design`; `make check-design` gates CI), the `estate.yml` overlay and a standalone share HTML; kept in sync via the `maintain-design-diagram` + `drawio-architecture-designer` skills ([how to edit](docs/ARCHITECTURE.md#editing-the-design-diagrams)) |
 
 ## Quick start
 

@@ -61,6 +61,10 @@ PROTECTED: list[tuple[str, str]] = [
     (r"^\.mcp\.json$|^\.cursor/mcp\.json$",
      "opt-in MCP server config (agent↔Databricks read-only query connection)"),
     # adopter-if:mcp end
+    # adopter-if:design start
+    (r"^scripts/(design_diagram|design_spec|design_inventory|export_design)\.py$|^scripts/drawio_kit/.*",
+     "design generator + vendored drawio-architecture-designer kit (the diagrams are built by these, never hand-drawn)"),
+    # adopter-if:design end
     # adopter-if:githooks start
     (r"^\.githooks/.*",
      "git pre-commit guard (human-side counterpart to this hook)"),

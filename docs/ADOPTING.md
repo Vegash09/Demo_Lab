@@ -104,7 +104,7 @@ things to know up front:
 | `genie` | `scripts/publish_genie_skills.py` + `make publish-genie-skills` |
 | any agent | `.agents/skills/` (the canonical skills); with claude/codex/cursor also the shared guards in `.cursor/hooks/` and `scripts/check_agent_settings.py` |
 | `docs` | `docs/` — NEW_ADOPTER, ADOPTING, GETTING_STARTED, NAMING, CICD, ARCHITECTURE (+ AGENT_MCP with `mcp`); without it, references point at this template repo's copies |
-| `design` | a `design/` package generated for the customer — OVERVIEW.md, the implementation map + design-spec diagrams, and `design/PIPELINES.md` rendered from `config/` (`make design`; CI runs `make check-design`) |
+| `design` | a `design/` package generated for the customer - OVERVIEW.md, the estate map + design-spec diagrams GENERATED from the repo through the drawio-architecture-designer kit, and `design/PIPELINES.md` rendered from `config/` (`make design`; CI runs `make check-design`, which also fails on a hand-edited diagram) |
 | `schemas` | `schemas/` + `make sync-schemas` / `check-schemas`, and the `$schema` editor header in each config file |
 | `local-dev` | `sample_data/`, `make run-local` / `dry-run-local` / `validate-connect`, `scripts/validate_connect.py` |
 | `githooks` | `.githooks/pre-commit` + `make enable-githooks` / `commit-protected` |

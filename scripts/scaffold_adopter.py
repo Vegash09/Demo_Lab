@@ -212,12 +212,14 @@ PATH_RULES: list[tuple[str, str]] = [
     # agent harness — shared guards vs per-agent files
     (".agents/skills/bootstrap-adopter-repo", "template"),  # drives THIS conversion
     (".agents/skills/maintain-design-diagram", "design"),
+    (".agents/skills/drawio-architecture-designer", "design"),  # the diagrams are built with it
     (".agents/skills/query-databricks", "mcp"),
     (".claude/skills", "agent-claude"),  # regenerated from .agents/skills
     (".claude/settings.json", "agent-claude"),
     (".claude/hooks/protected_files_guard.py", "agent-claude|agent-codex"),
     (".cursor/hooks/branch_guard.py", "hooked-agent"),
     (".cursor/hooks/pr_template_guard.py", "hooked-agent&pr-template"),
+    (".cursor/hooks/design_drawio_guard.py", "hooked-agent&design"),
     (".cursor/hooks.json", "agent-cursor"),
     (".cursor/rules", "agent-cursor"),
     (".cursor/mcp.json", "agent-cursor&mcp"),
@@ -232,6 +234,9 @@ PATH_RULES: list[tuple[str, str]] = [
     ("scripts/check_framework_surface.py", "schemas&any-agent"),  # reads schemas/ + the .agents skill
     ("scripts/export_design.py", "design"),
     ("scripts/design_inventory.py", "design"),
+    ("scripts/design_diagram.py", "design"),
+    ("scripts/design_spec.py", "design"),
+    ("scripts/drawio_kit", "design"),
     ("scripts/sync_skills.py", "agent-claude"),
     ("scripts/publish_genie_skills.py", "agent-genie"),
     ("scripts/check_agent_settings.py", "hooked-agent"),
@@ -604,6 +609,11 @@ addopts   = "-ra --tb=short"
 [tool.ruff]
 line-length    = 100
 target-version = "py312"
+# adopter-if:design start
+# Vendored verbatim from the drawio-architecture-designer skill (the diagram
+# kit scripts/design_diagram.py builds on) - kept byte-close to its upstream.
+extend-exclude = ["scripts/drawio_kit"]
+# adopter-if:design end
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B"]
@@ -794,9 +804,10 @@ doubles as a human guide (plain-language rule → dqx check mapping).
 <!-- adopter-if:!any-agent end -->
 <!-- adopter-if:design start -->
 
-After adding or changing tables, run `make design`: it re-renders the pipeline
-inventory in `design/PIPELINES.md` (CI's `make check-design` fails while it is
-stale) and re-exports the draw.io diagram when draw.io Desktop is installed.
+After adding or changing tables, jobs or pipelines, run `make design`: it
+re-renders the pipeline inventory in `design/PIPELINES.md` and regenerates the
+draw.io diagrams from the estate (CI's `make check-design` fails while either is
+stale or a diagram was hand-edited). Never edit a `.drawio` file by hand.
 <!-- adopter-if:design end -->
 
 ## How this repo was generated
@@ -828,13 +839,14 @@ DESIGN_OVERVIEW_MD = """\
 
 @@DESCRIPTION@@
 
-> This is the living design package for this repo. The editable architecture
-> map is [`02_implementation_end_to_end.drawio`](02_implementation_end_to_end.drawio)
-> (`make design` renders it to `design/images/` when draw.io Desktop is
-> installed); the framework's conceptual design is
-> [`01_design_config_driven_medallion.drawio`](01_design_config_driven_medallion.drawio).
-> **[PIPELINES.md](PIPELINES.md) is generated from `config/`** — every table,
-> its source, target kind and quality gate — and CI fails while it is stale.
+> This is the living design package for this repo. The estate map
+> [`02_implementation_end_to_end.drawio`](02_implementation_end_to_end.drawio)
+> (an overview, one lineage page per domain, and the delivery path) and the
+> framework's conceptual design
+> [`01_design_config_driven_medallion.drawio`](01_design_config_driven_medallion.drawio)
+> are **generated** by `make design` from the repo itself - never edit their XML.
+> **[PIPELINES.md](PIPELINES.md) is generated from `config/`** - every table,
+> its source, target kind and quality gate. CI fails while any of them is stale.
 
 ## At a glance
 
@@ -879,9 +891,11 @@ variables resolved per target.
 - **Tables** — after adding or changing a `config/@@CATALOG@@/…` artifact, run
   `make design`; it re-renders [PIPELINES.md](PIPELINES.md). CI runs
   `make check-design` and fails while the inventory is stale.
-- **Architecture** — when a new edge job, notebook, source system or consumer
-  appears, add it to `02_implementation_end_to_end.drawio` (the band and colour
-  conventions are in its legend) and refresh this overview's narrative.
+- **Architecture** - new tables, pipelines and jobs appear on the diagrams by
+  themselves on the next `make design`. A source system, consumer or edge-job
+  read/write that no bundle YAML states goes in [`estate.yml`](estate.yml); then
+  `make design`, look at `make design-preview`, and refresh this overview's
+  narrative.
 """
 
 GITATTRIBUTES_DESIGN = """\
@@ -891,171 +905,54 @@ GITATTRIBUTES_DESIGN = """\
 design/**              linguist-documentation
 # Rendered by `make design` (scripts/design_inventory.py) — collapse it in diffs.
 design/PIPELINES.md    linguist-generated
+# Generated by `make design` (scripts/design_diagram.py) - collapse them in diffs.
+design/*.drawio        linguist-generated
 """
 
-# The adopter's starter implementation map. Same bands, ids, colours and edge
-# tiers as the template's diagram, so the maintain-design-diagram skill's recipes
-# apply unchanged. Cells are html=1, so a literal `<placeholder>` must be escaped
-# TWICE (`&amp;lt;`) or draw.io swallows it as a tag — the template's diagrams do
-# the same; subst_xml escapes substituted values the same way.
-DESIGN_DRAWIO = """\
-<?xml version='1.0' encoding='utf-8'?>
-<mxfile host="app.diagrams.net" agent="datalab scaffold_adopter.py" version="29.6.1">
-  <diagram name="End-to-end implementation" id="impl">
-    <mxGraphModel dx="2200" dy="1380" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="2220" pageHeight="1380" math="0" shadow="0">
-      <root>
-        <mxCell id="0" />
-        <mxCell id="1" parent="0" />
-        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=22;fontStyle=1" value="@@CUSTOMER@@ · @@CATALOG@@ lakehouse · end-to-end implementation" vertex="1">
-          <mxGeometry x="40" y="20" width="2140" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="subtitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=12;fontStyle=2" value="ONE YAML artifact per table → datalab @@FRAMEWORK_TAG@@ generates the Lakeflow SDP pipeline @@CATALOG@@_etl · dqx quality + quarantine · deployed as a Declarative Automation Bundle via GitHub OIDC" vertex="1">
-          <mxGeometry x="40" y="58" width="2140" height="20" as="geometry" />
-        </mxCell>
-        <mxCell id="eng" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;arcSize=20;" value="Data engineer / coding agent&#xa;authors one YAML artifact per table" vertex="1">
-          <mxGeometry x="470" y="100" width="360" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="config_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=3;" value="Config — the deployed pipeline definition · config/@@CATALOG@@/&amp;lt;schema&amp;gt;/&amp;lt;table&amp;gt;.yml + domain.yml (make validate-configs)" vertex="1">
-          <mxGeometry x="40" y="210" width="1260" height="205" as="geometry" />
-        </mxCell>
-        <mxCell id="cfg_domain" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8dc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="config/@@CATALOG@@/domain.yml&#xa;domain: @@CATALOG@@ · layers bronze / silver / gold&#xa;catalog + schemas are conf KEYS, never literal names" vertex="1">
-          <mxGeometry x="70" y="250" width="360" height="140" as="geometry" />
-        </mxCell>
-        <mxCell id="cfg_events_raw" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="config/@@CATALOG@@/bronze/events_raw.yml&#xa;source: cloud_files (json) · path_conf datalab.landing_path&#xa;target: streaming_table · add_lineage" vertex="1">
-          <mxGeometry x="460" y="250" width="400" height="140" as="geometry" />
-        </mxCell>
-        <mxCell id="cfg_next" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;dashed=1;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="silver/ · gold/ artifacts (next)&#xa;one YAML file per table: columns + types, dqx rules, CDC, target kind" vertex="1">
-          <mxGeometry x="890" y="250" width="380" height="140" as="geometry" />
-        </mxCell>
-        <mxCell id="framework_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=4;" value="Framework — the external datalab dependency (dediggibyte/datalab-framework · git tag + UC-Volume wheel · zero domain code)" vertex="1">
-          <mxGeometry x="40" y="440" width="1260" height="200" as="geometry" />
-        </mxCell>
-        <mxCell id="fw_generate" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="datalab @@FRAMEWORK_TAG@@&#xa;models + loader (Pydantic) → generate() → pyspark.pipelines datasets&#xa;dqx valid / quarantine split · AUTO CDC · pipeline_conf / params helpers&#xa;local dev + CI: git dependency in uv.lock · serverless: wheel from /Volumes/&amp;lt;catalog&amp;gt;/artifacts/wheels/" vertex="1">
-          <mxGeometry x="70" y="480" width="1200" height="140" as="geometry" />
-        </mxCell>
-        <mxCell id="domain_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=4;" value="Domain — src/@@CATALOG@@_etl/ (pure, unit-tested; declared to the framework via domain.yml imports)" vertex="1">
-          <mxGeometry x="40" y="665" width="1260" height="185" as="geometry" />
-        </mxCell>
-        <mxCell id="dom_pipeline" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="transformations/pipeline.py&#xa;3-line entrypoint: generate(spark, config_dir)" vertex="1">
-          <mxGeometry x="70" y="705" width="360" height="125" as="geometry" />
-        </mxCell>
-        <mxCell id="dom_transforms" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="transforms/&#xa;pure @transform functions (unit-tested)" vertex="1">
-          <mxGeometry x="460" y="705" width="380" height="125" as="geometry" />
-        </mxCell>
-        <mxCell id="dom_checks" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="checks/&#xa;custom @check_function dqx checks" vertex="1">
-          <mxGeometry x="870" y="705" width="400" height="125" as="geometry" />
-        </mxCell>
-        <mxCell id="pipeline_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#36b;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=2;" value="Lakeflow SDP pipeline: @@CATALOG@@_etl · serverless · from pyspark import pipelines as dp" vertex="1">
-          <mxGeometry x="40" y="875" width="1260" height="255" as="geometry" />
-        </mxCell>
-        <mxCell id="pl_landing" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#36b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="landing volume&#xa;/Volumes/&amp;lt;catalog&amp;gt;/landing/@@CATALOG@@/events/&#xa;raw JSON files arrive out-of-band" vertex="1">
-          <mxGeometry x="70" y="930" width="260" height="170" as="geometry" />
-        </mxCell>
-        <mxCell id="pl_bronze" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde9d9;strokeColor=#36b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="bronze.events_raw&#xa;streaming table (Auto Loader)&#xa;+ _ingest_ts, _source_file" vertex="1">
-          <mxGeometry x="370" y="930" width="260" height="170" as="geometry" />
-        </mxCell>
-        <mxCell id="pl_silver" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcdcf0;strokeColor=#36b;dashed=1;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="silver.* (next)&#xa;validated · AUTO CDC&#xa;dqx error rows → &amp;lt;table&amp;gt;_quarantine" vertex="1">
-          <mxGeometry x="670" y="930" width="270" height="170" as="geometry" />
-        </mxCell>
-        <mxCell id="pl_gold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#36b;dashed=1;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="gold.* (next)&#xa;materialized views · business aggregates" vertex="1">
-          <mxGeometry x="980" y="930" width="290" height="170" as="geometry" />
-        </mxCell>
-        <mxCell id="edge_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=2;" value="Edge lanes — read-only on SDP tables (single-writer invariant) · resources/*.job.yml" vertex="1">
-          <mxGeometry x="40" y="1155" width="1260" height="165" as="geometry" />
-        </mxCell>
-        <mxCell id="edge_refresh" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="@@CATALOG@@_etl_refresh&#xa;resources/@@CATALOG@@_etl.job.yml · pipeline_task, daily (paused in dev)" vertex="1">
-          <mxGeometry x="70" y="1195" width="420" height="105" as="geometry" />
-        </mxCell>
-        <mxCell id="edge_next" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1ecf1;strokeColor=#117a8b;dashed=1;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="export jobs / triage notebooks (when needed)&#xa;they READ the SDP tables, never write them" vertex="1">
-          <mxGeometry x="520" y="1195" width="420" height="105" as="geometry" />
-        </mxCell>
-        <mxCell id="cicd_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#666666;dashed=1;align=left;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=1;" value="CI/CD · Deploy · Environments · Source of truth" vertex="1">
-          <mxGeometry x="1340" y="210" width="840" height="1110" as="geometry" />
-        </mxCell>
-        <mxCell id="profiles" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="Execution profiles (datalab.profile)&#xa;databricks — the deploy path (AUTO CDC · Auto Loader · dqx · sinks)&#xa;local — OSS spark-pipelines batch graph · Databricks Connect — run_dataset on a live cluster" vertex="1">
-          <mxGeometry x="1370" y="250" width="780" height="130" as="geometry" />
-        </mxCell>
-        <mxCell id="github" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="GitHub Actions — .github/workflows/ci-cd.yml&#xa;PR → lint · tests · validate-configs · bundle validate&#xa;main → deploy dev · vX.Y.Z-rcN → stage · vX.Y.Z → prod&#xa;OIDC federation (no stored secret) · framework read via GitHub App token" vertex="1">
-          <mxGeometry x="1370" y="400" width="780" height="150" as="geometry" />
-        </mxCell>
-        <mxCell id="bundle" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#0056b3;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="Declarative Automation Bundle — databricks.yml&#xa;variables/ · targets/ · rbac.yml · resources/@@CATALOG@@_etl.{pipeline,job}.yml&#xa;dev → @@CATALOG_DEV@@ · stage → @@CATALOG_STAGE@@ · prod → @@CATALOG_PROD@@" vertex="1">
-          <mxGeometry x="1370" y="570" width="780" height="160" as="geometry" />
-        </mxCell>
-        <mxCell id="bootstrap" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef0d9;strokeColor=#fc8d59;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="One-time UC bootstrap per target — make bootstrap-uc&#xa;catalog · bronze / silver / gold · landing + exports volumes · artifacts.wheels&#xa;GRANTs to account-level groups · make publish-wheel uploads the framework wheel" vertex="1">
-          <mxGeometry x="1370" y="750" width="780" height="150" as="geometry" />
-        </mxCell>
-        <mxCell id="workspaces" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#0056b3;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="Workspaces&#xa;dev: @@HOST@@&#xa;stage: @@HOST_STAGE@@&#xa;prod: @@HOST_PROD@@" vertex="1">
-          <mxGeometry x="1370" y="920" width="780" height="190" as="geometry" />
-        </mxCell>
-        <mxCell id="docs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#d81b60;align=left;verticalAlign=top;fontSize=10;fontStyle=1;arcSize=3;" value="Source of truth&#xa;AGENTS.md · README.md · design/OVERVIEW.md · design/PIPELINES.md (generated by make design)" vertex="1">
-          <mxGeometry x="1370" y="1130" width="780" height="160" as="geometry" />
-        </mxCell>
-        <mxCell id="legend" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontStyle=2" value="Edges: blue = authoring · purple = generate · green = medallion data flow · red = dqx quarantine · teal = edge lane (read-only) · orange = deploy / bootstrap" vertex="1">
-          <mxGeometry x="40" y="1335" width="2140" height="24" as="geometry" />
-        </mxCell>
-        <mxCell id="e_eng_cfg" edge="1" parent="1" source="eng" target="cfg_events_raw" style="endArrow=classic;html=1;strokeColor=#1976d2;fontSize=9;fontColor=#1976d2" value="authors">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_cfg_fw" edge="1" parent="1" source="cfg_events_raw" target="fw_generate" style="endArrow=classic;html=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="validated + generated">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_dom_fw" edge="1" parent="1" source="dom_pipeline" target="fw_generate" style="endArrow=classic;html=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="calls generate()">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_fw_bronze" edge="1" parent="1" source="fw_generate" target="pl_bronze" style="endArrow=classic;html=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="registers datasets">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_landing_bronze" edge="1" parent="1" source="pl_landing" target="pl_bronze" style="endArrow=classic;html=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="Auto Loader">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_bronze_silver" edge="1" parent="1" source="pl_bronze" target="pl_silver" style="endArrow=classic;html=1;dashed=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_silver_gold" edge="1" parent="1" source="pl_silver" target="pl_gold" style="endArrow=classic;html=1;dashed=1;strokeColor=#388e3c;fontSize=9;fontColor=#388e3c" value="">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_refresh_bronze" edge="1" parent="1" source="edge_refresh" target="pl_bronze" style="endArrow=classic;html=1;strokeColor=#2e7d8a;fontSize=9;fontColor=#2e7d8a" value="refreshes">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_profiles_gen" edge="1" parent="1" source="profiles" target="fw_generate" style="endArrow=classic;html=1;dashed=1;strokeColor=#7b1fa2;fontSize=9;fontColor=#7b1fa2" value="datalab.profile selects the graph">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_github_bundle" edge="1" parent="1" source="github" target="bundle" style="endArrow=classic;html=1;strokeColor=#fc8d59;fontSize=9;fontColor=#fc8d59" value="bundle deploy">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_bundle_workspaces" edge="1" parent="1" source="bundle" target="workspaces" style="endArrow=classic;html=1;strokeColor=#fc8d59;fontSize=9;fontColor=#fc8d59" value="per target">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-      </root>
-    </mxGraphModel>
-  </diagram>
-</mxfile>
+# The adopter's starter overlay for the generated diagrams: nothing yet to
+# declare - a source system upstream of the landing volume, a consumer of gold,
+# or what an edge job reads and writes goes here as the estate grows.
+DESIGN_ESTATE_YML = """\
+# design/estate.yml - what the diagrams need that no bundle YAML states.
+#
+# design/*.drawio are GENERATED by scripts/design_diagram.py from config/,
+# resources/*.yml, targets/, .github/workflows/ and this file (`make design`;
+# `make check-design` fails CI when they drift). Declare only relationships the
+# code cannot express. Tables are <domain>.<layer>.<table>; an unknown one
+# fails the generator. See the maintain-design-diagram skill.
+#
+# sources:   [{name, detail?, logo?, feeds: [@@CATALOG@@.bronze.<table>]}]
+# consumers: [{name, detail?, logo?, reads: [@@CATALOG@@.gold.<table>]}]
+# jobs:      {<job resource key>: {reads: [...], writes: <string>}}
 """
 
 # The framework's conceptual design spec is generic except for a few worked-
 # example references; each is repointed at the adopter's own domain.
+# The conceptual spec (scripts/design_spec.py, copied with the design component)
+# names the template's worked example; repoint the lines that must read true
+# for an adopter. Applied to the SCRIPT's text, so the adopter's own
+# `make design` / `make check-design` regenerate exactly what the scaffold wrote.
 DESIGN_SPEC_EDITS: list[tuple[str, str]] = [
     (
-        "• Framework &lt;tt&gt;src/datalab/&lt;/tt&gt; — reusable, zero domain code",
-        "• Framework: the external &lt;tt&gt;datalab&lt;/tt&gt; dependency — reusable, "
-        "zero domain code",
-    ),
-    (
-        "• One worked domain &lt;tt&gt;projects/customer_sales/&lt;/tt&gt;: bronze → silver "
-        "(AUTO CDC SCD1) → gold, dqx valid/quarantine, edge jobs + notebook",
-        "• This repo's domain &lt;tt&gt;@@CATALOG@@&lt;/tt&gt; at the repo root "
-        "(&lt;tt&gt;config/@@CATALOG@@/&lt;/tt&gt;, &lt;tt&gt;src/@@CATALOG@@_etl/&lt;/tt&gt;): "
-        "one YAML artifact per table",
+        "• Two reference domains: <tt>projects/customer_sales/</tt> (bronze → silver "
+        "(AUTO CDC SCD1) → gold, dqx valid/quarantine, edge jobs + notebook) and "
+        "<tt>projects/sales/</tt> (pipeline-only feature showcase)",
+        "• This repo's domain <tt>@@CATALOG@@</tt> at the repo root "
+        "(<tt>config/@@CATALOG@@/</tt>, <tt>src/@@CATALOG@@_etl/</tt>): one YAML artifact per table",
     ),
     (
         "The customer_sales_etl pipeline runs serverless on Databricks (environment_version 4).",
         "The @@CATALOG@@_etl pipeline runs serverless on Databricks.",
     ),
     (
-        "/Volumes/&amp;lt;catalog&amp;gt;/landing/sales/customers/",
-        "/Volumes/&amp;lt;catalog&amp;gt;/landing/@@CATALOG@@/events/",
+        "/Volumes/&lt;catalog&gt;/\\u200blanding/sales/customers/",
+        "/Volumes/&lt;catalog&gt;/\\u200blanding/@@CATALOG@@/events/",
     ),
     ("customer_sales_etl_refresh", "@@CATALOG@@_etl_refresh"),
+    (
+        "• <tt>projects/*/resources/*.yml</tt> — 2 SDP pipelines + 3 jobs (refresh / export / quarantine-report)",
+        "• <tt>resources/*.yml</tt> — the <tt>@@CATALOG@@_etl</tt> SDP pipeline + its refresh job",
+    ),
 ]
 
 
@@ -1533,30 +1430,34 @@ def patch_cicd_docs(out: Path, ctx: dict[str, str], slug: str) -> None:
 # regresses.
 
 ARCH_DESIGN_BANNER = """\
-> Editable architecture diagrams (draw.io) and the generated pipeline inventory
-> live in `design/` — see [Editing the design package](#editing-the-design-package).
+> Generated architecture diagrams (draw.io, built from the estate) and the
+> pipeline inventory live in `design/` - see [Editing the design package](#editing-the-design-package).
 """
 
 ARCH_DESIGN_SECTION = """\
 ## Editing the design package
 
-`design/` is this repo's living picture of the architecture. The committed
-`.drawio` XML is the source of truth for the diagrams, and
-`design/PIPELINES.md` is GENERATED from the `config/` artifacts. `design/` is in
-the bundle's `sync.exclude`, so none of it ships to the workspace.
+`design/` is this repo's living picture of its estate: how many jobs,
+pipelines, tables and views it deploys and how they connect. Everything in it
+except `OVERVIEW.md` and `estate.yml` is GENERATED by `make design` - never edit
+a `.drawio` file's XML. `design/` is in the bundle's `sync.exclude`, so none of
+it ships to the workspace.
 
-| Path | Kind | Update when |
+| Path | Kind | Changes when |
 |---|---|---|
-| `design/PIPELINES.md` | **Generated** pipeline inventory + lineage (mermaid) | every table change — `make design` re-renders it; CI's `make check-design` fails while it is stale |
-| `design/02_implementation_end_to_end.drawio` | Single-page living implementation map | a new edge job/notebook, source system, consumer or bundle resource |
-| `design/01_design_config_driven_medallion.drawio` | The framework's conceptual design spec | rarely — only when the design intent changes |
-| `design/images/*.png` | PNG exports of the diagrams | never by hand — `make design` re-exports them (needs draw.io Desktop) |
+| `design/02_implementation_end_to_end.drawio` | **Generated** estate map (overview, one lineage page per domain, delivery) from `config/`, `resources/`, `targets/`, `ci-cd.yml` and `estate.yml` (`scripts/design_diagram.py`) | any estate change - `make design` |
+| `design/01_design_config_driven_medallion.drawio` | **Generated** conceptual spec from the text in `scripts/design_spec.py` | the design intent changes - edit that text, `make design` |
+| `design/estate.yml` | **Hand-written** overlay: source systems, consumers, edge-job reads/writes | a relationship no bundle YAML states |
+| `design/PIPELINES.md` | **Generated** pipeline inventory + lineage (mermaid) | every table change - `make design` |
+| `design/images/*.png` | **Generated** PNG exports, one per page | never by hand - `make design` (draw.io Desktop, else the HTML twin) |
 | `design/OVERVIEW.md` | Customer-facing narrative | the story changes (a new capability, source or consumer) |
 
-Open a `.drawio` file with the *Draw.io Integration* extension
-(`hediet.vscode-drawio`) in VS Code or Cursor, in
-[app.diagrams.net](https://app.diagrams.net), or in draw.io Desktop; then run
-`make design` and commit the regenerated files with the change.
+The diagrams are laid out through the vendored drawio-architecture-designer
+kit (`scripts/drawio_kit/`): cards sized from their text, arrows routed shape to
+shape, and a layout audit that must be clean. `make design-preview` renders the
+pages to PNG so you can look before committing; `make check-design` (CI) fails
+when a diagram is stale, hand-edited, or fails the audit. Opening a `.drawio`
+in draw.io to VIEW it is fine - saving it is not.
 
 """
 
@@ -2114,23 +2015,14 @@ SKILL_EDITS: dict[str, list[tuple[str, str]]] = {
         # The adopter's OVERVIEW.md draws its architecture in mermaid and links
         # the diagrams; it does not embed the PNGs the template's overview does.
         (
-            "Never hand-edit; re-export. The README, `docs/` and `OVERVIEW.md` embed these. |",
-            "Never hand-edit; re-export, and commit them with the `.drawio` edit. |",
+            "| EDIT: customer-facing narrative that embeds the images. Refresh when the story changes. |",
+            "| EDIT: customer-facing narrative (a mermaid architecture view that links the diagrams). "
+            "Refresh when the story changes. |",
         ),
         (
-            "| Customer-facing narrative that embeds the images.",
-            "| Customer-facing narrative (a mermaid architecture view that links the diagrams).",
-        ),
-        (
-            "`design/OVERVIEW.md` (it embeds `images/01_*` and\n"
-            "`images/02_*`, so the re-exported images flow through automatically). A purely",
-            "`design/OVERVIEW.md`. A purely",
-        ),
-        (
-            "- Editing a `.drawio` source but forgetting `make design` — the README/docs\n"
-            "  embed stale images.",
-            "- Editing a `.drawio` source but forgetting `make design` — the committed\n"
-            "  images go stale.",
+            "`design/OVERVIEW.md` (it embeds `images/01_*` and `images/02_*`, so the\n"
+            "regenerated images flow through automatically). A structural change the",
+            "`design/OVERVIEW.md`. A structural change the",
         ),
     ],
     "deploy-databricks-bundle/SKILL.md": [
@@ -2331,7 +2223,7 @@ def adopter_codebase_layout(sel: Selection) -> str:
                   "CICD", "ARCHITECTURE"] + (["AGENT_MCP"] if sel.has("mcp") else [])
         rows.append(("docs/", " · ".join(guides)))
     if sel.has("design"):
-        rows.append(("design/", "OVERVIEW · *.drawio sources · PIPELINES.md (GENERATED by make design)"))
+        rows.append(("design/", "OVERVIEW · estate.yml overlay · *.drawio + images + PIPELINES.md (all GENERATED by make design)"))
     github = "CI/CD workflows (OIDC deploy; framework App token)"
     github += "".join(
         f" + {label}"
@@ -2378,10 +2270,13 @@ def adopter_maintenance_design(sel: Selection) -> str:
             "2. If the architecture moved or a table was added or changed, update the "
             "`design/` package in the same PR: `make design` re-renders "
             "`design/PIPELINES.md` from `config/` (CI's `make check-design` fails "
-            "while it is stale); edit `design/02_implementation_end_to_end.drawio` "
-            "when boxes or arrows moved and refresh `design/OVERVIEW.md` when the "
-            "narrative changed"
-            + (" — the `maintain-design-diagram` skill has the conventions" if sel.has("any-agent") else "")
+            "while it is stale) and regenerates the diagrams from the estate - never "
+            "edit `design/*.drawio`; declare source systems, consumers and edge-job "
+            "reads/writes in `design/estate.yml`, look at `make design-preview`, and "
+            "refresh `design/OVERVIEW.md` when the narrative changed"
+            + (" - follow the `maintain-design-diagram` skill (and "
+               "`drawio-architecture-designer` for any generator/layout change)"
+               if sel.has("any-agent") else "")
             + (". Update `docs/ARCHITECTURE.md` too." if sel.has("docs") else ".")
         )
     elif sel.has("docs"):
@@ -2397,14 +2292,16 @@ def adopter_common_task_design(sel: Selection) -> str:
     text = (
         "- **Update the design (inventory, diagrams, overview)**: after adding or "
         "changing a table, `make design` re-renders `design/PIPELINES.md` from "
-        "`config/` (CI's `make check-design` fails while it is stale) and "
-        "re-exports `design/*.drawio` to `design/images/` when draw.io Desktop is "
-        "installed. Edit `02_implementation_end_to_end.drawio` when the implemented "
-        "architecture moves (same PR), `01_design_config_driven_medallion.drawio` "
-        "only when the design intent changes, and refresh `design/OVERVIEW.md` when "
+        "`config/`, regenerates `design/*.drawio` from the estate and exports "
+        "`design/images/` (CI's `make check-design` fails while any of it is stale, "
+        "hand-edited or fails the layout audit). Never edit a `.drawio` file: "
+        "declare source systems, consumers and edge-job reads/writes in "
+        "`design/estate.yml`, change the spec text in `scripts/design_spec.py`, "
+        "look at `make design-preview`, and refresh `design/OVERVIEW.md` when "
         "the narrative changes"
-        + (" — follow the `maintain-design-diagram` skill for the band/colour "
-           "conventions and the geometry check" if sel.has("any-agent") else "")
+        + (" - follow the `maintain-design-diagram` skill, and the "
+           "`drawio-architecture-designer` skill for any generator/layout change"
+           if sel.has("any-agent") else "")
         + ". `design/` is excluded from the deployed workspace files via "
         "`sync.exclude` in databricks.yml."
     )
@@ -2938,23 +2835,86 @@ STARTER_TABLE_SPEC = {
 }
 
 
-def write_design(out: Path, ctx: dict[str, str], subst, subst_xml) -> None:
-    """The adopter's own design package: overview, the starter implementation
-    map, the framework's conceptual spec, and the generated pipeline inventory."""
+def write_design(out: Path, ctx: dict[str, str], subst) -> None:
+    """The adopter's own design package: overview, the estate.yml overlay and
+    the generated pipeline inventory. The two diagrams are GENERATED last, by
+    write_design_diagrams(), once every other file is final."""
     cat = ctx["@@CATALOG@@"]
-    spec = (REPO_ROOT / "design" / "01_design_config_driven_medallion.drawio").read_text(encoding="utf-8")
-    for old, new in DESIGN_SPEC_EDITS:
-        spec = require_replace(spec, old, subst_xml(new), "design/01_design_config_driven_medallion.drawio")
     import design_inventory as inventory  # same dir; pure render(), no pyyaml needed
 
     domain = inventory.Domain(name=cat, config_dir=f"config/{cat}", layers=["bronze"])
     inventory.analyze(domain, [("bronze", STARTER_TABLE_SPEC, f"config/{cat}/bronze/events_raw.yml")])
     write_files(out, {
         "design/OVERVIEW.md": subst(DESIGN_OVERVIEW_MD),
-        "design/02_implementation_end_to_end.drawio": subst_xml(DESIGN_DRAWIO),
-        "design/01_design_config_driven_medallion.drawio": spec,
+        "design/estate.yml": subst(DESIGN_ESTATE_YML),
         "design/PIPELINES.md": inventory.render([domain]),
     })
+
+
+def patch_design_spec(out: Path, subst) -> None:
+    """Repoint the conceptual spec's worked-example lines at this adopter, in the
+    adopter's copy of scripts/design_spec.py (its `make design` rebuilds 01_*)."""
+    path = out / "scripts" / "design_spec.py"
+    text = path.read_text(encoding="utf-8")
+    for old, new in DESIGN_SPEC_EDITS:
+        text = require_replace(text, old, subst(new), "scripts/design_spec.py")
+    path.write_text(text, encoding="utf-8")
+
+
+def starter_estate(out: Path, cat: str):
+    """The estate the scaffold just wrote, WITHOUT parsing YAML (this script is
+    stdlib-only): one bronze table, one pipeline, its daily refresh job, an empty
+    overlay. It must equal what design_diagram.discover() reads back from the
+    generated repo - the adopter's first `make check-design` (CI smoke) proves it,
+    and scripts/tests pins it."""
+    import design_diagram as dd
+    import design_inventory as inventory
+
+    domain = inventory.Domain(name=cat, config_dir=f"config/{cat}", layers=["bronze"])
+    inventory.analyze(domain, [("bronze", STARTER_TABLE_SPEC, f"config/{cat}/bronze/events_raw.yml")])
+    pipe = dd.Pipeline(key=f"{cat}_etl", file=f"resources/{cat}_etl.pipeline.yml",
+                       config_dir=f"config/{cat}", serverless=True, catalog="${var.catalog}")
+    job = dd.Job(key=f"{cat}_etl_refresh", file=f"resources/{cat}_etl.job.yml",
+                 tasks=[dd.Task(f"refresh_{cat}_etl", "pipeline", f"{cat}_etl")],
+                 trigger="every day", alerts=False)
+    title = re.search(r"^bundle:\s*\n\s+name:\s*(\S+)",
+                      (out / "databricks.yml").read_text(encoding="utf-8"), re.M)
+    return dd.Estate(title=title.group(1) if title else out.name, domains=[domain],
+                     pipelines={pipe.key: pipe}, jobs={job.key: job}, overlay={},
+                     delivery=dd.discover_delivery(out))
+
+
+def write_design_diagrams(out: Path, cat: str) -> None:
+    """Generate design/*.drawio for the finished adopter through the vendored
+    drawio-architecture-designer kit - the same generator its `make design` runs,
+    so the files are current and audit-clean from the first commit."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import importlib.util
+
+    import design_diagram as dd
+
+    try:
+        import yaml  # noqa: F401  - when present, read the repo back exactly
+        estate = None
+    except ImportError:
+        estate = starter_estate(out, cat)
+    # the ADOPTER's design_spec.py (patched by patch_design_spec), not this repo's
+    spec = importlib.util.spec_from_file_location("design_spec", out / "scripts" / "design_spec.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    saved = sys.modules.get("design_spec")
+    sys.modules["design_spec"] = module
+    try:
+        files, problems = dd.render_files(out, estate=estate)
+    finally:
+        if saved is not None:
+            sys.modules["design_spec"] = saved
+        else:
+            sys.modules.pop("design_spec", None)
+    if problems:
+        raise SystemExit("scaffold: the generated design diagrams fail the layout audit:\n  "
+                         + "\n  ".join(problems))
+    write_files(out, {rel.as_posix(): text for rel, text in files.items()})
 
 
 # --------------------------------------------------------------------------- #
@@ -3145,6 +3105,8 @@ def rewrite_agent_json(out: Path, sel: Selection, targets: set[str]) -> None:
             ]
         if not sel.has("pr-template"):
             data = _drop_hooks(data, "pr_template_guard.py")
+        if not sel.has("design"):
+            data = _drop_hooks(data, "design_drawio_guard.py")
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
@@ -3587,22 +3549,12 @@ def build(stage: Path, tracked: list[str], a: Answers) -> None:
             text = text.replace(key, value)
         return text
 
-    def subst_xml(text: str) -> str:
-        # draw.io cells are html=1: escape for HTML first (a placeholder host
-        # like https://<your-workspace-host> would render as an empty tag), then
-        # for the XML attribute that carries it.
-        from html import escape as html_escape
-        from xml.sax.saxutils import escape
-
-        for key, value in ctx.items():
-            text = text.replace(key, escape(html_escape(value, quote=False), {'"': "&quot;"}))
-        return text
-
     copy_selected(stage, tracked, sel.features)
     write_domain(stage, ctx, subst, sel)
     write_repo_level(stage, subst, sel)
     if sel.has("design"):
-        write_design(stage, ctx, subst, subst_xml)
+        write_design(stage, ctx, subst)
+        patch_design_spec(stage, subst)
     # Patches run on the COMPLETE template text (every anchor is still there);
     # the adopter-if regions are resolved afterwards.
     patch_makefile(stage, a.catalog)
@@ -3636,6 +3588,8 @@ def build(stage: Path, tracked: list[str], a: Answers) -> None:
     pin_framework_doc_links(stage, a.framework_tag)
     rewrite_agent_json(stage, sel, targets)
     mirror_claude_skills(stage)
+    if sel.has("design"):
+        write_design_diagrams(stage, a.catalog)  # last: reads the finished Makefile/targets/CI
     (stage / MANIFEST).write_text(json.dumps({
         "generated_by": f"{TEMPLATE_SLUG} scripts/scaffold_adopter.py",
         "template_commit": template_commit(),

@@ -5,6 +5,10 @@
       {
         "command": ".cursor/hooks/branch_guard.py",
         "matcher": "Write|Edit|StrReplace|Delete|Notebook|MultiEdit"
+      },
+      {
+        "command": ".cursor/hooks/design_drawio_guard.py",
+        "matcher": "Write|Edit|StrReplace|Delete|MultiEdit"
       }
     ],
     "beforeShellExecution": [
@@ -15,6 +19,10 @@
       {
         "command": ".cursor/hooks/pr_template_guard.py",
         "matcher": "gh\\s+pr\\s+create"
+      },
+      {
+        "command": ".cursor/hooks/design_drawio_guard.py",
+        "matcher": "design/"
       }
     ]
   }

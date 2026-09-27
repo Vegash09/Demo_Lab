@@ -275,9 +275,11 @@ The repo is now ready. Add real bronze/silver/gold tables with the
 register their modules in `config/<catalog>/domain.yml` `imports:`. For the rare
 case the YAML cannot express, use **`author-sdp-pipeline`**; for deploy issues,
 **`deploy-databricks-bundle`**. With the `design` component, run `make design`
-after each table change — it re-renders `design/PIPELINES.md` from `config/`
-(CI's `make check-design` fails while it is stale), and the
-**`maintain-design-diagram`** skill keeps the diagram and overview in step.
+after each table, job or pipeline change - it re-renders `design/PIPELINES.md`
+and regenerates the diagrams from the estate (CI's `make check-design` fails
+while either is stale or hand-edited), and the **`maintain-design-diagram`**
+skill (with **`drawio-architecture-designer`** for layout changes) keeps the
+diagrams and overview in step.
 
 ## Done check
 

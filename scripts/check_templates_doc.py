@@ -67,9 +67,10 @@ PLACEHOLDERS = {
 
 # Every file the engine WRITES WHOLE (write_domain + write_repo_level +
 # write_design) must be mirrored: doc heading path -> the engine constant
-# holding its template. Two whole-written design files are described in prose
-# instead: the starter draw.io XML (a diagram, not something to hand-copy) and
-# design/PIPELINES.md (RENDERED from config/ by scripts/design_inventory.py).
+# holding its template. The GENERATED design files are described in prose
+# instead: the two draw.io diagrams (built by scripts/design_diagram.py through
+# the drawio-architecture-designer kit) and design/PIPELINES.md (RENDERED from
+# config/ by scripts/design_inventory.py).
 # Files the engine only PATCHES in place (Makefile, scripts/, CI/CD, .mcp.json …)
 # are described in prose too and are not checked here.
 MIRRORED: dict[str, str] = {
@@ -95,6 +96,7 @@ MIRRORED: dict[str, str] = {
     ".databricksignore": "DATABRICKSIGNORE",
     ".gitattributes": "GITATTRIBUTES_DESIGN",
     "design/OVERVIEW.md": "DESIGN_OVERVIEW_MD",
+    "design/estate.yml": "DESIGN_ESTATE_YML",
 }
 
 HEADING_RE = re.compile(r"^###\s+`([^`]+)`\s*$")

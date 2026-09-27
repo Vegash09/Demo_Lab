@@ -180,21 +180,31 @@ publish-genie-skills:  ## Publish .agents/skills to Genie's Workspace .assistant
 # adopter-if:agent-genie end
 
 # adopter-if:design start
-# ---- design package (diagrams -> images; config -> pipeline inventory) -------
-# `design` re-renders design/PIPELINES.md from the config/ artifacts (every
-# table, its source, target kind and quality gate — scripts/design_inventory.py)
-# and re-exports design/*.drawio to design/images/*.png with the draw.io Desktop
-# CLI (set DRAWIO=/path if it isn't on PATH or at the default macOS location;
-# skipped with a note when draw.io is absent). The CLI isn't available in CI, so
-# CI runs only `check-design`, which fails while PIPELINES.md is stale. Commit
-# the regenerated files. See the maintain-design-diagram skill.
-.PHONY: design check-design
-design: install  ## Re-render design/PIPELINES.md from config/ + re-export design/*.drawio to PNG (draw.io Desktop)
+# ---- design package (estate -> diagrams + images + pipeline inventory) -------
+# Everything in design/ except OVERVIEW.md and estate.yml is GENERATED:
+#   * design/PIPELINES.md  <- the config/ artifacts (scripts/design_inventory.py)
+#   * design/*.drawio      <- config/ + resources/*.yml + targets/ + workflows +
+#     design/estate.yml, laid out through the vendored drawio-architecture-designer
+#     kit (scripts/design_diagram.py, scripts/design_spec.py, scripts/drawio_kit/)
+#   * design/images/*.png  <- the .drawio files, via the draw.io Desktop CLI (set
+#     DRAWIO=/path if it isn't on PATH or at the default macOS location), else the
+#     kit's HTML twin when playwright is installed, else skipped with a note.
+# `check-design` (CI + pre-commit) regenerates the inventory and both diagrams in
+# memory and fails on drift, a hand edit, or any layout-audit finding (text
+# overflow, colour, colliding cards, an arrow through a card). Never edit the
+# .drawio XML - see the maintain-design-diagram skill.
+.PHONY: design check-design design-preview
+design: install  ## Regenerate design/: PIPELINES.md, the .drawio diagrams from the estate, and their PNGs
 	$(UV) run python scripts/design_inventory.py --write
-	python3 scripts/export_design.py --if-available
+	$(UV) run python scripts/design_diagram.py --write
+	$(UV) run python scripts/export_design.py --if-available
 
-check-design: install  ## Fail if design/PIPELINES.md is stale against the config/ artifacts (CI)
+check-design: install  ## Fail if design/PIPELINES.md or design/*.drawio is stale, hand-edited, or fails the layout audit (CI)
 	$(UV) run python scripts/design_inventory.py --check
+	$(UV) run python scripts/design_diagram.py --check
+
+design-preview: install  ## Render the diagrams' HTML twin + PNGs into .design-preview/ to LOOK at before committing
+	$(UV) run --with playwright python scripts/design_diagram.py --preview .design-preview
 # adopter-if:design end
 
 # ---- bundle (Declarative Automation Bundle) ---------------------------------
