@@ -142,9 +142,9 @@ databricks bundle run customer_sales_export -t dev             # python-file lan
 databricks bundle run customer_sales_quarantine_report -t dev  # notebook lane example
 ```
 
-`make help` lists everything. The full release flow (dev on merge,
-stage on `v*-rc*` tags, prod on `v*` tags) is in
-[docs/CICD.md](docs/CICD.md#release-flow).
+`make help` lists everything. The full release flow (dev on merge — which
+also cuts the `CHANGELOG.md` release — stage on `v*-rc*` tags, prod on `v*`
+tags) is in [docs/CICD.md](docs/CICD.md#release-flow).
 
 ## The customer_sales example, end to end
 
@@ -185,7 +185,9 @@ Branch from `main` (`feature/…`, `fix/…`, `debug/…`); one PR per branch us
 the unified template (marker `datalab-pr-template` — hook + CI enforce it for
 human/agent PRs; dependabot PRs are held to a separate bot contract in CI);
 head branches are **deleted automatically on merge**. Merge to `main`
-deploys dev; `vX.Y.Z-rcN` tags deploy stage; `vX.Y.Z` tags deploy prod.
+deploys dev, and that deploy cuts `CHANGELOG.md`'s `[Unreleased]` into a
+`chore(release): vX.Y.Z` commit; tag THAT commit `vX.Y.Z-rcN` to deploy stage
+and `vX.Y.Z` to deploy prod.
 
 ```bash
 cp .github/pull_request_template.md /tmp/pr-body.md   # fill it in

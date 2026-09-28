@@ -11,6 +11,11 @@ name: "CI/CD"
 #   tag vX.Y.Z                  CI + deploy prod (destructive changes need a human)
 #   workflow_dispatch           CI for the chosen target; deploys stage/prod only
 #                               (dev deploys ride the next main push, as before)
+#
+# The deploy IS the release: once main is deployed to dev, the `release` job cuts
+# CHANGELOG.md's [Unreleased] into `## [X.Y.Z] — date` and pushes that to main as
+# `chore(release): vX.Y.Z`. Stage/prod promote THAT commit (tag vX.Y.Z-rcN /
+# vX.Y.Z); the params job refuses any other tree. docs/CICD.md "Changelog releases".
 
 on:
   workflow_dispatch:
@@ -39,6 +44,7 @@ jobs:
       target:       ${{ steps.derive.outputs.target }}
       deploy:       ${{ steps.derive.outputs.deploy }}
       auto-approve: ${{ steps.derive.outputs.auto-approve }}
+      release:      ${{ steps.derive.outputs.release }}
     steps:
       - name: Derive target + deploy flags from the trigger
         id: derive
@@ -59,12 +65,34 @@ jobs:
             *) echo "unexpected trigger $EVENT on $REF" >&2; exit 1 ;;
           esac
           [ "$target" = "dev" ] && auto="true" || auto="false"
+          # Only a deploy of main cuts a changelog release (the `release` job).
+          [ "$EVENT/$REF" = "push/refs/heads/main" ] && release="true" || release="false"
           {
             echo "target=$target"
             echo "deploy=$deploy"
             echo "auto-approve=$auto"
+            echo "release=$release"
           } >> "$GITHUB_OUTPUT"
-          echo "::notice::target=$target deploy=$deploy auto-approve=$auto"
+          echo "::notice::target=$target deploy=$deploy auto-approve=$auto release=$release"
+
+      - uses: actions/checkout@v7
+        if: steps.derive.outputs.deploy == 'true' && steps.derive.outputs.target != 'dev'
+
+      - name: Gate — stage/prod promote only a cut changelog release
+        # Stage/prod deploy what dev already released: the `chore(release): vX.Y.Z`
+        # commit the release job pushed, tagged vX.Y.Z-rcN / vX.Y.Z. Fails before CI
+        # when [Unreleased] still holds entries (a commit nobody released) or the
+        # tag names a different version than the tree's newest release.
+        if: steps.derive.outputs.deploy == 'true' && steps.derive.outputs.target != 'dev'
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            python3 scripts/release_changelog.py verify --tag "$REF_NAME"
+          else
+            python3 scripts/release_changelog.py verify
+          fi
 
   ci:
     needs: params
@@ -84,3 +112,66 @@ jobs:
       # destructive plan so a human reviews the deletion. See docs/CICD.md.
       auto-approve: ${{ needs.params.outputs.auto-approve == 'true' }}
     secrets: inherit
+
+  # The deploy IS the release. Before this job, nothing ever cut CHANGELOG.md:
+  # every dev deploy after 0.3.0 left its entries under [Unreleased] and the repo
+  # version at 0.3.0. Runs only after a deploy of main that actually happened (an
+  # unprovisioned environment skips the deploy, and then nothing was released).
+  release:
+    name: "cut the changelog release"
+    needs: [params, deploy]
+    if: needs.params.outputs.release == 'true' && needs.deploy.outputs.deployed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the release commit to main
+    # One cut at a time; never cancel one between its commit and its push.
+    concurrency:
+      group: changelog-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0     # the late-entry repair reads the earlier release commits
+
+      - name: Cut [Unreleased] into the release this deploy shipped
+        id: cut
+        env:
+          DEPLOYED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Release only what was deployed. When main has moved on, a newer run
+          # deploys a tree that CONTAINS this one and its release job cuts these
+          # entries too — never label an undeployed entry released.
+          if [ "$(git rev-parse HEAD)" != "$DEPLOYED_SHA" ]; then
+            echo "::notice::main moved past the deployed commit ${DEPLOYED_SHA::7}; the newer deploy's release job cuts these entries."
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 scripts/release_changelog.py cut --apply --github-output "$GITHUB_OUTPUT"
+
+      - name: Push the release commit to main
+        if: steps.cut.outputs.released == 'true'
+        env:
+          VERSION:      ${{ steps.cut.outputs.version }}
+          DEPLOYED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # No [skip ci] marker: a GITHUB_TOKEN push triggers no workflow anyway, and
+          # the marker would ALSO suppress the stage/prod deploy of this very commit
+          # once it is tagged vX.Y.Z-rcN / vX.Y.Z.
+          git commit -qam "chore(release): v${VERSION}" \
+            -m "Deployed to dev from ${DEPLOYED_SHA::7}; CHANGELOG.md [Unreleased] cut by scripts/release_changelog.py."
+          if git push origin HEAD:main; then
+            echo "::notice title=Released v${VERSION}::CHANGELOG.md [${VERSION}] is on main. Promote it by tagging that commit v${VERSION}-rc1 (stage), then v${VERSION} (prod)."
+            exit 0
+          fi
+          git fetch -q origin main
+          if [ "$(git rev-parse origin/main)" != "$DEPLOYED_SHA" ]; then
+            echo "::notice::main moved during the cut; the newer deploy's release job cuts these entries."
+            exit 0
+          fi
+          echo "::error title=Changelog release not pushed::The deploy succeeded but v${VERSION} could not be pushed to main. Check that GITHUB_TOKEN may push to main (Settings → Actions → General → Workflow permissions; any branch rule on main must allow github-actions[bot]), then re-run this job — or cut it by hand: make release-changelog APPLY=1 on a branch, PR titled 'chore(release): v${VERSION}'. See docs/CICD.md \"Changelog releases\"."
+          exit 1

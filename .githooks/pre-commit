@@ -51,6 +51,22 @@ if [[ -f scripts/sync_skills.py ]] && command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
+# ---- CHANGELOG.md must stay releasable ---------------------------------------
+# The deploy cuts [Unreleased] into a version (scripts/release_changelog.py); a
+# malformed file or a hand-edited [project].version would only fail that cut
+# AFTER the deploy. Cheap, stdlib.
+if [[ -f scripts/release_changelog.py ]] && command -v python3 >/dev/null 2>&1; then
+  if ! python3 scripts/release_changelog.py check >/dev/null 2>&1; then
+    {
+      printf '\n  COMMIT BLOCKED — CHANGELOG.md is not releasable.\n\n'
+      printf '  New entries go under ## [Unreleased]; versions are cut by the deploy,\n'
+      printf '  never by hand. See what is wrong:\n\n'
+      printf '      make check-changelog\n\n'
+    } >&2
+    exit 1
+  fi
+fi
+
 # ---- committed agent configs must be machine-independent --------------------
 # .claude/settings.json is tracked and ships to adopters; an absolute path or a
 # scratch-dir grant in it is inert elsewhere and leaks local paths. Personal
@@ -152,7 +168,7 @@ PATTERNS=(
   # adopter-if:agent-claude start
   '^scripts/sync_skills\.py$'
   # adopter-if:agent-claude end
-  '^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs|check_agent_settings|check_framework_current|check_framework_surface)\.py$'
+  '^scripts/(sync_schemas|check_lockstep|bump_framework|domains|check_sync_lists|check_templates_doc|check_adopter_docs|check_agent_settings|check_framework_current|check_framework_surface|release_changelog)\.py$'
   # adopter-if:schemas start
   '^schemas/.*\.json$'
   # adopter-if:schemas end

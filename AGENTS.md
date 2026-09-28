@@ -151,6 +151,9 @@ scripts/bump_framework.py  Rewrite the pin at every site — driven by `make bum
 scripts/check_framework_current.py  MANDATE: fail while a newer published datalab-framework release exists than the pin (make check-framework-current; its own CI job). Mode var DATALAB_FRAMEWORK_MANDATE: enforce by default in the template, warn by default in generated adopters; `warn` in the template = incident break-glass
 scripts/check_framework_surface.py  Fail while the author-ldp-artifact skill misses a target/source kind of the pinned framework's schema — the corresponding change a feature release needs (make check-framework-surface; CI + pre-commit)
 scripts/check_sync_lists.py  Assert databricks.yml sync.exclude == .databricksignore (make check-sync-lists; CI gate)
+scripts/release_changelog.py  THE changelog release: after each successful CI deploy of main, ci-cd.yml's `release` job cuts
+                          CHANGELOG.md [Unreleased] into `## [X.Y.Z] — date` + moves pyproject/uv.lock with it (cut);
+                          stage/prod deploy only a cut release (verify); make check-changelog gates CI + pre-commit
 scripts/check_templates_doc.py  Assert the bootstrap-adopter-repo skill's references/templates.md (the documented MANUAL
                           fallback) still mirrors scaffold_adopter.py's file templates byte for byte (make check-templates-doc; CI + pre-commit)
 scripts/scaffold_adopter.py  The adopter configurator (make configure-adopter / new-adopter): an interactive form or
@@ -406,8 +409,12 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   "Automatically delete head branches" is ON (re-apply with
   `gh repo edit --delete-branch-on-merge` if the repo is recreated). After a
   merge, prune locally: `git switch main && git pull && git fetch --prune`.
-- Releases: merge to `main` auto-deploys dev; tag `vX.Y.Z-rcN` → stage;
-  tag `vX.Y.Z` → prod (`docs/CICD.md`).
+- Releases: merge to `main` auto-deploys dev, and that deploy CUTS the
+  release — CI moves `CHANGELOG.md` `[Unreleased]` into `## [X.Y.Z] — date`
+  and pushes it to main as `chore(release): vX.Y.Z`. Promote THAT commit: tag
+  it `vX.Y.Z-rcN` → stage, then `vX.Y.Z` → prod (`docs/CICD.md` "Changelog
+  releases"). Record changes as bullets under `## [Unreleased]`; never cut a
+  version or edit `[project].version` by hand.
 
 ## Critical knowledge (gotchas)
 
@@ -567,6 +574,33 @@ data re-enters via the landing volume or a `backfill:` flow. A job calling
   downgrades the framework gates to warnings — remove it once the bump merges.
   Details: `docs/CICD.md` "Framework bumps".
 <!-- template-only:framework-mandate end -->
+- **The deploy cuts the changelog release — nothing else does.** For three
+  months every entry sat under `[Unreleased]` and `[project].version` stayed
+  `0.3.0` through every dev deploy since 0.3.0 (18 successful ones from
+  ci-cd.yml alone), because releasing was a manual step no pipeline ran. Now ci-cd.yml's `release` job runs after every SUCCESSFUL
+  deploy of main (`needs.deploy.outputs.deployed` — an unprovisioned
+  environment skips the deploy, and then nothing was released) and runs
+  `scripts/release_changelog.py cut --apply`: `[Unreleased]` → `## [X.Y.Z] —
+  date` (duplicate `###` groups merged in Keep a Changelog order), the SemVer
+  bump read from the headings (`### Added` → minor, `**BREAKING`/`### Removed`
+  → major, minor while 0.x, else patch), `pyproject.toml` + the root package in
+  `uv.lock` moved in lockstep (the exact edit `uv lock` makes — no framework
+  access needed), pushed to main by `github-actions[bot]`. Rules it depends on:
+  (1) it releases only the deployed commit — if main moved on, the newer run's
+  release covers both; (2) the commit carries NO `[skip ci]` — GITHUB_TOKEN
+  pushes trigger nothing anyway, and the marker would also suppress the stage/prod
+  deploy when the commit is tagged; (3) **a PR branched before a cut merges
+  CLEANLY with its bullet inside the released section** (git anchors on the
+  `###` line, which now belongs to the release) — `cut` repairs it at the next
+  deploy by diffing each bot-released section against its `chore(release)`
+  commit and moving later insertions into the new release (a section whose
+  released entries were edited is a deliberate change and left alone), which is
+  why the job checks out with `fetch-depth: 0`; (4) the params job REFUSES a
+  stage/prod deploy of a tree with pending `[Unreleased]` entries or a tag that
+  names another version (`release_changelog.py verify`). Failure signature of a
+  refused push: "Changelog release not pushed" — GITHUB_TOKEN needs write on
+  main; recover with `make release-changelog APPLY=1` in a PR titled
+  `chore(release): vX.Y.Z`.
 - **A version/staleness check that finds NOTHING must fail, not warn.** The bump
   bot read its tag list through a pipeline (`$(git ls-remote … | grep … | tail -1)`);
   when the git call failed, the pipeline's status came from `tail` (success), the
@@ -967,7 +1001,7 @@ change:
 | `^\.cursor/(rules\|hooks)/.*`, `^\.cursor/hooks\.json$` | Cursor rules + hooks (skills are read from `.agents/skills`) | <!-- adopter-if:hooked-agent -->
 | `^\.codex/hooks\.json$`, `^\.agents/skills/.*` | Codex hooks.json + `.agents/skills` (the canonical authored agent-skills source) | <!-- adopter-if:any-agent -->
 | `^scripts/sync_skills\.py$` | agent-skills sync generator (canonical `.agents/skills` → `.claude/skills` copy) | <!-- adopter-if:agent-claude -->
-| `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists\|check_templates_doc\|check_adopter_docs\|check_agent_settings\|check_framework_current\|check_framework_surface)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check, adopter-scaffold doc lockstep, adopter doc drift, agent-config portability, mandatory framework adoption + surface coverage |
+| `^scripts/(sync_schemas\|check_lockstep\|bump_framework\|domains\|check_sync_lists\|check_templates_doc\|check_adopter_docs\|check_agent_settings\|check_framework_current\|check_framework_surface\|release_changelog)\.py$` | repo-integrity tooling: schema vendoring, framework-version lockstep, domain registry, sync-list check, adopter-scaffold doc lockstep, adopter doc drift, agent-config portability, mandatory framework adoption + surface coverage, the deploy-time changelog release cut |
 | `^schemas/.*\.json$` | vendored editor schemas — GENERATED from the pinned framework (`make sync-schemas`), never hand-edited | <!-- adopter-if:schemas -->
 | `^\.mcp\.json$`, `^\.cursor/mcp\.json$` | opt-in MCP server config (agent↔Databricks read-only query connection) | <!-- adopter-if:mcp -->
 | `^scripts/(design_diagram\|design_spec\|design_inventory\|export_design)\.py$`, `^scripts/drawio_kit/.*` | design generator + the vendored drawio-architecture-designer kit (the diagrams are built by these) | <!-- adopter-if:design -->
@@ -1105,6 +1139,12 @@ the branch-first policy — no edits/commits/pushes while `main` is checked out
   datalab.catalog=… --param datalab.bronze_schema=…"` (isolated Databricks
   Connect overlay). Reference: the framework repo's FRAMEWORK.md "Run anywhere".
 <!-- adopter-if:local-dev end -->
+- **Record a change**: add a bullet under `## [Unreleased]` in `CHANGELOG.md`
+  (`### Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security`;
+  start it `**BREAKING:**` when it breaks adopters) — the heading picks the
+  version bump. The next deploy of main cuts the release; preview it with
+  `make release-changelog`, and `make check-changelog` gates CI + pre-commit.
+  Never move entries into a version section or edit `[project].version` yourself.
 - **Add a dependency**: edit `pyproject.toml`, `make lock`, commit both files.
   For pipeline-runtime deps, remember the environment caching gotcha above.
 - **Change deploy config**: edit `databricks.yml` / the domain's

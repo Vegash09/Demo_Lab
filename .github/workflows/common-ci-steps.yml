@@ -122,6 +122,13 @@ jobs:
         # same framework release. Historically prose-enforced and it drifted.
         run: uv run --no-project python scripts/check_lockstep.py
 
+      - name: Check CHANGELOG.md is releasable (structure + repo version lockstep)
+        # Mirror of `make check-changelog`. After every deploy of main, ci-cd.yml's
+        # `release` job cuts [Unreleased] into a version; this keeps the file in a
+        # shape that cut can parse, and pyproject.toml + uv.lock on the version of
+        # the newest release (it moves only when a deploy cuts one).
+        run: uv run --no-project python scripts/release_changelog.py check
+
       # adopter-if:schemas start
       - name: Check vendored schemas match the pinned framework (no drift)
         # Mirror of `make check-schemas`: schemas/*.json are GENERATED from the
@@ -363,6 +370,9 @@ jobs:
           make test
           make check-schemas
           make check-lockstep
+          # The scaffold's CHANGELOG.md must be one the deploy-time release cut
+          # (scripts/release_changelog.py) can parse, on the pyproject version.
+          make check-changelog
           make check-framework-surface
           make check-domains
           make check-sync-lists
@@ -457,7 +467,7 @@ jobs:
           [ "$before" = "$(git status --porcelain | sha1sum)" ] \
             || { echo "::error::a refused re-run still changed the repo"; exit 1; }
           make lock
-          make validate-configs lint test check-lockstep check-domains check-sync-lists
+          make validate-configs lint test check-lockstep check-changelog check-domains check-sync-lists
 
       - name: Check the MINIMAL adopter from the template (dangling references)
         run: make check-adopter-docs ADOPTER="$RUNNER_TEMP/beta-datalab"
@@ -472,4 +482,4 @@ jobs:
           test -f .claude/settings.json && test -f .mcp.json && test ! -d .cursor/rules
           test -f scripts/publish_genie_skills.py && test ! -e .codex
           make lock
-          make lint validate-configs check-skills check-agent-settings check-sync-lists
+          make lint validate-configs check-skills check-agent-settings check-sync-lists check-changelog

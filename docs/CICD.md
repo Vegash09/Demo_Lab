@@ -29,6 +29,8 @@ flowchart LR
     RC --> CI
     REL --> CI
     CD --> DEV["dev"]
+    DEV --> CUT["release job<br/>CHANGELOG [Unreleased] → [X.Y.Z]<br/>chore(release) commit on main"]
+    CUT -.->|"tag vX.Y.Z-rcN / vX.Y.Z<br/>(verify gate)"| RC
     RC -.-> STAGE["stage"]
     REL -.-> PROD["prod<br/>(required reviewers)"]
 ```
@@ -37,7 +39,7 @@ flowchart LR
 
 | Workflow | Trigger | What runs |
 |---|---|---|
-| `ci-cd.yml` | PRs to `main` (CI only, vs dev); pushes to `main` (CI + deploy dev); `v*-rc*` tags (stage); `v*` tags (prod); manual with a target choice | ONE workflow for every target — a `params` job derives the target/deploy flags from the trigger, then calls the common CI/CD workflows |
+| `ci-cd.yml` | PRs to `main` (CI only, vs dev); pushes to `main` (CI + deploy dev + changelog release); `v*-rc*` tags (stage); `v*` tags (prod); manual with a target choice | ONE workflow for every target — a `params` job derives the target/deploy flags from the trigger (and refuses a stage/prod deploy of anything but a cut release), then calls the common CI/CD workflows; after a deploy of `main` the `release` job cuts the changelog — see "Changelog releases" |
 | `framework-bump.yml` | twice-daily schedule, manual (optional dry run), `repository_dispatch` `datalab-framework-released` | watches `datalab-framework` for a new `vX.Y.Z` release and opens the MANDATORY bump PR (`make bump-framework`: pyproject tag + `var.datalab_version` + `uv.lock` + regenerated `schemas/` + re-pinned framework-doc links), with every CI gate's result and the framework CHANGELOG between the pins in its body — a DRAFT when the release needs corresponding changes; see "Framework bumps" | <!-- adopter-if:framework-bot -->
 | `pr-template-check.yml` | every PR | enforces the unified PR template | <!-- adopter-if:pr-template -->
 
@@ -312,9 +314,11 @@ gitGraph
     commit id: "PR: CI lint+test+validate"
     checkout main
     merge feature/slug tag: "auto-deploy → dev"
-    commit id: "tag v1.4.0-rc1" tag: "deploy → stage"
-    commit id: "tag v1.4.0" tag: "deploy → prod"
+    commit id: "chore(release): v1.4.0" tag: "v1.4.0-rc1 → stage · v1.4.0 → prod"
 ```
+
+Every merge deploys dev, and that deploy cuts the release (next section): the
+`chore(release): vX.Y.Z` commit it pushes is the one stage and prod promote.
 
 Branching practice (AGENTS.md "Branching & releases"): every branch is cut
 from a fresh `main` and named `feature/<slug>`, `fix/<slug>` or
@@ -326,6 +330,49 @@ repo recreation with:
 ```bash
 gh repo edit --delete-branch-on-merge
 ```
+
+## Changelog releases
+
+**The deploy is the release.** After every successful deploy of `main` to dev,
+`ci-cd.yml`'s `release` job runs `scripts/release_changelog.py cut --apply`
+and pushes the result to `main` as `github-actions[bot]`:
+
+1. everything under `## [Unreleased]` in `CHANGELOG.md` becomes
+   `## [X.Y.Z] — <UTC date>` — duplicate `###` groups (one per PR) are merged,
+   in Keep a Changelog order — and `[Unreleased]` is reset to `_Nothing yet._`;
+2. `X.Y.Z` is the SemVer bump the headings call for: `### Removed` or a
+   `**BREAKING` bullet → major (minor while the version is `0.x`),
+   `### Added` → minor, anything else → patch. With no released section yet
+   (a fresh adopter), the first release is `pyproject.toml`'s version;
+3. `pyproject.toml` `[project].version` and the root package's `version` in
+   `uv.lock` move to `X.Y.Z` (the same edit `uv lock` would make);
+4. the commit is `chore(release): vX.Y.Z` — no `[skip ci]`: a GITHUB_TOKEN push
+   starts no workflow anyway, and the marker would also suppress the stage/prod
+   deploy of that commit once it is tagged.
+
+Promote that commit: tag it `vX.Y.Z-rc1` (stage), then `vX.Y.Z` (prod). The
+`params` job runs `release_changelog.py verify` first and refuses a stage/prod
+deploy when `[Unreleased]` still holds entries (a commit nobody released) or the
+tag names a different version than the tree's newest release.
+
+Edge cases the job handles:
+
+| Situation | What happens |
+|---|---|
+| The environment has no Databricks secrets, so the deploy skipped | no release — nothing was deployed (`deployed` output of `common-cd-steps`) |
+| `main` moved on before the job ran (another merge) | skipped with a notice; the newer run deploys a tree containing this one, and its release covers both |
+| A PR branched before a cut merges with its bullet inside the released section (git merges it cleanly) | the next cut diffs each bot-released section against its `chore(release)` commit and moves the late bullets into the new release; a section whose released entries were edited is left alone |
+| Nothing under `[Unreleased]` (e.g. a dependency bump) | no release, no commit |
+| The push to `main` is refused | the job fails with "Changelog release not pushed" |
+
+Recovering a refused push: `GITHUB_TOKEN` needs write access to `main` (Settings
+→ Actions → General → Workflow permissions — the job itself requests
+`contents: write`; any branch rule on `main` must let `github-actions[bot]`
+push). Then re-run the job, or cut by hand on a branch — `make release-changelog
+APPLY=1` — and merge it in a PR titled `chore(release): vX.Y.Z` (that subject is
+how later cuts find the release to diff). `make release-changelog` alone
+previews the next cut; `make check-changelog` (CI + pre-commit) keeps the file
+parseable and the versions in lockstep.
 
 ## Retention & storage
 

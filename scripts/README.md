@@ -18,6 +18,7 @@ this repo consumes it as a git dependency + a versioned UC-Volume wheel.)
 | `check_framework_current.py` | `make check-framework-current` | Fail while a newer published datalab-framework release exists than the pin (its own CI job). `DATALAB_FRAMEWORK_MANDATE=enforce\|warn` — enforce in the template, warn by default in generated adopters. |
 | `check_framework_surface.py` | `make check-framework-surface` | Fail while the `author-ldp-artifact` skill misses a target/source kind of the pinned framework's schema — the corresponding change a feature release needs (CI + pre-commit; same mode variable). | <!-- adopter-if:schemas&any-agent -->
 | `check_sync_lists.py` | `make check-sync-lists` | Assert `databricks.yml` `sync.exclude` == `.databricksignore` (CI gate — `bundle deploy` reads only the first, `databricks sync` only the second). |
+| `release_changelog.py` | `make check-changelog` / `make release-changelog` (`APPLY=1`) | THE changelog release: after every successful CI deploy of `main`, the `ci-cd.yml` `release` job runs `cut --apply` — `CHANGELOG.md` `[Unreleased]` becomes `## [X.Y.Z] — date` (SemVer bump from its headings), `pyproject.toml` + `uv.lock` move with it, and entries a stale PR merged into an already-released section move to the new release. `check` keeps the file releasable (CI + pre-commit); `verify` refuses a stage/prod deploy of anything but a cut release. |
 | `sync_schemas.py` | `make sync-schemas` / `make check-schemas` | Regenerate / verify the vendored editor schemas in `schemas/` from the PINNED framework's Pydantic models — never hand-copied. | <!-- adopter-if:schemas -->
 | `sync_skills.py` | `make sync-skills` / `make check-skills` | Regenerate / verify the `.claude/skills` copy of the canonical `.agents/skills` (Claude Code does not reliably follow symlinked skills). | <!-- adopter-if:agent-claude -->
 | `publish_genie_skills.py` | `make publish-genie-skills` (`APPLY=1`) | Publish `.agents/skills` to Databricks Genie Code's Workspace `.assistant/skills/` via `databricks workspace import-dir`. | <!-- adopter-if:agent-genie -->
@@ -31,7 +32,7 @@ this repo consumes it as a git dependency + a versioned UC-Volume wheel.)
 | `scaffold_adopter.py` | `make configure-adopter` / `make new-adopter` | The adopter configurator: turns this template into a customer's single-domain repo with the coding agents and components they chose (template repo only). | <!-- adopter-if:template -->
 | `check_templates_doc.py` | `make check-templates-doc` | Assert the `bootstrap-adopter-repo` skill's `references/templates.md` mirrors the configurator's file templates byte for byte (template repo only). | <!-- adopter-if:template -->
 | `check_adopter_docs.py` | `make check-adopter-docs ADOPTER=<dir>` | Check a GENERATED adopter for leftover template identity and dangling references to material it does not have (template repo only). | <!-- adopter-if:template -->
-| `tests/` | `make test` | Unit tests for the gate scripts above (lockstep, link pinning, framework currency and surface) — template repo only. | <!-- adopter-if:template -->
+| `tests/` | `make test` | Unit tests for the gate scripts above (lockstep, link pinning, framework currency and surface, the changelog release cut) — template repo only. | <!-- adopter-if:template -->
 
 Two recurring patterns above are intentional:
 

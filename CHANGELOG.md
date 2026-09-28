@@ -11,8 +11,17 @@ Changes to the FRAMEWORK itself live in the framework repo's own CHANGELOG.
 consume the framework — the pinned framework version, the deploy/publish flow,
 and the example domains under `projects/`.
 
+**Releases are cut by the deploy.** Record every change as a bullet under
+`## [Unreleased]` (Keep a Changelog headings; start a bullet `**BREAKING:**`
+when it breaks adopters). After each successful deploy of `main` to dev, CI
+moves those entries into `## [X.Y.Z] — YYYY-MM-DD` — the SemVer bump the
+headings call for — sets `pyproject.toml` `[project].version` (and `uv.lock`)
+to `X.Y.Z`, and pushes a `chore(release): vX.Y.Z` commit: the commit stage and
+prod promote (tag `vX.Y.Z-rcN` / `vX.Y.Z`). Never cut a version or edit the
+version by hand — see `docs/CICD.md` "Changelog releases".
+
 **Two version knobs.** This repo's own version is `pyproject.toml`
-`[project].version`. The FRAMEWORK version it pins lives in two places that MUST
+`[project].version`, moved only by that release cut. The FRAMEWORK version it pins lives in two places that MUST
 move in lockstep: the `datalab` git tag in `pyproject.toml` `[tool.uv.sources]`
 and `variables/medallion.yml` `datalab_version` (the Volume wheel filename) —
 `make bump-framework VERSION=x.y.z` moves both (plus `uv.lock` and the vendored
@@ -108,6 +117,22 @@ opens the bump PR automatically; then `make publish-wheel`.
   Attribution is checked per paragraph, not per line. No-ops in this repo.
 
 ### Fixed
+- **The deploy now cuts the changelog release.** Nothing ever released
+  `[Unreleased]`: every dev deploy since 0.3.0 left its entries there and
+  `[project].version` at 0.3.0, so the changelog said nothing about what each
+  workspace runs. After every successful deploy of `main`, `ci-cd.yml`'s new
+  `release` job runs `scripts/release_changelog.py cut`: `[Unreleased]` →
+  `## [X.Y.Z] — date` (duplicate `###` groups merged, the SemVer bump read from
+  the headings), `pyproject.toml` + `uv.lock` moved in lockstep, pushed to
+  `main` as `chore(release): vX.Y.Z`. It releases only the commit it deployed,
+  and repairs the entry a PR branched before a cut merges cleanly INTO the
+  released section (reproduced in `scripts/tests/test_release_changelog.py`).
+  Stage/prod deploys now refuse a tree with unreleased entries or a tag naming
+  another version. New `make check-changelog` (CI + pre-commit) keeps the file
+  releasable; `make release-changelog` previews the next cut (`APPLY=1` for
+  recovery). The CD workflow exposes a `deployed` output the job keys on. The
+  adopter scaffold's `CHANGELOG.md` uses the same `## [Unreleased]` format, so
+  generated repos release on their first deploy too.
 - **`make configure-adopter` can no longer wreck an adopter.** Re-run inside an
   already-generated repo it overwrote `pyproject.toml`, `databricks.yml`,
   `targets/`, `variables/`, README and CHANGELOG, added a second domain, and

@@ -15,6 +15,10 @@ on:
         required: false
         type: boolean
         default: false
+    outputs:
+      deployed:
+        description: "'true' once `bundle deploy` succeeded; empty when the environment gate skipped the deploy. ci-cd.yml cuts a changelog release only after a real deploy."
+        value: ${{ jobs.deploy.outputs.deployed }}
 
 permissions:
   id-token: write    # OIDC
@@ -34,6 +38,8 @@ jobs:
     # the target (dev / stage / prod). The OIDC federation policy subject must
     # match `repo:<owner>/<repo>:environment:<target>` — see docs/CICD.md.
     environment: ${{ inputs.target }}
+    outputs:
+      deployed: ${{ steps.deployed.outputs.deployed }}
     env:
       DATABRICKS_AUTH_TYPE: github-oidc
       DATABRICKS_HOST:      ${{ secrets.DATABRICKS_HOST }}
@@ -113,3 +119,10 @@ jobs:
           reader-group:       ${{ vars.DATALAB_READER_GROUP || '' }}
           engineer-group:     ${{ vars.DATALAB_ENGINEER_GROUP || '' }}
           admin-group:        ${{ vars.DATALAB_ADMIN_GROUP || '' }}
+
+      - name: Record that the bundle was deployed
+        # Reached only when every step above succeeded. ci-cd.yml's `release` job
+        # keys on this: a deploy that ran is what turns [Unreleased] into a release.
+        id: deployed
+        if: steps.gate.outputs.enabled == 'true'
+        run: echo "deployed=true" >> "$GITHUB_OUTPUT"

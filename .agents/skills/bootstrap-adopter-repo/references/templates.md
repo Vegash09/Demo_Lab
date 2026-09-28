@@ -627,8 +627,21 @@ clone of the datalab template repo.
 ```markdown
 # Changelog
 
-## Unreleased
+All notable changes to this repo are documented here, in the
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format with
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+**Releases are cut by the deploy.** Record every change as a bullet under
+`## [Unreleased]` (start it `**BREAKING:**` when it breaks something). After
+each successful deploy of `main` to dev, CI moves those entries into
+`## [X.Y.Z] — YYYY-MM-DD`, sets `pyproject.toml` `[project].version` (and
+`uv.lock`) to `X.Y.Z` and pushes a `chore(release): vX.Y.Z` commit — the commit
+stage and prod promote (tag `vX.Y.Z-rcN` / `vX.Y.Z`). Never cut a version by
+hand; `make release-changelog` previews the next cut.
+
+## [Unreleased]
+
+### Added
 - Initial <catalog> adopter repo for <customer>, generated from the datalab
   template (one minimal bronze table to extend). Coding agents: <agents>;
   components: <components>.

@@ -8,6 +8,7 @@
       "Bash(make validate-configs)",
       "Bash(make check-adopter-docs)",
       "Bash(make check-agent-settings)",
+      "Bash(make check-changelog)",
       "Bash(make check-domains)",
       "Bash(make check-lockstep)",
       "Bash(make check-schemas)",

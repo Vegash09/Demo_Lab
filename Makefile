@@ -18,7 +18,7 @@ TARGET ?= dev
 .PHONY: help install lock lint fmt test validate-configs validate \
         deploy run destroy publish-wheel bootstrap-uc clean \
         check-lockstep check-framework-current bump-framework check-domains \
-        check-sync-lists
+        check-sync-lists check-changelog release-changelog
 
 help:  ## Show available targets
 	@printf "\ndatalab · make targets (TARGET=$(TARGET))\n\n"
@@ -74,6 +74,18 @@ check-schemas: install  ## Fail if schemas/*.json drifted from the pinned framew
 # performs a full, drift-free upgrade.
 check-lockstep:  ## Fail if the datalab git tag, var.datalab_version, uv.lock and framework-doc links disagree
 	$(UV) run --no-project python scripts/check_lockstep.py
+
+# ---- changelog releases -------------------------------------------------------
+# The deploy IS the release: after every successful CI deploy of main, the
+# ci-cd.yml `release` job cuts CHANGELOG.md's [Unreleased] into `## [X.Y.Z] — date`
+# and moves pyproject [project].version + uv.lock with it (docs/CICD.md "Changelog
+# releases"). Nobody cuts by hand — release-changelog previews the cut the next
+# deploy will make; APPLY=1 writes it (recovery only, e.g. the bot's push failed).
+check-changelog:  ## Fail if CHANGELOG.md is malformed or the repo version drifted from its newest release (CI + pre-commit)
+	$(UV) run --no-project python scripts/release_changelog.py check
+
+release-changelog:  ## Preview the changelog release the next deploy cuts (APPLY=1 writes it — recovery only)
+	$(UV) run --no-project python scripts/release_changelog.py cut $(if $(APPLY),--apply,)
 
 # Adopting every framework release is MANDATORY in the template (docs/CICD.md
 # "Framework bumps"): check-framework-current fails while a newer published

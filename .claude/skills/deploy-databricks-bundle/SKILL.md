@@ -65,13 +65,18 @@ target (full walkthrough: `docs/CICD.md`):
 2. Create the GitHub Environment named `<target>` with secrets
    `DATABRICKS_HOST` + `DATABRICKS_CLIENT_ID` (optional vars
    `DATALAB_CATALOG`, `DATALAB_SALES_LANDING_PATH`).
-3. dev deploys on push to `main`; stage on `v*-rc*` tags; prod on `v*` tags
-   (all also via manual dispatch).
+3. dev deploys on push to `main`, and a successful dev deploy cuts the
+   `CHANGELOG.md` release (`[Unreleased]` → `## [X.Y.Z]`, pushed to main as
+   `chore(release): vX.Y.Z`); stage on `v*-rc*` tags; prod on `v*` tags (all
+   also via manual dispatch) — tag that release commit, the only tree the
+   stage/prod gate accepts.
 
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
+| stage/prod run fails in `derive target` with "this commit is not a promotable release" | The tag is not on a cut release: tag the `chore(release): vX.Y.Z` commit the dev deploy pushed (its `[Unreleased]` is empty, and the tag must name that version). `make release-changelog` shows what is still pending. |
+| `cut the changelog release` fails with "Changelog release not pushed" | The deploy succeeded but `GITHUB_TOKEN` could not push to `main` — allow Actions to write (Settings → Actions → General → Workflow permissions / any rule on `main`), re-run the job; or `make release-changelog APPLY=1` in a PR titled `chore(release): vX.Y.Z`. |
 | validate: unknown field `environment` / `environment_version` | CLI too old — upgrade to ≥ v0.294.0 (`databricks version`). |
 | validate complains about an unset variable | Override with `--var key=value` or set a default in `databricks.yml`. |
 | Pipeline fails: `Missing pipeline configuration 'datalab.*'` | Parameter not in the resource `configuration:` mapping — add it and redeploy. |
