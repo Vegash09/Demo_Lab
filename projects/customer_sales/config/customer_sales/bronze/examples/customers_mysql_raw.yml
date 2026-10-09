@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../../../../../schemas/table_config.schema.json
+#
+# Example only: this file lives under bronze/examples/ and is NOT loaded into
+# the live customer_sales ETL graph. Move it to bronze/ only after Lakeflow
+# Connect has created the destination table named below in var.mysql_raw_schema.
+schema_version: 1
+name: customers_mysql_raw
+comment: Raw customer rows replicated from MySQL via Lakeflow Connect managed CDC ingestion.
+source:
+  kind: table
+  name: customers_cdc_raw
+  schema_conf: datalab.mysql_raw_schema
+  as_stream: true
+  options:
+    skipChangeCommits: "true"
+target:
+  kind: streaming_table

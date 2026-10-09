@@ -1,0 +1,39 @@
+# Lakeflow Connect managed MySQL CDC ingestion source config (framework-owned
+# contract, rendered by datalab-framework >= 2.0.0).
+#
+# No `$schema` line yet: schemas/ is GENERATED from the PINNED framework
+# (scripts/sync_schemas.py), and ingestion_source.schema.json only exists once
+# this repo pins framework v2.0.0 (`make bump-framework VERSION=2.0.0`). Adding
+# the vendored file by hand fails `make check-schemas`.
+schema_version: 1
+kind: lakeflow_connect_ingestion_source
+
+domain: customer_sales
+name: customer_sales_mysql
+connector: mysql
+source_instance: customer_sales_mysql
+
+gateway:
+  name: customer_sales_mysql_gateway
+  connection_name: customer_sales_mysql_connection
+  catalog_conf: datalab.catalog
+  schema_conf: datalab.mysql_gateway_schema
+
+ingestion_pipeline:
+  name: customer_sales_mysql_ingest
+  catalog_conf: datalab.catalog
+  schema_conf: datalab.mysql_raw_schema
+  channel: CURRENT
+  development: true
+  pause_status: PAUSED
+
+tables:
+  - source:
+      schema: app_sales
+      table: customers
+    destination:
+      table: customers_cdc_raw
+    keys:
+      - customer_id
+    sequence_by: updated_at
+    scd_type: 1

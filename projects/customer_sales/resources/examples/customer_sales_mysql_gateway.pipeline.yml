@@ -1,0 +1,16 @@
+# Example generated from config/customer_sales/ingestion/mysql/customer_sales_mysql.yml.
+# This file lives under resources/examples/ so databricks.yml does NOT include it
+# in live bundle deployment. Move a rendered copy to resources/ only after the
+# UC Connection and run-as identity exist in the target workspace.
+resources:
+  pipelines:
+    customer_sales_mysql_gateway:
+      name: customer_sales_mysql_gateway
+      catalog: ${var.catalog}
+      target: ${var.mysql_gateway_schema}
+      continuous: true
+      gateway_definition:
+        connection_name: customer_sales_mysql_connection
+        gateway_storage_catalog: ${var.catalog}
+        gateway_storage_schema: ${var.mysql_gateway_schema}
+      permissions: ${var.pipeline_permissions}

@@ -1,0 +1,16 @@
+# Optional schedule for the example ingestion pipeline. Keep PAUSED until a real
+# UC Connection, run-as identity, and source-table grants are verified.
+resources:
+  jobs:
+    customer_sales_mysql_ingest_schedule:
+      name: customer_sales_mysql_ingest_schedule
+      tasks:
+        - task_key: run_ingestion
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.customer_sales_mysql_ingest.id}
+            full_refresh: false
+      schedule:
+        quartz_cron_expression: "0 0 */2 * * ?"
+        timezone_id: "Asia/Kolkata"
+        pause_status: PAUSED
+      permissions: ${var.job_permissions}

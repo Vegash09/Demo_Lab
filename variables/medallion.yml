@@ -38,6 +38,16 @@ variables:
   sales_export_path:
     description: UC volume path where gold sales extracts are exported (python-file lane).
     default: /Volumes/${var.catalog}/exports/sales/
+  # --- lakeflow connect: managed MySQL CDC ingestion (customer_sales) -------
+  # See docs/LAKEFLOW_CONNECT_MYSQL.md. Kept as its own schema (not bronze) so
+  # ingested raw tables + gateway staging/CDC bookkeeping are separated from
+  # the Auto Loader bronze tables and from each other.
+  mysql_raw_schema:
+    description: Schema where Lakeflow Connect lands raw replicated MySQL tables (customer_sales domain).
+    default: mysql_raw
+  mysql_gateway_schema:
+    description: Schema holding the MySQL ingestion gateway's internal CDC bookkeeping/staging (customer_sales domain).
+    default: mysql_gateway_meta
   # --- framework wheel distribution ----------------------------------------
   # The datalab FRAMEWORK ships as a versioned wheel built from the pinned git dep
   # (make publish-wheel) and published into an `artifacts.wheels` UC Volume INSIDE

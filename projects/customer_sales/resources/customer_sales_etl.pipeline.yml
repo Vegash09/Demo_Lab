@@ -41,6 +41,10 @@ resources:
         datalab.silver_schema: ${var.silver_schema}
         datalab.gold_schema: ${var.gold_schema}
         datalab.sales_landing_path: ${var.sales_landing_path}
+        # Lakeflow Connect managed MySQL ingestion output schema — declared so
+        # the non-deployed bronze example can be promoted without adding a new
+        # Spark conf later. See docs/LAKEFLOW_CONNECT_MYSQL.md.
+        datalab.mysql_raw_schema: ${var.mysql_raw_schema}
         # Where the framework finds this domain's layer YAMLs (config-driven
         # pipeline — see docs/FRAMEWORK.md). Deployed workspace files; in an
         # adopter repo this would be ${workspace.file_path}/config/<catalog>.

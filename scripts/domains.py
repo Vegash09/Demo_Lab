@@ -39,8 +39,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # read this one field. This repo's live volumes are named `sales`
 # (var.sales_landing_path / var.sales_export_path); adopters get `<catalog>`.
 DOMAINS: dict[str, dict] = {
-    "customer_sales": {"catalog_var": "catalog", "edge_volume": "sales"},
-    "sales": {"catalog_var": "sales_catalog", "edge_volume": None},
+    "customer_sales": {
+        "catalog_var": "catalog",
+        "edge_volume": "sales",
+        "extra_schemas": ["mysql_raw", "mysql_gateway_meta"],
+    },
+    "sales": {"catalog_var": "sales_catalog", "edge_volume": None, "extra_schemas": []},
 }
 
 # Every domain catalog gets this schema/volume holding the datalab FRAMEWORK
@@ -96,6 +100,14 @@ def domain_catalogs(target: str) -> dict[str, str]:
     return {
         domain: catalog
         for domain, (catalog, _) in zip(DOMAINS, catalogs(target), strict=True)
+    }
+
+
+def extra_schemas_by_catalog(target: str) -> dict[str, list[str]]:
+    """Additional UC schemas required by each resolved catalog."""
+    return {
+        catalog: list(spec.get("extra_schemas") or [])
+        for spec, (catalog, _) in zip(DOMAINS.values(), catalogs(target), strict=True)
     }
 
 

@@ -1,0 +1,25 @@
+# Example generated from config/customer_sales/ingestion/mysql/customer_sales_mysql.yml.
+# This file lives under resources/examples/ so databricks.yml does NOT include it
+# in live bundle deployment. Move a rendered copy to resources/ only after the
+# UC Connection and run-as identity exist in the target workspace.
+resources:
+  pipelines:
+    customer_sales_mysql_ingest:
+      name: customer_sales_mysql_ingest
+      serverless: true
+      photon: true
+      continuous: false
+      ingestion_definition:
+        ingestion_gateway_id: ${resources.pipelines.customer_sales_mysql_gateway.id}
+        objects:
+          - table:
+              source_schema: app_sales
+              source_table: customers
+              destination_catalog: ${var.catalog}
+              destination_schema: ${var.mysql_raw_schema}
+              destination_table: customers_cdc_raw
+      configuration:
+        spark.databricks.delta.optimizeWrite.enabled: "true"
+        spark.databricks.delta.properties.defaults.logRetentionDuration: "interval 7 days"
+        spark.databricks.delta.properties.defaults.deletedFileRetentionDuration: "interval 7 days"
+      permissions: ${var.pipeline_permissions}

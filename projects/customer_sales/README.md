@@ -58,6 +58,18 @@ hardcoded anywhere in this folder.
 | `tests/test_run_dataset_contract.py` | End-to-end contract via `run_dataset` — valid rows, quarantine evidence, casts |
 | `tests/test_pipeline_graph.py` | Pins the generated LDP dataset/flow graph (`capture_graph`, no Databricks needed) |
 | `sql/abac/mask_customer_email.sql` | Display-only column-mask SQL — an admin reviews and applies it; CI/agents never execute it |
+| `config/customer_sales/ingestion/mysql/customer_sales_mysql.yml` | Framework-style Lakeflow Connect MySQL source config (managed CDC ingestion) — see [docs/LAKEFLOW_CONNECT_MYSQL.md](../../docs/LAKEFLOW_CONNECT_MYSQL.md) |
+| `config/customer_sales/ingestion/mysql/_template.yml` | Short instructions for copying/rendering a real source config after framework v2.0.0 is released |
+| `config/customer_sales/bronze/examples/customers_mysql_raw.yml` | Non-deployed bronze example for reading the Lakeflow-ingested table after the raw table exists |
+| `resources/examples/customer_sales_mysql_gateway.pipeline.yml` | Non-deployed rendered gateway example; outside the live DAB include glob |
+| `resources/examples/customer_sales_mysql_ingest.pipeline.yml` | Non-deployed rendered ingestion example; outside the live DAB include glob |
+| `resources/examples/customer_sales_mysql_ingest_schedule.job.yml` | Optional schedule example, kept `PAUSED` |
+| `tests/test_mysql_ingestion_contract.py` | Static contract: no live placeholder deployment, source/examples agreement, bootstrap schema coverage |
+
+**Status: staged config, not deployed.** The MySQL resources and bronze reader
+are examples only until a real UC Connection, run-as identity, source grants,
+and framework v2.0.0 renderer release exist. Full writeup:
+[docs/LAKEFLOW_CONNECT_MYSQL.md](../../docs/LAKEFLOW_CONNECT_MYSQL.md).
 
 ## Run it
 

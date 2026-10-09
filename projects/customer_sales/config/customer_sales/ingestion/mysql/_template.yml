@@ -1,0 +1,22 @@
+# Lakeflow Connect managed MySQL CDC ingestion config template.
+#
+# Framework v2 owns the source-config contract and renderer. Copy
+# customer_sales_mysql.yml, change the names/connection/tables for a real MySQL
+# source, and render resources with:
+#
+#   python -m datalab.framework.ingestion render \
+#     --source projects/customer_sales/config/customer_sales/ingestion/mysql/<source>.yml \
+#     --out projects/customer_sales/resources
+#
+# Until framework v2.0.0 is released, this repo keeps rendered resource YAML only
+# under projects/customer_sales/resources/examples/ so main deploys do not create
+# broken gateway/ingestion pipelines.
+#
+# Required operational prerequisites before moving rendered files to resources/:
+#   - UC Connection exists with the configured connection_name.
+#   - Run-as identity and deploy SP have UC grants and storage/external-location access.
+#   - mysql_raw_schema and mysql_gateway_schema are provisioned by bootstrap_uc.py.
+#   - Any downstream bronze table config is moved from bronze/examples/ to bronze/ only
+#     after the managed ingestion destination table exists.
+#
+# Example source config: customer_sales_mysql.yml

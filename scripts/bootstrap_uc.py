@@ -45,7 +45,14 @@ import sys
 # files (variables/medallion.yml + targets/<t>.yml + rbac.yml) through the domain
 # registry — no hardcoded per-target dicts to keep in sync anymore. Adding a
 # domain = one entry in scripts/domains.py DOMAINS.
-from domains import ARTIFACTS_SCHEMA, WHEELS_VOLUME, catalogs, groups, targets
+from domains import (
+    ARTIFACTS_SCHEMA,
+    WHEELS_VOLUME,
+    catalogs,
+    extra_schemas_by_catalog,
+    groups,
+    targets,
+)
 
 BASE_SCHEMAS = ["bronze", "silver", "gold"]
 VOLUME_SCHEMAS = ["landing", "exports"]  # only for catalogs with edge-lane volumes
@@ -56,8 +63,14 @@ DEPLOY_SP = "437346a1-0b53-418a-80d4-abaf2586ed97"
 
 
 def _catalog_sql(
-    catalog: str, reader: str, engineer: str, location: str, edge_volume: str | None,
-    create_catalog: bool = True, grants: bool = True,
+    catalog: str,
+    reader: str,
+    engineer: str,
+    location: str,
+    edge_volume: str | None,
+    extra_schemas: list[str] | None = None,
+    create_catalog: bool = True,
+    grants: bool = True,
 ) -> list[str]:
     """Idempotent DDL + grants for ONE domain catalog. Engineers get build rights
     across the medallion; readers get silver+gold reads; bronze stays
@@ -71,7 +84,12 @@ def _catalog_sql(
     via the UI on a Default-Storage metastore, where SQL CREATE CATALOG needs an
     explicit location) — schemas/volumes/grants still run."""
     with_volumes = edge_volume is not None
-    schemas = BASE_SCHEMAS + [ARTIFACTS_SCHEMA] + (VOLUME_SCHEMAS if with_volumes else [])
+    schemas = (
+        BASE_SCHEMAS
+        + list(extra_schemas or [])
+        + [ARTIFACTS_SCHEMA]
+        + (VOLUME_SCHEMAS if with_volumes else [])
+    )
     stmts = []
     if create_catalog:
         stmts.append(f"CREATE CATALOG IF NOT EXISTS `{catalog}`{location}")
@@ -102,6 +120,10 @@ def _catalog_sql(
         f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{reader}`",
         f"GRANT USE SCHEMA, SELECT ON SCHEMA `{catalog}`.`silver` TO `{reader}`",
         f"GRANT USE SCHEMA, SELECT ON SCHEMA `{catalog}`.`gold` TO `{reader}`",
+    ]
+    stmts += [
+        f"GRANT CREATE TABLE, SELECT, MODIFY ON SCHEMA `{catalog}`.`{schema}` TO `{engineer}`"
+        for schema in (extra_schemas or [])
     ]
     # Framework-wheel volume: `make publish-wheel` uploads the datalab wheel here;
     # this domain's pipeline/job run-as identities install from it (READ). The
@@ -144,9 +166,17 @@ def bootstrap_sql(
     engineer = who["engineer"]
     location = f" MANAGED LOCATION '{managed_location}'" if managed_location else ""
     stmts: list[str] = []
+    extras = extra_schemas_by_catalog(target)
     for catalog, edge_volume in catalogs(target):
         stmts += _catalog_sql(
-            catalog, reader, engineer, location, edge_volume, create_catalogs, grants
+            catalog,
+            reader,
+            engineer,
+            location,
+            edge_volume,
+            extras.get(catalog, []),
+            create_catalogs,
+            grants,
         )
     return stmts
 

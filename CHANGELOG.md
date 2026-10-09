@@ -30,7 +30,49 @@ opens the bump PR automatically; then `make publish-wheel`.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+- **Lakeflow Connect MySQL ingestion no longer deploys placeholder resources.**
+  Following PR review, the hand-authored gateway/ingestion/schedule resources and
+  the downstream bronze reader moved out of the live bundle include path into
+  `projects/customer_sales/resources/examples/` and
+  `projects/customer_sales/config/customer_sales/bronze/examples/`. A merge to
+  `main` (which auto-deploys dev) can no longer create unresolvable
+  `REPLACE_ME_*` pipelines or break the live `customer_sales_etl` graph with a
+  bronze table whose upstream does not exist yet.
+- **The adopter side now supplies a framework-style ingestion SOURCE CONFIG**,
+  not transcribed resource YAML:
+  `projects/customer_sales/config/customer_sales/ingestion/mysql/customer_sales_mysql.yml`
+  uses the `lakeflow_connect_ingestion_source` contract owned by
+  `datalab-framework` (renderer: `python -m datalab.framework.ingestion render`,
+  shipping in framework v2.0.0). `_template.yml` is now render instructions
+  instead of a parallel hand-maintained spec.
+- **No `REPLACE_ME_*` values anywhere in the ingestion surface.** Realistic but
+  anonymized identifiers are used instead (`customer_sales_mysql_connection`,
+  source schema `app_sales`, destination table `customers_cdc_raw`), so nothing
+  in the repo looks deployable-but-broken and no real instance name leaks.
+- **Scheduling defaults to `PAUSED`.** The example ingestion schedule job no
+  longer ships `pause_status: UNPAUSED`, which would have started a 2-hourly
+  ingestion run against a non-existent source on first deploy.
+- **`run_as.service_principal_name` placeholders removed.** Ownership guidance
+  moved to `docs/LAKEFLOW_CONNECT_MYSQL.md` as a promotion prerequisite; a fake
+  SP application id is no longer committed as if it were configuration.
+- **Bronze CDC read semantics fixed.** The bronze example streams its Lakeflow
+  Connect source with `options: {skipChangeCommits: "true"}`, which an SCD1
+  destination table requires — without it the stream fails on upstream
+  updates/deletes.
+
+### Added
+- **UC bootstrap provisions the MySQL ingestion schemas.** `scripts/domains.py`
+  gained a per-domain `extra_schemas` field and `extra_schemas_by_catalog()`;
+  `scripts/bootstrap_uc.py` now creates and grants `mysql_raw` and
+  `mysql_gateway_meta` in the `customer_sales` catalog instead of assuming a
+  human created them out of band.
+- **A contract test that enforces the safety boundary.**
+  `projects/customer_sales/tests/test_mysql_ingestion_contract.py` now asserts
+  that no MySQL resource sits in the live `projects/*/resources/*.yml` glob, that
+  source config and rendered examples agree, that no placeholder survives, that
+  the schedule stays paused, and that bootstrap emits the raw/gateway schema DDL
+  and grants.
 
 ## [0.4.0] — 2026-09-28
 
