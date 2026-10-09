@@ -30,6 +30,23 @@ opens the bump PR automatically; then `make publish-wheel`.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.5.0] — 2026-10-09
+
+### Added
+- **UC bootstrap provisions the MySQL ingestion schemas.** `scripts/domains.py`
+  gained a per-domain `extra_schemas` field and `extra_schemas_by_catalog()`;
+  `scripts/bootstrap_uc.py` now creates and grants `mysql_raw` and
+  `mysql_gateway_meta` in the `customer_sales` catalog instead of assuming a
+  human created them out of band.
+- **A contract test that enforces the safety boundary.**
+  `projects/customer_sales/tests/test_mysql_ingestion_contract.py` now asserts
+  that no MySQL resource sits in the live `projects/*/resources/*.yml` glob, that
+  source config and rendered examples agree, that no placeholder survives, that
+  the schedule stays paused, and that bootstrap emits the raw/gateway schema DDL
+  and grants.
+
 ### Changed
 - **Lakeflow Connect MySQL ingestion no longer deploys placeholder resources.**
   Following PR review, the hand-authored gateway/ingestion/schedule resources and
@@ -60,19 +77,6 @@ opens the bump PR automatically; then `make publish-wheel`.
   Connect source with `options: {skipChangeCommits: "true"}`, which an SCD1
   destination table requires — without it the stream fails on upstream
   updates/deletes.
-
-### Added
-- **UC bootstrap provisions the MySQL ingestion schemas.** `scripts/domains.py`
-  gained a per-domain `extra_schemas` field and `extra_schemas_by_catalog()`;
-  `scripts/bootstrap_uc.py` now creates and grants `mysql_raw` and
-  `mysql_gateway_meta` in the `customer_sales` catalog instead of assuming a
-  human created them out of band.
-- **A contract test that enforces the safety boundary.**
-  `projects/customer_sales/tests/test_mysql_ingestion_contract.py` now asserts
-  that no MySQL resource sits in the live `projects/*/resources/*.yml` glob, that
-  source config and rendered examples agree, that no placeholder survives, that
-  the schedule stays paused, and that bootstrap emits the raw/gateway schema DDL
-  and grants.
 
 ## [0.4.0] — 2026-09-28
 
