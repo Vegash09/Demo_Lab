@@ -1,0 +1,59 @@
+# Based on GitLab's Python.gitlab-ci.yml template, adapted for uv + Databricks Asset Bundles.
+# Scope: CI only (lint, config validation, tests). No deploy stage.
+
+image: python:3.12-slim
+
+stages:
+  - install
+  - lint
+  - validate
+  - test
+
+variables:
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .uv-cache/
+    - .venv/
+
+before_script:
+  - apt-get update -qq && apt-get install -y -qq curl default-jre-headless make
+  - curl -LsSf https://astral.sh/uv/install.sh | sh
+  - export PATH="$HOME/.local/bin:$PATH"
+
+install:
+  stage: install
+  script:
+    - uv sync --frozen
+  artifacts:
+    paths:
+      - .venv/
+    expire_in: 1 hour
+
+lint:
+  stage: lint
+  needs: ["install"]
+  script:
+    - uv run make lint
+
+validate-configs:
+  stage: validate
+  needs: ["install"]
+  script:
+    - uv run make validate-configs
+
+bundle-validate:
+  stage: validate
+  needs: ["install"]
+  script:
+    - curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+    - databricks bundle validate -t dev
+  allow_failure: true
+
+test:
+  stage: test
+  needs: ["install", "lint"]
+  script:
+    - uv run make test
